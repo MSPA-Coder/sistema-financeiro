@@ -1,5 +1,5 @@
-# Override de desenvolvimento, carregado automaticamente pelo `docker compose`
-# quando presente ao lado de compose.yaml.
+# Override de desenvolvimento, selecionado explicitamente com
+# `-f compose.yaml -f compose.dev.yaml`.
 #
 # Monta o repositorio do host sobre o codigo da imagem e troca o comando do
 # servico `web` para o servidor de desenvolvimento do Django: recarrega
@@ -7,7 +7,7 @@
 # mesmo sem isso, por nao haver cache de templates configurado.
 #
 # Para rodar exatamente o que foi construido na imagem (gunicorn, sem bind
-# mount, mais proximo de producao), ignore este arquivo:
+# mount, mais proximo de producao), use somente:
 #   docker compose -f compose.yaml up
 #
 # Para rodar Ruff e a suite minima, use o perfil `quality` de compose.yaml.

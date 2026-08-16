@@ -39,8 +39,9 @@ docker compose --env-file .env.docker run --rm web python manage.py check
 A suíte mínima de segurança e fumaça, mais o Ruff, rodam no serviço dedicado
 `quality` (perfil `quality`, estágio `quality` da imagem). `web`
 (`compose.yaml`) usa o estágio `runtime`, sem `ruff`/`pytest`: ele serve para
-comandos Django, como o `check` acima. Use sempre o serviço `quality` para
-Ruff e testes; ele não depende do override de desenvolvimento estar carregado:
+comandos Django, como o `check` acima. `compose.dev.yaml` é opcional e nunca é
+carregado automaticamente; use-o somente quando precisar de bind mount e
+`runserver`. Use sempre o serviço `quality` para Ruff e testes:
 
 ```powershell
 docker compose --env-file .env.docker --profile quality run --rm quality

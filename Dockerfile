@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /workspace
 
 # quality: Ruff e a suite minima de seguranca, mais o servidor de
-# desenvolvimento montado por compose.override.yaml. Nunca e o estagio
+# desenvolvimento montado por compose.dev.yaml. Nunca e o estagio
 # publicado: `compose.yaml` usa `runtime` para migrate e web.
 FROM base AS quality
 
@@ -21,6 +21,10 @@ RUN --mount=type=secret,id=local_ca,required=false \
     fi \
     && python -m pip install --no-cache-dir -r requirements-dev.txt
 COPY . .
+
+# `logs/` e estado local e fica fora do contexto de build. O estagio de
+# qualidade ainda precisa do diretorio para configurar o handler Django.
+RUN mkdir -p /workspace/logs
 
 ENV DJANGO_SETTINGS_MODULE=financeiro.settings \
     PYTHONPATH=/workspace \
