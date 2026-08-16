@@ -1,0 +1,25 @@
+    /* .section-card, .form-control (exceto width), .btn e .btn-group ja vem do core (application.css). */
+    .form-group { margin-bottom:1rem; } /* espacamento entre form-groups empilhados; o core so define o gap interno label/input */
+    .form-group label { display:block; margin-bottom:0.3rem; font-weight:500; color:var(--text); }
+    .form-control { width:100%; } /* core nao define width; fora de .form-group nao ha flex-stretch garantido */
+    .btn-primary:hover { opacity:0.9; } /* esmaecimento extra alem da troca de cor definida no core */
+    .theme-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:0.8rem; margin-top:0.8rem; }
+    .theme-option { cursor:pointer; border:2px solid var(--border); border-radius:8px; padding:0.55rem; text-align:center; background:var(--card); transition:0.2s; position:relative; }
+    .theme-option:hover { border-color:var(--primary); }
+    .theme-option.active { border-color:var(--primary); box-shadow:0 0 0 2px rgba(59,130,246,0.2); }
+    .theme-option input { display:none; }
+    .theme-preview { width:40px; height:24px; border-radius:4px; margin:0 auto 0.5rem; border:1px solid rgba(255,255,255,0.1); }
+    .preview-light { background:linear-gradient(135deg, #f8fafc 50%, #e2e8f0 50%); }
+    .preview-dark { background:linear-gradient(135deg, #0f172a 50%, #1e293b 50%); }
+    .preview-solarized_light { background:linear-gradient(135deg, #fdf6e3 50%, #eee8d5 50%); }
+    .preview-solarized_dark { background:linear-gradient(135deg, #002b36 50%, #073642 50%); }
+    .preview-dracula { background:linear-gradient(135deg, #282a36 50%, #bd93f9 50%); }
+    .preview-nord { background:linear-gradient(135deg, #2e3440 50%, #88c0d0 50%); }
+    .preview-monokai { background:linear-gradient(135deg, #272822 50%, #a6e22e 50%); }
+    .preview-gray { background:linear-gradient(135deg, #f3f4f6 50%, #6b7280 50%); }
+    .preview-soft_light { background:linear-gradient(135deg, #fafafa 50%, #60a5fa 50%); }
+    .preview-soft_dark { background:linear-gradient(135deg, #1f2933 50%, #7dd3fc 50%); }
+    .preview-corporate_blue { background:linear-gradient(135deg, #eef2ff 50%, #1d4ed8 50%); }
+    .preview-emerald { background:linear-gradient(135deg, #ecfdf5 50%, #10b981 50%); }
+    .theme-name { font-weight:600; font-size:0.9rem; display:block; }
+    .theme-desc { font-size:0.75rem; color:var(--muted); display:block; margin-top:0.2rem; }

@@ -1,0 +1,3 @@
+/* .chart-card, .add-form, .table-container e .empty-state são definidos em
+   static/css/core/application.css (importado por base.css). */
+.help-text { color: var(--muted); font-size: 0.85rem; margin-bottom: 0.75rem; }

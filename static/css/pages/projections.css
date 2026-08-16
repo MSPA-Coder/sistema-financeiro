@@ -1,0 +1,24 @@
+.table-container { background:var(--card); padding:0.75rem; border-radius:var(--radius); box-shadow:0 1px 3px rgba(0,0,0,0.06); overflow-x:auto; }
+    .projection-table { width:100%; border-collapse:collapse; font-size:0.78rem; min-width:0; table-layout:fixed; }
+    .projection-table th, .projection-table td { padding:0.5rem 0.25rem; text-align:center; border-bottom:1px solid var(--border); }
+    .projection-table th { background: var(--bg-header); color: var(--muted); font-weight:600; position:sticky; top:0; z-index:2; white-space:nowrap; }
+    .projection-table .month-col { width:7rem; text-align:left; white-space:nowrap; }
+    .projection-table .value-col { width:6.2rem; text-align:right; white-space:nowrap; }
+    .projection-table .col-separator { border-left:2px solid var(--border); }
+    .projection-table .col-separator-right { border-right:2px solid var(--border); }
+    .projection-table .summary-row td { background: var(--bg-header); font-weight:700; border-top:2px solid var(--border); font-size:0.8rem; }
+    .projection-table .summary-row td:first-child { background: var(--bg-header); }
+    .month-cell { display:flex; align-items:center; gap:0.3rem; }
+    .month-link { color:inherit; text-decoration:none; }
+    .month-link:hover { color:var(--primary); text-decoration:underline; }
+    .month-drilldown { display:inline-flex; align-items:center; justify-content:center; width:1.3rem; height:1.3rem; border-radius:999px; text-decoration:none; color:var(--primary); background:var(--bg-header); border:1px solid var(--border); font-size:0.72rem; flex:0 0 auto; }
+    .month-drilldown:hover { filter:brightness(0.95); }
+    .projection-filter-row { flex-wrap:nowrap; overflow-x:visible; gap:0.4rem; }
+    .projection-filter-row .top-filter-field { flex:1 1 7.5rem; min-width:0; }
+    .projection-filter-row .top-filter-field.compact { min-width:0; }
+    .projection-filter-row .top-filter-month-range { flex:0 1 7rem; min-width:6.5rem; }
+    .projection-filter-row .top-filter-actions { flex:0 0 auto; }
+    .projection-view-field { flex:0 0 4.8rem; min-width:0; }
+    .projection-filter-row select { min-width:0; height:2.08rem; flex:0 0 2.08rem; }
+    .projection-view-actions { display:flex; align-items:center; gap:0.5rem; flex-wrap:nowrap; }
+    .projection-view-actions .mode-btn { min-width: 4.8rem; padding-left:0.45rem; padding-right:0.45rem; }

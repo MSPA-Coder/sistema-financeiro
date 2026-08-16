@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Auditoria{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/audit-log.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>Trilha de Auditoria</h1>
+        <p>Eventos recentes de auditoria operacional.</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="section-card">
+    <h3>Eventos recentes</h3>
+    <form method="get" data-auto-submit="true">
+        <div class="table-inspection-scroll">
+            <table>
+                <thead>
+                    <tr>
+                        <th>
+                            <label class="audit-filter-label" for="audit-filter-created-on">Data/Hora</label>
+                            <select id="audit-filter-created-on" class="audit-filter-select" name="created_on">
+                                <option value="">Todos</option>
+                                {% for option in audit_filter_options.created_on %}
+                                <option value="{{ option }}" {% if audit_filters.created_on == option %}selected{% endif %}>{{ option }}</option>
+                                {% endfor %}
+                            </select>
+                        </th>
+                        <th>
+                            <label class="audit-filter-label" for="audit-filter-user-name">Usuário</label>
+                            <select id="audit-filter-user-name" class="audit-filter-select" name="user_name">
+                                <option value="">Todos</option>
+                                {% for option in audit_filter_options.user_name %}
+                                <option value="{{ option }}" {% if audit_filters.user_name == option %}selected{% endif %}>{{ option }}</option>
+                                {% endfor %}
+                            </select>
+                        </th>
+                        <th>
+                            <label class="audit-filter-label" for="audit-filter-entity-name">Entidade</label>
+                            <select id="audit-filter-entity-name" class="audit-filter-select" name="entity_name">
+                                <option value="">Todos</option>
+                                {% for option in audit_filter_options.entity_name %}
+                                <option value="{{ option }}" {% if audit_filters.entity_name == option %}selected{% endif %}>{{ option }}</option>
+                                {% endfor %}
+                            </select>
+                        </th>
+                        <th>
+                            <label class="audit-filter-label" for="audit-filter-entity-id">ID</label>
+                            <select id="audit-filter-entity-id" class="audit-filter-select" name="entity_id">
+                                <option value="">Todos</option>
+                                {% for option in audit_filter_options.entity_id %}
+                                <option value="{{ option }}" {% if audit_filters.entity_id == option %}selected{% endif %}>{{ option }}</option>
+                                {% endfor %}
+                            </select>
+                        </th>
+                        <th>
+                            <label class="audit-filter-label" for="audit-filter-action">Ação</label>
+                            <select id="audit-filter-action" class="audit-filter-select" name="action">
+                                <option value="">Todos</option>
+                                {% for option in audit_filter_options.action %}
+                                <option value="{{ option }}" {% if audit_filters.action == option %}selected{% endif %}>{{ option }}</option>
+                                {% endfor %}
+                            </select>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if recent_audit_logs %}
+                    {% for log in recent_audit_logs %}
+                    <tr>
+                        <td>{{ log.created_at|date:"d/m/Y H:i:s" }}</td>
+                        <td>{{ log.user.username|default:"-" }}</td>
+                        <td>{{ log.entity_name }}</td>
+                        <td>{{ log.entity_id|default:"-" }}</td>
+                        <td>{{ log.action }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="empty-state">Nenhum evento recente de auditoria.</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+        <div class="audit-filter-clear">
+            <a href="{% url 'core:settings_audit_log' %}">Limpar filtros</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

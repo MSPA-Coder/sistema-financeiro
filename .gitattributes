@@ -1,0 +1,32 @@
+# Normaliza finais de linha: o repositorio guarda LF e o checkout entrega LF,
+# independentemente de `core.autocrlf` na maquina. Sem isto, todo commit feito
+# no Windows dispara avisos de conversao e um arquivo editado aparece como
+# alterado por inteiro so por causa do fim de linha.
+* text=auto eol=lf
+
+# Scripts executados dentro das imagens Linux dependem de LF; `sh` trata o CR
+# como parte do comando e falha antes de chegar ao interpretador.
+*.sh text eol=lf
+
+# Binarios nunca passam por conversao de fim de linha.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
+*.dump binary
+*.rar binary
+*.zip binary
+*.gz binary
+*.xls binary
+*.xlsx binary

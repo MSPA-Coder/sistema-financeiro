@@ -1,0 +1,157 @@
+{% load static %}
+{% load icons %}
+<div class="table-container u-mb-1">
+    <form id="bulkPendingLinesForm" method="post" action="{% url 'bank_statements:bulk_action_lines' %}"
+          hx-post="{% url 'bank_statements:bulk_action_lines' %}"
+          hx-target="#reconciliation-results"
+          hx-swap="innerHTML">
+        {% csrf_token %}
+        <div class="u-d-flex u-items-center u-gap-05 u-mb-075">
+            <h3 class="u-mb-0">Linhas de extrato pendentes de conciliação</h3>
+            <button type="submit" name="bulk_action" value="reconcile" class="btn-sm btn-primary"
+                    data-confirm="Conciliar todas as linhas selecionadas com seu único movimento candidato? Linhas sem candidato único (nenhum ou mais de um) ficam de fora e precisam de conciliação manual.">
+                Conciliar selecionadas
+            </button>
+            <button type="submit" name="bulk_action" value="create" class="btn-sm btn-action-edit"
+                    data-confirm="Criar lançamentos para todas as linhas selecionadas? A categoria de cada uma é sugerida automaticamente (cai em &quot;Outros&quot; quando não reconhecida).">
+                Criar selecionadas
+            </button>
+            <button type="submit" name="bulk_action" value="ignore" class="btn-sm btn-action-delete"
+                    data-confirm="Ignorar todas as linhas selecionadas?">
+                Ignorar selecionadas
+            </button>
+        </div>
+    </form>
+    <table class="tx-table">
+        <thead>
+            <tr>
+                <th><input type="checkbox" data-select-all="line_ids" aria-label="Selecionar todas"></th>
+                <th>Data</th>
+                <th>Conta</th>
+                <th>Descrição</th>
+                <th>Valor</th>
+                <th>Conciliar com movimento</th>
+                <th>Ou criar lançamento</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for line in lines %}
+            <tr id="statement-line-{{ line.id }}" {% if target_line_id == line.id %}class="edit-row is-editing"{% endif %}>
+                <td>
+                    {% if line.status == "novo" %}
+                    <input type="checkbox" name="line_ids" value="{{ line.id }}" form="bulkPendingLinesForm" aria-label="Selecionar linha">
+                    {% endif %}
+                </td>
+                <td>{{ line.statement_date|date:"d/m/Y" }}</td>
+                <td>{{ line.account.owner.name }} / {{ line.account.institution.institution_name }} / {{ line.account.account_name }}</td>
+                <td>{{ line.description }}</td>
+                <td>{{ line.amount }}</td>
+                <td>
+                    {% if line.status == "novo" %}
+                        {% if line.reconcile_candidates %}
+                        <form method="post" action="{% url 'bank_statements:reconcile' %}"
+                              hx-post="{% url 'bank_statements:reconcile' %}"
+                              hx-target="#reconciliation-results"
+                              hx-swap="innerHTML"
+                              class="edit-form u-d-flex u-gap-05 u-items-center">
+                            {% csrf_token %}
+                            <input type="hidden" name="line_id" value="{{ line.id }}">
+                            <select name="entry_id" required>
+                                {% if line.reconcile_candidates|length > 1 %}
+                                <option value="">Selecione…</option>
+                                {% endif %}
+                                {% for entry in line.reconcile_candidates %}
+                                <option value="{{ entry.id }}" {% if line.reconcile_candidates|length == 1 %}selected{% endif %}>#{{ entry.id }} - {{ entry.due_date|date:"d/m/Y" }} - {{ entry.description|default:"-" }} - {{ entry.entry_amount }}</option>
+                                {% endfor %}
+                            </select>
+                            <button type="submit" class="btn-sm btn-primary">Conciliar</button>
+                        </form>
+                        {% else %}
+                        <span class="empty-state">Sem candidato - use "Criar"</span>
+                        {% endif %}
+                    {% else %}
+                    <span class="empty-state">Status: {{ line.get_status_display }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if line.status == "novo" %}
+                    <form method="post" action="{% url 'bank_statements:create_entry_from_line' %}"
+                          hx-post="{% url 'bank_statements:create_entry_from_line' %}"
+                          hx-target="#reconciliation-results"
+                          hx-swap="innerHTML"
+                          class="edit-form u-d-flex u-gap-05 u-items-center">
+                        {% csrf_token %}
+                        <input type="hidden" name="line_id" value="{{ line.id }}">
+                        <select name="category_id" required>
+                            <option value="">Categoria…</option>
+                            {% for category in categories %}
+                            <option value="{{ category.id }}" {% if category.id == line.suggested_category_id %}selected{% endif %}>{{ category.category_name }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn-sm btn-action-edit" data-confirm="Criar um lançamento realizado a partir desta linha do extrato?">Criar</button>
+                    </form>
+                    {% else %}
+                    <span class="empty-state">-</span>
+                    {% endif %}
+                </td>
+                <td class="actions">
+                    {% if line.status == "novo" %}
+                    <form method="post" action="{% url 'bank_statements:ignore_line' %}"
+                          hx-post="{% url 'bank_statements:ignore_line' %}"
+                          hx-target="#reconciliation-results"
+                          hx-swap="innerHTML" class="u-d-inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="line_id" value="{{ line.id }}">
+                        <button type="submit" class="btn-sm btn-action-delete" data-confirm="Ignorar esta linha do extrato?">Ignorar</button>
+                    </form>
+                    {% else %}
+                    <span class="empty-state">Sem ação</span>
+                    {% endif %}
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="8" class="empty-state">Nenhuma linha pendente.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="table-container">
+    <h3 class="u-mb-075">Últimas conciliações</h3>
+    <table class="tx-table">
+        <thead>
+            <tr>
+                <th>Data</th>
+                <th>Conta</th>
+                <th>Descrição do extrato</th>
+                <th>Valor</th>
+                <th>Movimento</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for line in reconciled_lines %}
+            <tr id="statement-line-{{ line.id }}">
+                <td>{{ line.statement_date|date:"d/m/Y" }}</td>
+                <td>{{ line.account.owner.name }} / {{ line.account.institution.institution_name }} / {{ line.account.account_name }}</td>
+                <td>{{ line.description }}</td>
+                <td>{{ line.amount }}</td>
+                <td>{% if line.matched_entry %}#{{ line.matched_entry.id }} - {{ line.matched_entry.description|default:"-" }}{% else %}Movimento não encontrado{% endif %}</td>
+                <td class="actions">
+                    <form method="post" action="{% url 'bank_statements:undo_reconciliation' %}"
+                          hx-post="{% url 'bank_statements:undo_reconciliation' %}"
+                          hx-target="#reconciliation-results"
+                          hx-swap="innerHTML" class="u-d-inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="line_id" value="{{ line.id }}">
+                        <button type="submit" class="btn-sm btn-action-edit" data-confirm="Desfazer esta conciliação?">{% icon 'undo' %} Desfazer</button>
+                    </form>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="6" class="empty-state">Nenhuma conciliação recente.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>

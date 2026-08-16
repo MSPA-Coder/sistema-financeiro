@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Banking • Anexos{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>🏦 Anexar Comprovantes</h1>
+        <p>Vincule comprovantes a movimentos bancários existentes.</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="chart-card u-mb-1">
+    <h3>Anexar comprovante a movimento</h3>
+    <form method="post" action="{% url 'bank_statements:create_attachment' %}" enctype="multipart/form-data" class="top-filter-row"
+          hx-post="{% url 'bank_statements:create_attachment' %}"
+          hx-encoding="multipart/form-data"
+          hx-target="#attachment-results"
+          hx-swap="innerHTML">
+        {% csrf_token %}
+        <label class="top-filter-field compact">
+            ID do movimento
+            <input type="number" name="entry_id" min="1" required>
+        </label>
+        <label class="top-filter-field" data-ui="min-w-18">
+            Arquivo
+            <input type="file" name="attachment_file" accept=".pdf,.png,.jpg,.jpeg,.webp,.csv,.txt" required>
+        </label>
+        <div class="top-filter-actions"><button type="submit" class="btn btn-primary">Anexar</button></div>
+    </form>
+</div>
+
+<div class="chart-card">
+    <h3>Comprovantes recentes</h3>
+    <div id="attachment-results">
+        {% include "banking/_attachments_table.html" %}
+    </div>
+</div>
+{% endblock %}

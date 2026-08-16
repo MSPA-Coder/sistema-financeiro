@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% load static %}
+{% load money_filters %}
+{% load icons %}
+
+{% block title %}Fechamento Mensal{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/monthly-close.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>Fechamento Mensal</h1>
+        <p>Bloqueia alterações em movimentos de meses já consolidados.</p>
+    </div>
+</div>
+<div class="top-filter-card">
+    <form method="get" class="top-filter-row monthly-close-filter-row" data-auto-submit="true">
+        <label class="top-filter-field">
+            Conta
+            <select name="filter_account_id">
+                <option value="">Todas as Contas</option>
+                {% for account in close_accounts %}
+                <option value="{{ account.id }}" {% if monthly_close_filters.account_id == account.id %}selected{% endif %}>{{ account.owner.name }} / {{ account.institution.institution_name }} / {{ account.account_name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="top-filter-field compact">
+            Ano
+            <select name="filter_year">
+                <option value="">Todos os anos</option>
+                {% for year in monthly_close_year_options %}
+                <option value="{{ year }}" {% if monthly_close_filters.year == year %}selected{% endif %}>{{ year }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="top-filter-field compact">
+            Mês
+            <select name="filter_month">
+                <option value="">Todos os meses</option>
+                {% for month in monthly_close_month_options %}
+                <option value="{{ month }}" {% if monthly_close_filters.month == month %}selected{% endif %}>{{ month|stringformat:"02d" }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="top-filter-field compact">
+            Status
+            <select name="filter_status">
+                <option value="">Todos</option>
+                <option value="active" {% if monthly_close_filters.status == "active" %}selected{% endif %}>Fechado</option>
+                <option value="reopened" {% if monthly_close_filters.status == "reopened" %}selected{% endif %}>Reaberto</option>
+            </select>
+        </label>
+        <div class="top-filter-actions">
+            <a href="{% url 'core:settings_monthly_close' %}" class="btn btn-ghost btn-sm" data-ajax-nav>{% icon 'x' %}<span>Limpar</span></a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="section-card">
+    <h3>Fechamento Mensal</h3>
+    <form method="post" action="{% url 'core:settings_close_month' %}" class="btn-group monthly-close-form" data-ui="monthly-close-form">
+        {% csrf_token %}
+        <input type="hidden" name="filter_account_id" value="{{ monthly_close_filters.account_id|default:'' }}">
+        <input type="hidden" name="filter_year" value="{{ monthly_close_filters.year|default:'' }}">
+        <input type="hidden" name="filter_month" value="{{ monthly_close_filters.month|default:'' }}">
+        <input type="hidden" name="filter_status" value="{{ monthly_close_filters.status }}">
+        <div class="form-group" data-ui="field-260">
+            <label>Conta</label>
+            <select name="account_id" class="form-control" required>
+                <option value="">Selecione...</option>
+                {% for account in close_accounts %}
+                <option value="{{ account.id }}">{{ account.owner.name }} / {{ account.institution.institution_name }} / {{ account.account_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group" data-ui="field-180">
+            <label>Mês</label>
+            <input type="number" name="month" class="form-control" min="1" max="12" value="{{ monthly_close_default_month }}" placeholder="Mês" required>
+        </div>
+        <div class="form-group" data-ui="field-180">
+            <label>Ano</label>
+            <input type="number" name="year" class="form-control" min="2000" max="2100" value="{{ monthly_close_default_year }}" placeholder="Ano" required>
+        </div>
+        <button type="submit" class="btn btn-primary">{% icon 'close-month' %}<span>Fechar Mês</span></button>
+    </form>
+</div>
+
+<div class="section-card">
+    <h3>Fechamentos recentes</h3>
+    {% if recent_month_closes %}
+    <div class="table-inspection-scroll">
+        <table>
+            <thead>
+                <tr><th>Conta</th><th>Período</th><th>Saldo Fechado</th><th>Status</th><th>Ação</th></tr>
+            </thead>
+            <tbody>
+                {% for close in recent_month_closes %}
+                <tr>
+                    <td>{{ close.account.owner.name }} / {{ close.account.institution.institution_name }} / {{ close.account.account_name }}</td>
+                    <td>{{ close.month|stringformat:"02d" }}/{{ close.year }}</td>
+                    <td>{{ close.closing_balance|money }}</td>
+                    <td>{% if close.active %}Fechado{% else %}Reaberto{% endif %}</td>
+                    <td>
+                        {% if close.active %}
+                        <form method="post" action="{% url 'core:settings_reopen_month' %}" data-ui="reopen-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="filter_account_id" value="{{ monthly_close_filters.account_id|default:'' }}">
+                            <input type="hidden" name="filter_year" value="{{ monthly_close_filters.year|default:'' }}">
+                            <input type="hidden" name="filter_month" value="{{ monthly_close_filters.month|default:'' }}">
+                            <input type="hidden" name="filter_status" value="{{ monthly_close_filters.status }}">
+                            <input type="hidden" name="account_id" value="{{ close.account_id }}">
+                            <input type="hidden" name="year" value="{{ close.year }}">
+                            <input type="hidden" name="month" value="{{ close.month }}">
+                            <input type="text" name="reason" class="form-control" placeholder="Motivo">
+                            <button type="submit" class="btn btn-warning btn-sm">{% icon 'reopen' %}<span>Reabrir</span></button>
+                        </form>
+                        {% else %}
+                        <div class="monthly-close-reopen-info">
+                            {% if close.reopen_reason %}
+                            <small class="monthly-close-reopen-reason">Motivo: {{ close.reopen_reason }}</small>
+                            {% else %}
+                            <span>Sem ação</span>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">Nenhum fechamento mensal registrado.</p>
+    {% endif %}
+</div>
+{% endblock %}

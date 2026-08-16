@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Flask: Controle Bancário",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/run.py",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "FLASK_HOST": "0.0.0.0",
+        "FLASK_PORT": "5000",
+        "CONTROLE_BANCARIO_ALLOW_INSECURE_NETWORK": "true"
+      }
+    }
+  ]
+}

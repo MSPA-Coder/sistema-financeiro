@@ -1,0 +1,29 @@
+{% load icons %}
+{% if item.children %}
+<div class="sidebar-group{% if item.active %} is-open{% endif %}" data-sidebar-group>
+    <button
+        type="button"
+        class="sidebar-link sidebar-toggle level-{{ item.level }}{% if item.active %} active{% endif %}"
+        data-sidebar-toggle
+        aria-expanded="{% if item.active %}true{% else %}false{% endif %}"
+    >
+        <span class="sidebar-link-main">
+            <span class="sidebar-icon" aria-hidden="true">{{ item.icon }}</span>
+            <span>{{ item.label }}</span>
+        </span>
+        <span class="sidebar-chevron" aria-hidden="true">⌄</span>
+    </button>
+    <div class="sidebar-submenu">
+        {% for child in item.children %}
+            {% include "components/_nav_item.html" with item=child %}
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+<a href="{{ item.url }}" class="sidebar-link level-{{ item.level }}{% if item.active %} active{% endif %}"{% if item.active %} aria-current="page"{% endif %}>
+    <span class="sidebar-link-main">
+        <span class="sidebar-icon" aria-hidden="true">{{ item.icon }}</span>
+        <span>{{ item.label }}</span>
+    </span>
+</a>
+{% endif %}

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% load static %}
+{% load icons %}
+
+{% block title %}Banking • Importações{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/bank-imports.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>🏦 Importação de Extrato</h1>
+        <p>Importe extratos CSV, OFX, OFC, QFX ou PDF de corretora homologada e acompanhe os lotes importados.</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="chart-card u-mb-1">
+    <h3>Importar extrato bancário</h3>
+    <p class="help-text">CSV: cabeçalhos aceitos data/date, descrição/descricao/historico/description e valor/amount.
+        OFX/OFC/QFX: transações bancárias padrão. PDF: disponível apenas para corretoras homologadas
+        (extrato de conta corrente). Valores negativos são despesas; positivos são receitas.</p>
+
+    {% if not import_accounts %}
+    <p class="empty-state">Nenhuma conta disponível para você. Cadastre ou solicite acesso a uma conta antes de importar extratos.</p>
+    {% endif %}
+
+    <form method="post" action="{% url 'bank_statements:create_import' %}" enctype="multipart/form-data" class="top-filter-row"
+          hx-post="{% url 'bank_statements:create_import' %}"
+          hx-encoding="multipart/form-data"
+          hx-target="#import-results"
+          hx-swap="innerHTML"
+          hx-indicator=".htmx-indicator">
+        {% csrf_token %}
+        <label class="top-filter-field">
+            Conta
+            <select name="account_id" required>
+                <option value="">Selecione…</option>
+                {% for account in import_accounts %}
+                <option value="{{ account.id }}">{{ account.owner.name }} / {{ account.institution.institution_name }} / {{ account.account_name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="top-filter-field" data-ui="min-w-18">
+            Arquivo CSV, OFX, OFC, QFX ou PDF (corretora homologada)
+            <input type="file" name="statement_file" accept=".csv,.ofx,.ofc,.qfx,.pdf,text/csv,application/x-ofx,application/ofx,text/x-ofx,application/pdf" required>
+        </label>
+        <div class="top-filter-actions">
+            <button type="submit" class="btn btn-primary">
+                {% icon 'upload' %}<span>Importar</span>
+            </button>
+            <span class="htmx-indicator">{% icon 'loading' %}<span>Importando...</span></span>
+        </div>
+    </form>
+</div>
+
+<div id="import-results">
+    {% include "banking/_import_table.html" %}
+</div>
+{% endblock %}

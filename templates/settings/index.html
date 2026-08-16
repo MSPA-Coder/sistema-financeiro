@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% load static %}
+{% load icons %}
+
+{% block title %}Configurações{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/settings.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>Configurações</h1>
+        <p>Projeções recorrentes e parâmetros operacionais.</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="settings-split-grid">
+    <div class="section-card">
+        <h3>Configuração de Senha</h3>
+        <form method="post" action="{% url 'core:settings_update_password_policy' %}" class="settings-password-grid">
+            {% csrf_token %}
+            <div class="form-group">
+                <label>Qtde mínima de caracteres</label>
+                <input type="number" name="min_length" class="form-control" min="15" max="256" value="{{ password_policy_settings.min_length }}" required>
+            </div>
+            <div class="form-group">
+                <label>Qtde de maiúsculas</label>
+                <input type="number" name="min_uppercase" class="form-control" min="0" max="128" value="{{ password_policy_settings.min_uppercase }}" required>
+            </div>
+            <div class="form-group">
+                <label>Qtde de números</label>
+                <input type="number" name="min_numbers" class="form-control" min="0" max="128" value="{{ password_policy_settings.min_numbers }}" required>
+            </div>
+            <div class="form-group">
+                <label>Qtde de caracteres especiais</label>
+                <input type="number" name="min_special" class="form-control" min="0" max="128" value="{{ password_policy_settings.min_special }}" required>
+            </div>
+            <div class="btn-group" data-ui="settings-actions">
+                <button type="submit" class="btn btn-primary">{% icon 'save' %}<span>Salvar</span></button>
+            </div>
+        </form>
+    </div>
+
+    <div class="section-card">
+        <h3>Bloqueio de Login</h3>
+        <form method="post" action="{% url 'core:settings_update_login_lockout' %}" class="settings-password-grid">
+            {% csrf_token %}
+            <div class="form-group">
+                <label>Tentativas inválidas até bloquear</label>
+                <input type="number" name="max_failures" class="form-control" min="1" max="1000" value="{{ login_lockout_policy_settings.max_failures }}" required>
+            </div>
+            <div class="form-group">
+                <label>Tempo de bloqueio (minutos)</label>
+                <input type="number" name="lock_minutes" class="form-control" min="1" max="525600" value="{{ login_lockout_policy_settings.lock_minutes }}" required>
+            </div>
+            <div class="btn-group" data-ui="settings-actions">
+                <button type="submit" class="btn btn-primary">{% icon 'save' %}<span>Salvar</span></button>
+            </div>
+        </form>
+    </div>
+
+    <div class="section-card">
+        <h3>Projeção de Recorrências</h3>
+        <form method="post" action="{% url 'core:settings_update_recurring_projection' %}" class="btn-group" data-ui="items-end">
+            {% csrf_token %}
+            <div class="form-group" data-ui="field-220">
+                <label>Horizonte de projeção (meses)</label>
+                <input type="number" name="horizon_months" class="form-control" min="1" max="36" value="{{ projection_settings.horizon_months }}" required>
+            </div>
+            <div class="form-group" data-ui="field-220">
+                <label>Dia de execução automática</label>
+                <input type="number" name="run_day" class="form-control" min="1" max="31" value="{{ projection_settings.run_day }}" required>
+            </div>
+            <input type="hidden" name="system_start_date" value="{{ current_system_start_date|date:'Y-m-d' }}">
+            <button type="submit" class="btn btn-primary">{% icon 'save' %}<span>Salvar</span></button>
+        </form>
+        <div class="form-group" data-ui="mt-1">
+            <label>Última execução</label>
+            <input type="text" class="form-control" value="{{ last_projection_run }}" readonly>
+        </div>
+        <form method="post" action="{% url 'core:settings_run_recurring_projection' %}" data-ui="inline">
+            {% csrf_token %}
+            <input type="hidden" name="confirm_current_month" value="on">
+            <button type="submit" class="btn btn-success">{% icon 'refresh' %}<span>Executar Projeção Agora</span></button>
+        </form>
+    </div>
+
+    <div class="section-card">
+        <h3>Setup do Sistema</h3>
+        <form method="post" action="{% url 'core:settings_update_recurring_projection' %}" class="btn-group" data-ui="items-end">
+            {% csrf_token %}
+            <input type="hidden" name="horizon_months" value="{{ projection_settings.horizon_months }}">
+            <input type="hidden" name="run_day" value="{{ projection_settings.run_day }}">
+            <div class="form-group" data-ui="field-220">
+                <label>Data inicial do sistema</label>
+                <input type="date" name="system_start_date" class="form-control" value="{{ current_system_start_date|date:'Y-m-d' }}">
+            </div>
+            <button type="submit" class="btn btn-primary">{% icon 'save' %}<span>Salvar</span></button>
+        </form>
+    </div>
+</div>
+{% endblock %}

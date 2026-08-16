@@ -1,0 +1,97 @@
+/* === SUMMARY CARDS === */
+.summary-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:0.75rem; margin-bottom:1.1rem; }
+.summary-cards.summary-cards-compact .financial-card { padding:0.45rem 0.9rem; }
+.summary-cards.summary-cards-compact .financial-card .card-label { margin-bottom:0.15rem; }
+
+/* === CONTAINERS === */
+.table-container, .entry-card {
+    background:var(--card);
+    padding:0.85rem;
+    border-radius:var(--radius);
+    box-shadow:var(--shadow-sm);
+    overflow-x:auto;
+    margin-bottom:1.1rem;
+}
+
+/* === TABELA === */
+table { width:100%; border-collapse:collapse; font-size:0.83rem; min-width:850px; }
+th, td { padding:0.38rem 0.48rem; text-align:left; border-bottom:1px solid var(--border); vertical-align:middle; }
+th {
+    background:var(--bg-header);
+    color:var(--muted);
+    font-weight:700;
+    font-size:0.75rem;
+    letter-spacing:0.03em;
+    position:sticky;
+    top:0;
+    z-index:2;
+    white-space:nowrap;
+    border-bottom:1.5px solid var(--border);
+}
+.filter-header-row th { background:var(--card); border-bottom:2px solid var(--border); padding:0.26rem 0.4rem; }
+.filter-header-row select {
+    width:100%; min-width:110px;
+    padding:0.2rem 0.38rem;
+    font-size:0.78rem;
+    border:1px solid var(--border);
+    border-radius:var(--radius-sm);
+    background:var(--card);
+    color:var(--text);
+    cursor:pointer;
+    transition:border-color 0.15s, background 0.15s;
+}
+
+/* === TX TABLE SPECIFICS === */
+.tx-table .col-date   { width:7rem; }
+.tx-table .col-type   { width:5.5rem; }
+.tx-table .col-value, .tx-table .col-realized, .tx-table .col-balance { width:8rem; }
+.tx-table .filter-date select, .tx-table .filter-type select { min-width:0; width:100%; }
+.tx-table td.amount, .tx-table th.amount { text-align:right; white-space:nowrap; }
+.tx-table tr.tx-highlight { background:var(--primary-light); outline:2px solid var(--primary); outline-offset:-2px; }
+
+/* === ACOES === */
+.actions { display:flex; gap:0.2rem; white-space:nowrap; }
+
+/* === FORMULARIO DE ENTRADA === */
+.entry-card { display:none; }
+.entry-card h4 { margin:0 0 0.65rem 0; font-size:0.92rem; font-weight:700; }
+
+.tx-form {
+    display:grid;
+    grid-template-columns:repeat(4, minmax(140px, 1fr));
+    gap:0.6rem;
+    align-items:end;
+}
+.tx-form .span-2 { grid-column:span 2; }
+.tx-form .span-4 { grid-column:1 / -1; }
+.tx-form label { display:block; font-size:0.76rem; color:var(--muted); margin-bottom:0.15rem; font-weight:600; }
+.tx-form input, .tx-form select {
+    width:100%;
+    box-sizing:border-box;
+    padding:0.25rem 0.45rem;
+    border:1px solid var(--border);
+    border-radius:var(--radius-sm);
+    background:var(--card);
+    color:var(--text);
+    font-size:0.83rem;
+    transition:border-color 0.15s, box-shadow 0.15s;
+}
+.tx-form input:focus, .tx-form select:focus {
+    border-color:var(--primary) !important;
+    box-shadow:0 0 0 2.5px var(--primary-light);
+    outline:none;
+}
+.tx-form .check-line { display:flex; align-items:center; gap:0.3rem; padding-bottom:0.28rem; }
+.tx-form .check-line input { width:auto; }
+.tx-form .form-actions { display:flex; gap:0.45rem; justify-content:flex-end; }
+
+/* === EDIT ROW === */
+.edit-row { display:none; background:rgba(0,0,0,0.018); }
+.edit-row td { padding:0.8rem; }
+
+/* === RESPONSIVE === */
+@media (max-width:900px) {
+    .tx-form { grid-template-columns:1fr 1fr; }
+    .tx-form .span-2, .tx-form .span-4 { grid-column:1 / -1; }
+}
+

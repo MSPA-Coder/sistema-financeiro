@@ -1,0 +1,101 @@
+{% load l10n money_filters %}
+{% comment %}
+Campos compartilhados entre o formulário de novo lançamento e as linhas de
+edição inline da tabela. Espera no contexto: `t` (CashFlowEntry ou None),
+`form_id` (string), além de `categories`, `status_options`,
+`create_accounts`/`update_accounts`, `counterparty_accounts`,
+`system_start_date`, `today`, `new_entry_defaults` (herdados da view).
+{% endcomment %}
+<div>
+    <label>Conta</label>
+    <select name="account_id" aria-label="Conta" required>
+        <option value="">Selecione...</option>
+        {% if t %}
+        {% for acc in update_accounts %}
+        <option value="{{ acc.id }}" {% if t.account_id == acc.id %}selected{% endif %}>{{ acc.owner.name }} / {{ acc.institution.institution_name }} / {{ acc.account_name }}</option>
+        {% endfor %}
+        {% else %}
+        {% for acc in create_accounts %}
+        <option value="{{ acc.id }}" {% if new_entry_defaults.account_id == acc.id|stringformat:"s" %}selected{% endif %}>{{ acc.owner.name }} / {{ acc.institution.institution_name }} / {{ acc.account_name }}</option>
+        {% endfor %}
+        {% endif %}
+    </select>
+</div>
+<div>
+    <label>Tipo</label>
+    <select name="entry_type" aria-label="Tipo" required>
+        <option value="receita" {% if t and t.entry_type == 'receita' %}selected{% elif not t and new_entry_defaults.entry_type == 'receita' %}selected{% endif %}>Receita</option>
+        <option value="despesa" {% if t and t.entry_type == 'despesa' %}selected{% elif not t and new_entry_defaults.entry_type != 'receita' %}selected{% endif %}>Despesa</option>
+    </select>
+</div>
+<div>
+    <label>Categoria</label>
+    <select name="category_id" aria-label="Categoria" required class="category-select">
+        <option value="" data-internal="0">Selecione...</option>
+        {% for cat in categories %}
+        <option value="{{ cat.id }}" data-internal="{% if cat.is_internal %}1{% else %}0{% endif %}" {% if t and t.category_id == cat.id %}selected{% endif %}>{{ cat.category_name }}</option>
+        {% endfor %}
+    </select>
+</div>
+<div>
+    <label>Status</label>
+    <select name="status" class="status-select" aria-label="Status">
+        {% for status_value, status_label in status_options %}
+        <option value="{{ status_value }}" {% if t and t.status == status_value %}selected{% elif not t and new_entry_defaults.status == status_value %}selected{% endif %}>{{ status_label }}</option>
+        {% endfor %}
+    </select>
+</div>
+<div class="span-2">
+    <label>Descrição</label>
+    <input type="text" name="description" maxlength="255" value="{% if t %}{{ t.description }}{% endif %}" aria-label="Descricao" placeholder="Ex: Supermercado, salário...">
+</div>
+<div class="counterparty-field" data-ui="hidden">
+    <label>{% if t %}Conta contraparte{% else %}Conta destino{% endif %}</label>
+    <select name="counterparty_account_id" aria-label="Conta contraparte">
+        <option value="">Selecione...</option>
+        {% for acc in counterparty_accounts %}
+        <option value="{{ acc.id }}" {% if t and t.counterparty_account_id == acc.id %}selected{% endif %}>{{ acc.owner.name }} / {{ acc.institution.institution_name }} / {{ acc.account_name }}</option>
+        {% endfor %}
+    </select>
+</div>
+<div>
+    <label>Valor Total (R$)</label>
+    <input type="number" step="0.01" name="entry_amount" value="{% if t %}{{ t.entry_amount|unlocalize }}{% endif %}" aria-label="Valor total" required>
+</div>
+<div>
+    <label>Vencimento</label>
+    <input type="date" name="due_date" value="{% if t and t.due_date %}{{ t.due_date|date:'Y-m-d' }}{% else %}{{ new_entry_defaults.due_date }}{% endif %}" aria-label="Vencimento" {% if system_start_date %}min="{{ system_start_date }}"{% endif %} required>
+</div>
+<div>
+    <label>Parcelas</label>
+    <input type="number" name="installments" min="1" max="48" value="{% if t %}{{ t.installments }}{% else %}1{% endif %}" aria-label="Parcelas">
+</div>
+<div>
+    <label>Modo de cálculo</label>
+    <select name="calc_mode" aria-label="Modo de calculo">
+        <option value="repeat" selected>Repetir valor</option>
+        <option value="divide">Dividir valor</option>
+    </select>
+</div>
+<div class="check-line">
+    <input type="checkbox" name="is_recurring" id="recurring-{{ form_id }}" {% if t and t.is_recurring %}checked{% endif %}>
+    <label for="recurring-{{ form_id }}" data-ui="m-0">Recorrente mensal</label>
+</div>
+<div class="realized-field" data-ui="hidden">
+    <label>Data de realização</label>
+    <input type="date" name="realized_date" value="{% if t and t.realized_date %}{{ t.realized_date|date:'Y-m-d' }}{% endif %}" aria-label="Data de realizacao" {% if system_start_date %}min="{{ system_start_date }}"{% endif %}>
+</div>
+<div class="realized-field" data-ui="hidden">
+    <label>Valor realizado (R$)</label>
+    <input type="number" step="0.01" name="realized_amount" value="{% if t and t.realized_amount != None %}{{ t.realized_amount|unlocalize }}{% endif %}" aria-label="Valor realizado">
+</div>
+{% if t and t.supports_scope %}
+<div class="span-2">
+    <label>Aplicar alteração</label>
+    <select name="operation_scope" aria-label="Aplicar alteracao" required>
+        <option value="all">Todos os registros do grupo</option>
+        <option value="single" selected>Somente este registro</option>
+        <option value="current_future">Este registro e os próximos</option>
+    </select>
+</div>
+{% endif %}

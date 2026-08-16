@@ -1,0 +1,11 @@
+# Dependencias do estagio `quality` da imagem. Nunca entram no `runtime`.
+#
+# Instaladas sobre as de execucao porque a suite exercita a aplicacao real:
+# cabecalhos, CSRF e autorizacao sao verificados pelo cliente de teste do
+# proprio Django, nao por um duble.
+
+-r requirements.txt
+
+ruff>=0.12,<1
+pytest>=8.3,<9
+pytest-django>=4.9,<5

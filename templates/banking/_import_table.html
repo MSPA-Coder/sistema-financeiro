@@ -1,0 +1,29 @@
+<div class="table-container">
+    <h3 class="u-mb-075">Últimas importações</h3>
+    <table class="tx-table">
+        <thead>
+            <tr>
+                <th>Data</th>
+                <th>Conta</th>
+                <th>Arquivo</th>
+                <th>Linhas novas</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for batch in imports %}
+            <tr>
+                <td>{{ batch.created_at|date:"d/m/Y H:i" }}</td>
+                <td>{{ batch.account.owner.name }} / {{ batch.account.institution.institution_name }} / {{ batch.account.account_name }}</td>
+                <td>{{ batch.source_filename }}</td>
+                <td>{{ batch.row_count }}</td>
+                <td>{{ batch.get_status_display }}</td>
+            </tr>
+        {% empty %}
+            <tr>
+                <td colspan="5" class="empty-state">Nenhuma importação encontrada.</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>

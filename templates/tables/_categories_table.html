@@ -1,0 +1,38 @@
+{% load icons %}
+<tbody id="categoriesTableBody">
+{% for category in categories %}
+    <tr>
+        <td>{{ category.category_name }}</td>
+        <td>
+            {% if category.is_internal %}
+            <span class="badge badge-warning">Interna</span>
+            {% else %}
+            <span class="badge badge-success">Normal</span>
+            {% endif %}
+        </td>
+        <td class="actions">
+            <button type="button" class="btn btn-sm btn-icon btn-action-edit" title="Editar" data-toggle-edit="edit-category-{{ category.id }}">{% icon 'edit' %}</button>
+            <form method="post" action="{% url 'transactions:delete_category' category.id %}" data-ui="inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-icon btn-action-delete" title="Excluir" data-confirm="Excluir a categoria {{ category.category_name }}? Esta ação não pode ser desfeita.">{% icon 'delete' %}</button>
+            </form>
+        </td>
+    </tr>
+    <tr id="edit-category-{{ category.id }}" class="edit-row">
+        <td colspan="3">
+            <form method="post" action="{% url 'transactions:update_category' category.id %}" class="edit-form">
+                {% csrf_token %}
+                <input type="text" name="category_name" value="{{ category.category_name }}" aria-label="Nome da categoria" maxlength="100" required data-ui="flex-1">
+                <label data-ui="checkbox-label-inline">
+                    <input type="checkbox" name="is_internal" aria-label="Categoria interna" {% if category.is_internal %}checked{% endif %} data-ui="checkbox-reset"> Interna
+                </label>
+                <button type="submit" class="btn btn-primary btn-sm">{% icon 'save' %}<span>Salvar</span></button>
+            </form>
+        </td>
+    </tr>
+{% empty %}
+    <tr>
+        <td colspan="3" class="empty-state">Nenhuma categoria cadastrada.</td>
+    </tr>
+{% endfor %}
+</tbody>

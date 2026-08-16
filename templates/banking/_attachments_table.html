@@ -1,0 +1,30 @@
+<div class="table-scroll">
+<table class="tx-table">
+    <thead>
+        <tr>
+            <th>Movimento</th>
+            <th>Arquivo</th>
+            <th>Conta</th>
+            <th>Tamanho</th>
+            <th>Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for attachment in recent_attachments %}
+        {% with entry=attachment.entry %}
+        <tr id="attachment-{{ attachment.id }}">
+            <td>#{{ entry.id }} - {{ entry.description|default:"-" }}</td>
+            <td>{{ attachment.original_filename }}</td>
+            <td>{{ entry.account.owner.name }} / {{ entry.account.institution.institution_name }} / {{ entry.account.account_name }}</td>
+            <td>{{ attachment.file_size|filesizeformat }}</td>
+            <td>
+                <a class="btn btn-ghost btn-sm" href="{% url 'bank_statements:attachment_download' attachment.id %}">Baixar</a>
+            </td>
+        </tr>
+        {% endwith %}
+        {% empty %}
+        <tr><td colspan="5">Nenhum comprovante anexado.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>

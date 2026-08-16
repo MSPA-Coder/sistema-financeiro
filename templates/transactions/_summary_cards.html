@@ -1,0 +1,9 @@
+{% load money_filters %}
+<div id="transactions-summary" class="summary-cards summary-cards-compact"{% if oob %} hx-swap-oob="true"{% endif %}>
+    <div class="financial-card {{ saldo_inicial|card_class }}"><div class="card-label">Saldo Inicial</div><div class="card-value {{ saldo_inicial|amount_class }}">{% if dashboard_drilldown %}&nbsp;{% else %}{{ saldo_inicial|money_signed }}{% endif %}</div></div>
+    <div class="financial-card card-positive"><div class="card-label">Receitas</div><div class="card-value amount-positive">{{ total_receitas|money_signed }}</div></div>
+    <div class="financial-card card-negative"><div class="card-label">Despesas</div><div class="card-value amount-negative">{{ total_despesas|neg|money_signed }}</div></div>
+    <div class="financial-card {{ total_movimentacoes_internas|card_class }}"><div class="card-label">Mov. Internas</div><div class="card-value {{ total_movimentacoes_internas|amount_class }}">{% if dashboard_drilldown %}&nbsp;{% else %}{{ total_movimentacoes_internas|money_signed }}{% endif %}</div></div>
+    <div class="financial-card {{ saldo_final|card_class }}"><div class="card-label">Saldo Final</div><div class="card-value {{ saldo_final|amount_class }}">{% if dashboard_drilldown %}&nbsp;{% else %}{{ saldo_final|money_signed }}{% endif %}</div></div>
+    <div class="financial-card {{ geracao_caixa|card_class }}"><div class="card-label">Geração de Caixa</div><div class="card-value {{ geracao_caixa|amount_class }}">{% if dashboard_drilldown %}&nbsp;{% else %}{{ geracao_caixa|money_signed }}{% endif %}</div></div>
+</div>

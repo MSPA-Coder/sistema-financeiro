@@ -1,0 +1,12 @@
+    /* .section-card, .form-control (exceto width), .btn e .btn-group ja vem do core (application.css). */
+    .form-group { margin-bottom:1rem; } /* espacamento entre form-groups empilhados; o core so define o gap interno label/input */
+    .form-group label { display:block; margin-bottom:0.3rem; font-weight:500; color:var(--text); }
+    .form-control { width:100%; } /* core nao define width; fora de .form-group nao ha flex-stretch garantido */
+    .btn-primary:hover { opacity:0.9; } /* esmaecimento extra alem da troca de cor definida no core */
+    .btn-success { background:var(--success); color:#fff; } .btn-success:hover { opacity:0.9; }
+    .settings-split-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:1.5rem; margin-bottom:1.5rem; align-items:stretch; }
+    .settings-split-grid .section-card { margin-bottom:0; }
+    .settings-password-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:0.75rem; }
+    .settings-password-grid .form-group { margin-bottom:0; min-width:0; }
+    @media (max-width: 900px) { .settings-split-grid { grid-template-columns:1fr; } }
+    @media (max-width: 560px) { .settings-password-grid { grid-template-columns:1fr; } }

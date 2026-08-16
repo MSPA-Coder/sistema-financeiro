@@ -1,0 +1,50 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="{{ ui_theme|default:'light' }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Fluxo de Caixa{% endblock %}</title>
+    <script src="{% static 'js/core/theme-init.js' %}"></script>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231e40af'/><text y='.85em' font-size='68' x='16'>₿</text></svg>">
+
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+
+    <script src="{% static 'vendor/htmx.min.js' %}"></script>
+    <script src="{% static 'js/core/htmx-config.js' %}"></script>
+
+    {% block styles %}{% endblock %}
+</head>
+<body data-table-scroll-rows="{{ table_scroll_rows|default:15 }}">
+    <div id="ajaxLoadingBar" aria-hidden="true"></div>
+    <div class="app-shell">
+        {% include 'components/navigation.html' %}
+        <div class="app-content">
+            {% include 'components/_flash_messages.html' %}
+
+            <header id="appPageHeader" class="app-page-header">
+                <div class="app-page-header-inner">
+                    {% block page_header %}{% endblock %}
+                </div>
+            </header>
+
+            <main id="appMain">
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+    <script src="{% static 'js/core/application.js' %}"></script>
+    <script src="{% static 'vendor/chart.umd.min.js' %}"></script>
+    <div id="appConfirmModal" class="app-modal" role="dialog" aria-modal="true" aria-labelledby="appConfirmTitle">
+        <div class="modal-content">
+            <h3 id="appConfirmTitle">Confirmar operação</h3>
+            <p id="appConfirmMessage" class="modal-message">Confirme a operação para continuar.</p>
+            <div class="modal-actions">
+                <button type="button" id="appConfirmCancel" class="modal-btn modal-btn-cancel">Cancelar</button>
+                <button type="button" id="appConfirmSubmit" class="modal-btn modal-btn-danger">Confirmar</button>
+            </div>
+        </div>
+    </div>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

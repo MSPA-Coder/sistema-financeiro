@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% load static %}
+{% load icons %}
+{% block title %}Relatórios - Próximos movimentos{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/upcoming-movements.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="top-filter-card">
+    <form method="get" class="top-filter-row upcoming-filter-row" data-auto-submit="true">
+        <label class="top-filter-field top-filter-date">
+            Data inicial
+            <input type="date" name="start_date" value="{{ start_date|date:'Y-m-d' }}" {% if system_start_date %}min="{{ system_start_date|date:'Y-m-d' }}"{% endif %}>
+        </label>
+        <label class="top-filter-field top-filter-date">
+            Data final
+            <input type="date" name="end_date" value="{{ end_date|date:'Y-m-d' }}" {% if system_start_date %}min="{{ system_start_date|date:'Y-m-d' }}"{% endif %}>
+        </label>
+        <label class="top-filter-field compact">
+            Status
+            <select name="mode">
+                {% for mode_value, mode_label in status_options %}
+                <option value="{{ mode_value }}" {% if mode_value == view_mode %}selected{% endif %}>{{ mode_label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="top-filter-field">
+            Titular
+            <select name="owner_id">
+                <option value="">Todos os Titulares</option>
+                {% for owner in owners %}
+                <option value="{{ owner.id }}" {% if owner.id == current_owner_id %}selected{% endif %}>{{ owner.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="top-filter-field">
+            Instituição
+            <select name="institution_id">
+                <option value="">Todas as Instituições</option>
+                {% for bank in banks %}
+                <option value="{{ bank.id }}" {% if bank.id == current_institution_id %}selected{% endif %}>{{ bank.institution_name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="top-filter-field">
+            Conta
+            <select name="account_id">
+                <option value="">Todas as Contas</option>
+                {% for account in accounts %}
+                <option value="{{ account.id }}" {% if account.id == current_account_id %}selected{% endif %}>{{ account.account_name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <div class="top-filter-actions">
+            <a href="{% url 'reports:upcoming_movements_view' %}?mode=a_vencer&amp;start_date={{ default_start_date|date:'Y-m-d' }}&amp;end_date={{ default_end_date|date:'Y-m-d' }}"
+               class="btn btn-ghost btn-sm" data-ajax-nav>{% icon 'x' %}<span>Limpar</span></a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="report-content">
+    {% include "reports/partials/upcoming_movements_content.html" %}
+</div>
+{% endblock %}

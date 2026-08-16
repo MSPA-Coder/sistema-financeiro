@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% load static %}
+{% load icons %}
+
+{% block title %}Cadastros • Contas{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/accounts.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>Cadastros • Contas</h1>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% include "tables/_nav.html" %}
+
+<div class="chart-card">
+    <div class="section-header"><h4>Nova conta</h4></div>
+    <form method="post" action="{% url 'banking:create_account' %}" class="add-form">
+        {% csrf_token %}
+        <select name="owner_id" aria-label="Titular" required data-ui="flex-1">
+            <option value="">Selecione o titular</option>
+            {% for owner in owners %}
+                <option value="{{ owner.id }}">{{ owner.name }}</option>
+            {% endfor %}
+        </select>
+        <select name="institution_id" aria-label="Instituição" required data-ui="flex-1">
+            <option value="">Selecione a instituição</option>
+            {% for institution in institutions %}
+                <option value="{{ institution.id }}">{{ institution.institution_name }}</option>
+            {% endfor %}
+        </select>
+        <input type="text" name="account_name" aria-label="Nome da conta" placeholder="Nome da conta..." maxlength="100" required autofocus data-ui="flex-1">
+        <input type="text" name="initial_balance" aria-label="Saldo inicial" placeholder="Saldo inicial" data-ui="w-120">
+        <button type="submit" class="btn btn-primary btn-sm">{% icon 'plus' %}<span>Incluir</span></button>
+    </form>
+
+    {% if not owners %}
+    <p class="empty-state">Nenhum titular disponível para você. Cadastre um titular ou solicite acesso antes de criar contas.</p>
+    {% endif %}
+
+    <div class="table-container" data-ui="table-plain-flex">
+        <form id="accountsFilterForm" method="get">
+            {% if current_filter_owner_id %}<input type="hidden" name="filter_owner_id" value="{{ current_filter_owner_id }}">{% endif %}
+            {% if current_filter_institution_id %}<input type="hidden" name="filter_institution_id" value="{{ current_filter_institution_id }}">{% endif %}
+        </form>
+        <table>
+            <thead>
+                <tr>
+                    <th>
+                        <select aria-label="Filtrar por titular" data-filter="true" data-filter-form="accountsFilterForm" data-filter-param="filter_owner_id">
+                            <option value="">Todos os titulares</option>
+                            {% for owner in owners %}<option value="{{ owner.id }}" {% if owner.id == current_filter_owner_id %}selected{% endif %}>{{ owner.name }}</option>{% endfor %}
+                        </select>
+                    </th>
+                    <th>
+                        <select aria-label="Filtrar por instituição" data-filter="true" data-filter-form="accountsFilterForm" data-filter-param="filter_institution_id">
+                            <option value="">Todas as instituições</option>
+                            {% for institution in institutions %}<option value="{{ institution.id }}" {% if institution.id == current_filter_institution_id %}selected{% endif %}>{{ institution.institution_name }}</option>{% endfor %}
+                        </select>
+                    </th>
+                    <th>Nome</th>
+                    <th>Saldo inicial</th>
+                    <th data-ui="w-100">Ações</th>
+                </tr>
+            </thead>
+            {% include "tables/_accounts_table.html" %}
+        </table>
+    </div>
+</div>
+{% endblock %}

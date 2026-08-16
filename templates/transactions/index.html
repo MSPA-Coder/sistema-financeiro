@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% load static money_filters icons %}
+{% block title %}Lançamentos{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/transactions.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="top-filter-card">
+    <form id="contextForm" method="get" class="top-filter-row" data-auto-submit="true">
+        <input type="hidden" name="filter_type" value="{{ filter_type }}">
+        <input type="hidden" name="filter_date" value="{{ filter_date }}">
+        <input type="hidden" name="filter_category" value="{{ filter_category }}">
+        {% if operation_id %}<input type="hidden" name="operation_id" value="{{ operation_id }}">{% endif %}
+        {% if entry_id %}<input type="hidden" name="entry_id" value="{{ entry_id }}">{% endif %}
+        {% if dashboard_drilldown %}<input type="hidden" name="dashboard_drilldown" value="1">{% endif %}
+        <label class="top-filter-field compact">
+            Período
+            <input type="month" name="period" value="{{ selected_period }}" {% if system_start_date %}min="{{ system_start_date|slice:':7' }}"{% endif %}>
+        </label>
+        <label class="top-filter-field compact">
+            Status
+            <select name="mode">
+                <option value="a_vencer" {% if view_mode == 'a_vencer' %}selected{% endif %}>A vencer</option>
+                <option value="vencidos" {% if view_mode == 'vencidos' %}selected{% endif %}>Vencidos</option>
+                <option value="realizado" {% if view_mode == 'realizado' %}selected{% endif %}>Realizado</option>
+                <option value="cancelado" {% if view_mode == 'cancelado' %}selected{% endif %}>Cancelado</option>
+                <option value="todos" {% if view_mode == 'todos' %}selected{% endif %}>Todos os modos</option>
+            </select>
+        </label>
+        <label class="top-filter-field">
+            Titular
+            <select name="owner_id" aria-label="Titular">
+                <option value="">Todos os Titulares</option>
+                {% for owner in owners %}
+                <option value="{{ owner.id }}" {% if owner.id == current_owner_id %}selected{% endif %}>{{ owner.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="top-filter-field">
+            Instituição
+            <select name="institution_id" aria-label="Instituição">
+                <option value="">Todas as Instituições</option>
+                {% for bank in banks %}
+                <option value="{{ bank.id }}" {% if bank.id == current_institution_id %}selected{% endif %}>{{ bank.institution_name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="top-filter-field">
+            Conta
+            <select name="account_id" aria-label="Conta">
+                <option value="">Todas as Contas</option>
+                {% for account in accounts %}
+                <option value="{{ account.id }}" {% if account.id == current_account_id %}selected{% endif %}>{{ account.account_name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <div class="top-filter-actions">
+            <a href="{% url 'transactions:transactions_view' %}?period={{ current_period }}&amp;mode=a_vencer" class="btn btn-ghost btn-sm" title="Limpar filtros" data-ajax-nav>{% icon 'x' %}<span>Limpar</span></a>
+            {% if can_create_transactions %}<button type="button" class="btn btn-primary btn-sm" data-transaction-action="toggle-entry-form" title="Novo lançamento">{% icon 'plus' %}<span>Incluir</span></button>{% endif %}
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if can_create_transactions %}
+<div id="newTransactionCard" class="entry-card{% if new_entry_open %} is-open{% endif %}">
+    <h4>Novo lançamento</h4>
+    <form method="POST" action="{% url 'transactions:transaction_new' %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="tx-form">
+        {% csrf_token %}
+        <input type="hidden" name="keep_entry_form_open" value="1">
+        {% include "transactions/_fields.html" with t=None form_id="new" %}
+        <div class="span-4 form-actions">
+            <a href="{% url 'transactions:transactions_view' %}" class="btn btn-ghost">{% icon 'back' %}<span>Voltar</span></a>
+            <button type="submit" class="btn btn-primary">{% icon 'save' %}<span>Salvar</span></button>
+        </div>
+    </form>
+</div>
+{% endif %}
+
+{% include "transactions/_summary_cards.html" %}
+
+{% if operation_id %}
+<div class="flash info" data-ui="mb-1">Exibindo lançamentos da operação selecionada. <a href="{% url 'transactions:operations_view' %}">Voltar para Operações</a> ou <a href="{% url 'transactions:transactions_view' %}">limpar filtro</a>.</div>
+{% endif %}
+{% if entry_id %}
+<div class="flash info" data-ui="mb-1">Exibindo lançamento selecionado #{{ entry_id }}. <a href="{% url 'transactions:transactions_view' %}">limpar filtro</a>.</div>
+{% endif %}
+
+{% include "transactions/_table_body.html" %}
+
+<div id="realizeModal" class="app-modal">
+    <div class="modal-content">
+        <h3>Marcar como Realizado</h3>
+        <form id="realizeForm" method="POST" action="{% url 'transactions:mark_realized' 0 %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}">
+            {% csrf_token %}
+            <input type="hidden" id="modal_tx_id" name="tx_id">
+            <div class="form-group" data-ui="mt-075">
+                <label>Data de Realização</label>
+                <input type="date" name="realized_date" aria-label="Data de realizacao" {% if system_start_date %}min="{{ system_start_date }}"{% endif %} required>
+            </div>
+            <div class="form-group" data-ui="mt-055-mb-085">
+                <label>Valor Realizado (R$)</label>
+                <input type="number" step="0.01" name="realized_amount" aria-label="Valor realizado">
+            </div>
+            <div class="modal-actions">
+                <button type="button" data-transaction-action="close-realize" class="modal-btn modal-btn-cancel">Cancelar</button>
+                <button type="submit" class="modal-btn modal-btn-primary">Confirmar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="confirmDeleteModal" class="app-modal" role="dialog" aria-modal="true" aria-labelledby="confirmDeleteTitle">
+    <div class="modal-content">
+        <h3 id="confirmDeleteTitle" data-ui="mb-05">Confirmar exclusão</h3>
+        <p class="modal-message">Tem certeza de que deseja excluir este lançamento? Esta ação não poderá ser desfeita.</p>
+        <form id="deleteForm" method="POST" action="">
+            {% csrf_token %}
+            <input type="hidden" name="operation_scope" id="deleteOperationScope" value="all">
+            <div id="deleteScopeOptions" data-ui="delete-scope-hidden">
+                <label data-ui="delete-scope-label">Excluir</label>
+                <select id="deleteScopeSelect" class="form-control" aria-label="Escopo de exclusao">
+                    <option value="all">Todos os registros do grupo</option>
+                    <option value="single">Somente este registro</option>
+                    <option value="current_future">Este registro e os próximos</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button type="button" id="cancelDeleteButton" class="modal-btn modal-btn-cancel" data-transaction-action="close-delete" autofocus>Cancelar</button>
+                <button type="submit" class="modal-btn modal-btn-danger">Confirmar exclusão</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/transactions.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% load icons %}
+<tbody id="ownersTableBody">
+{% for owner in owners %}
+    <tr>
+        <td>{{ owner.name }}</td>
+        <td class="actions">
+            <button type="button" class="btn btn-sm btn-icon btn-action-edit" title="Editar" data-toggle-edit="edit-owner-{{ owner.id }}">{% icon 'edit' %}</button>
+            <form method="post" action="{% url 'accounts:delete_owner' owner.id %}" data-ui="inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-icon btn-action-delete" title="Excluir" data-confirm="Excluir o titular {{ owner.name }}? Esta ação não pode ser desfeita.">{% icon 'delete' %}</button>
+            </form>
+        </td>
+    </tr>
+    <tr id="edit-owner-{{ owner.id }}" class="edit-row">
+        <td colspan="2">
+            <form method="post" action="{% url 'accounts:update_owner' owner.id %}" class="edit-form">
+                {% csrf_token %}
+                <input type="text" name="name" value="{{ owner.name }}" aria-label="Nome do titular" required maxlength="100" data-ui="flex-1">
+                <button type="submit" class="btn btn-primary btn-sm">{% icon 'save' %}<span>Salvar</span></button>
+            </form>
+        </td>
+    </tr>
+{% empty %}
+    <tr>
+        <td colspan="2" class="empty-state">Nenhum titular cadastrado.</td>
+    </tr>
+{% endfor %}
+</tbody>

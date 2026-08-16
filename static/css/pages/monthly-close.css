@@ -1,0 +1,11 @@
+    /* .section-card, .form-control (exceto width), .btn e .btn-group ja vem do core (application.css). */
+    .form-group { margin-bottom:1rem; } /* espacamento entre form-groups empilhados; o core so define o gap interno label/input */
+    .form-group label { display:block; margin-bottom:0.3rem; font-weight:500; color:var(--text); }
+    .form-control { width:100%; } /* core nao define width; fora de .form-group nao ha flex-stretch garantido */
+    .btn-primary:hover { opacity:0.9; } /* esmaecimento extra alem da troca de cor definida no core */
+    .btn-danger { background:var(--danger); color:#fff; } .btn-danger:hover { opacity:0.9; }
+    table { width:100%; border-collapse:collapse; margin-top:1rem; font-size:0.9rem; }
+    th, td { padding:0.5rem; border-bottom:1px solid var(--border); text-align:left; }
+    th { background:var(--card); color:var(--muted); }
+    .monthly-close-reopen-info { display:flex; flex-direction:column; gap:0.2rem; color:var(--muted); }
+    .monthly-close-reopen-reason { color:var(--text); overflow-wrap:anywhere; }

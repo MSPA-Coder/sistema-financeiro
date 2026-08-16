@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Banking • Conciliação{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/bank-imports.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>🏦 Conciliação de Lançamentos</h1>
+        <p>Concilie linhas de extrato com movimentos e revise as conciliações recentes.</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="reconciliation-results">
+    {% include "banking/_reconciliation_tables.html" %}
+</div>
+{% endblock %}

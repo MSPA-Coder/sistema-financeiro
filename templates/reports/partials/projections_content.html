@@ -1,0 +1,66 @@
+{% load money_filters %}
+<div class="table-container">
+    <table class="projection-table">
+        <thead>
+            <tr>
+                <th class="month-col">Mês</th>
+                <th class="value-col col-separator">Receitas</th>
+                <th class="value-col">Despesas</th>
+                <th class="value-col">Geração de Caixa</th>
+                <th class="value-col col-separator">Créditos Int.</th>
+                <th class="value-col">Débitos Int.</th>
+                {% if show_status_columns %}
+                <th class="value-col col-separator">Vencidos</th>
+                <th class="value-col">Realizado</th>
+                <th class="value-col">A Vencer</th>
+                {% endif %}
+                <th class="value-col col-separator col-separator-right">Saldo</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for m in month_data %}
+            <tr>
+                <td class="month-col">
+                    <div class="month-cell">
+                        <a class="month-link" title="Ver lançamentos do mês"
+                           href="{% url 'transactions:transactions_view' %}?period={{ m.month }}&amp;mode={{ view_mode }}&amp;owner_id={{ current_owner_id|default:'' }}&amp;institution_id={{ current_institution_id|default:'' }}&amp;account_id={{ current_account_id|default:'' }}">
+                            <strong>{{ m.month }}</strong>
+                        </a>
+                        <a class="month-drilldown" title="Ver lançamentos do mês"
+                           href="{% url 'transactions:transactions_view' %}?period={{ m.month }}&amp;mode={{ view_mode }}&amp;owner_id={{ current_owner_id|default:'' }}&amp;institution_id={{ current_institution_id|default:'' }}&amp;account_id={{ current_account_id|default:'' }}">🔍</a>
+                    </div>
+                </td>
+                <td class="value-col amount-positive col-separator">{{ m.receita|money_signed }}</td>
+                <td class="value-col amount-negative">{{ m.despesa|neg|money_signed }}</td>
+                <td class="value-col {{ m.geracao|amount_class }}">{{ m.geracao|money_signed }}</td>
+                <td class="value-col amount-positive col-separator">{{ m.rec_int|money_signed }}</td>
+                <td class="value-col amount-negative">{{ m.desp_int|neg|money_signed }}</td>
+                {% if show_status_columns %}
+                <td class="value-col col-separator {{ m.geracao_atrasado|amount_class }}">{{ m.geracao_atrasado|money_signed }}</td>
+                <td class="value-col {{ m.geracao_realizada|amount_class }}">{{ m.geracao_realizada|money_signed }}</td>
+                <td class="value-col {{ m.geracao_projetada|amount_class }}">{{ m.geracao_projetada|money_signed }}</td>
+                {% endif %}
+                <td class="value-col col-separator col-separator-right {{ m.saldo|amount_class }}"><strong>{{ m.saldo|money_signed }}</strong></td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="10" data-ui="empty-2">Nenhum dado encontrado.</td></tr>
+            {% endfor %}
+            {% if period_totals %}
+            <tr class="summary-row">
+                <td class="month-col">TOTAL PERÍODO</td>
+                <td class="value-col amount-positive col-separator">{{ period_totals.receita|money_signed }}</td>
+                <td class="value-col amount-negative">{{ period_totals.despesa|neg|money_signed }}</td>
+                <td class="value-col {{ period_totals.geracao|amount_class }}">{{ period_totals.geracao|money_signed }}</td>
+                <td class="value-col amount-positive col-separator">{{ period_totals.rec_int|money_signed }}</td>
+                <td class="value-col amount-negative">{{ period_totals.desp_int|neg|money_signed }}</td>
+                {% if show_status_columns %}
+                <td class="value-col col-separator {{ period_totals.geracao_atrasado|amount_class }}">{{ period_totals.geracao_atrasado|money_signed }}</td>
+                <td class="value-col {{ period_totals.geracao_realizada|amount_class }}">{{ period_totals.geracao_realizada|money_signed }}</td>
+                <td class="value-col {{ period_totals.geracao_projetada|amount_class }}">{{ period_totals.geracao_projetada|money_signed }}</td>
+                {% endif %}
+                <td class="value-col col-separator col-separator-right {{ period_totals.saldo|amount_class }}">{{ period_totals.saldo|money_signed }}</td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>

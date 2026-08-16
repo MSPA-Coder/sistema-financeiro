@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% load static %}
+{% load icons %}
+
+{% block title %}Contas em análises{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/account-visibility.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>Contas em análises</h1>
+        <p>Preferências pessoais para Dashboard e Projeções.</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="section-card">
+    <h3>Contas</h3>
+    {% if account_visibility_options %}
+    <form method="post" action="{% url 'core:settings_visibility' %}">
+        {% csrf_token %}
+        <table class="preference-table">
+            <thead>
+                <tr>
+                    <th>Titular</th>
+                    <th>Instituição</th>
+                    <th>Conta</th>
+                    <th>Ocultar no Dashboard</th>
+                    <th>Ocultar em Projeções</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for option in account_visibility_options %}
+                <tr>
+                    <td>{{ option.account.owner.name }}</td>
+                    <td>{{ option.account.institution.institution_name }}</td>
+                    <td>{{ option.account.account_name }}</td>
+                    <td>
+                        <input type="checkbox" name="hide_from_dashboard" value="{{ option.account.id }}"
+                               {% if option.hide_from_dashboard %}checked{% endif %}>
+                    </td>
+                    <td>
+                        <input type="checkbox" name="hide_from_projections" value="{{ option.account.id }}"
+                               {% if option.hide_from_projections %}checked{% endif %}>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div data-ui="mt-09">
+            <button type="submit" class="btn btn-primary">{% icon 'save' %}<span>Salvar</span></button>
+        </div>
+    </form>
+    {% else %}
+    <p class="preference-empty">Nenhuma conta disponível para o usuário atual.</p>
+    {% endif %}
+</div>
+{% endblock %}

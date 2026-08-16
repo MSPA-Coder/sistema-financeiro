@@ -1,0 +1,19 @@
+<div class="type-bar">
+    <form id="typeForm" method="get" data-ui="filter-type-form" data-auto-submit="true">
+        {% if selected_period %}
+        <input type="hidden" name="period" value="{{ selected_period }}">
+        {% else %}
+        {% if selected_year %}<input type="hidden" name="year" value="{{ selected_year }}">{% endif %}
+        {% if selected_month %}<input type="hidden" name="month" value="{{ selected_month }}">{% endif %}
+        {% endif %}
+        {% if view_mode %}<input type="hidden" name="mode" value="{{ view_mode }}">{% endif %}
+        {% if current_owner_id %}<input type="hidden" name="owner_id" value="{{ current_owner_id }}">{% endif %}
+        {% if current_institution_id %}<input type="hidden" name="institution_id" value="{{ current_institution_id }}">{% endif %}
+        {% if current_account_id %}<input type="hidden" name="account_id" value="{{ current_account_id }}">{% endif %}
+        <span data-ui="filter-type-label">Tipo:</span>
+        <select name="filter_type" class="filter-select" aria-label="Tipo">
+            <option value="receita" {% if filter_type == 'receita' %}selected{% endif %}>Receita</option>
+            <option value="despesa" {% if filter_type == 'despesa' %}selected{% endif %}>Despesa</option>
+        </select>
+    </form>
+</div>

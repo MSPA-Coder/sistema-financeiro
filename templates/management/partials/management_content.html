@@ -1,0 +1,139 @@
+{% load money_filters %}
+{% load icons %}
+<div class="page-header-title" data-ui="mb-1">
+    <div>
+        <h1>Painel gerencial</h1>
+        <p>Tags, projetos/centros de custo e orçamento mensal por categoria. Esta camada não altera o núcleo bancário de contas, saldos e movimentos.</p>
+    </div>
+</div>
+
+{% if can_manage %}
+<div class="cards-grid" data-ui="cards-260">
+    <div class="chart-card">
+        <h3>Criar tag</h3>
+        <form method="post" action="{% url 'management:create_tag' %}" class="stack-form">
+            {% csrf_token %}
+            <input type="hidden" name="redirect_qs" value="{{ request.GET.urlencode }}">
+            <label>Nome da tag<input type="text" name="tag_name" maxlength="80" required placeholder="Ex.: reembolsável"></label>
+            <button type="submit" class="btn btn-primary">Salvar tag</button>
+        </form>
+    </div>
+    <div class="chart-card">
+        <h3>Criar projeto / centro de custo</h3>
+        <form method="post" action="{% url 'management:create_project' %}" class="stack-form">
+            {% csrf_token %}
+            <input type="hidden" name="redirect_qs" value="{{ request.GET.urlencode }}">
+            <label>Nome<input type="text" name="project_name" maxlength="120" required placeholder="Ex.: Reforma Apto"></label>
+            <label>Descrição<input type="text" name="description" maxlength="255" placeholder="Opcional"></label>
+            <button type="submit" class="btn btn-primary">Salvar projeto</button>
+        </form>
+    </div>
+    <div class="chart-card">
+        <h3>Orçamento mensal</h3>
+        <form method="post" action="{% url 'management:save_budget' %}" class="stack-form">
+            {% csrf_token %}
+            <input type="hidden" name="redirect_qs" value="{{ request.GET.urlencode }}">
+            <label>Titular
+                <select name="owner_id" required>
+                    <option value="">Selecione...</option>
+                    {% for owner in owners %}
+                    <option value="{{ owner.id }}" {% if owner.id == current_owner_id %}selected{% endif %}>{{ owner.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Categoria
+                <select name="category_id" required>
+                    <option value="">Selecione...</option>
+                    {% for category in categories %}
+                    <option value="{{ category.id }}">{{ category.category_name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Mês<input type="month" name="budget_month" value="{{ period_value }}" {% if system_start_date %}min="{{ system_start_date|date:'Y-m' }}"{% endif %} required></label>
+            <label>Valor orçado<input type="number" name="planned_amount" min="0" step="0.01" required></label>
+            <button type="submit" class="btn btn-primary">Salvar orçamento</button>
+        </form>
+    </div>
+</div>
+
+<div class="cards-grid" data-ui="cards-320">
+    <div class="chart-card">
+        <h3>Vincular tag a movimento</h3>
+        <form method="post" action="{% url 'management:assign_tag' %}" class="top-filter-row">
+            {% csrf_token %}
+            <input type="hidden" name="redirect_qs" value="{{ request.GET.urlencode }}">
+            <label class="top-filter-field compact">ID do movimento<input type="number" name="entry_id" min="1" required></label>
+            <label class="top-filter-field">Tag
+                <select name="tag_id" required>
+                    <option value="">Selecione...</option>
+                    {% for tag in tags %}
+                    <option value="{{ tag.id }}">{{ tag.tag_name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <div class="top-filter-actions"><button type="submit" class="btn btn-primary">Vincular</button></div>
+        </form>
+    </div>
+    <div class="chart-card">
+        <h3>Vincular projeto/centro de custo</h3>
+        <form method="post" action="{% url 'management:assign_project' %}" class="top-filter-row">
+            {% csrf_token %}
+            <input type="hidden" name="redirect_qs" value="{{ request.GET.urlencode }}">
+            <label class="top-filter-field compact">ID do movimento<input type="number" name="entry_id" min="1" required></label>
+            <label class="top-filter-field">Projeto
+                <select name="project_id" required>
+                    <option value="">Selecione...</option>
+                    {% for project in projects %}
+                    <option value="{{ project.id }}">{{ project.project_name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <div class="top-filter-actions"><button type="submit" class="btn btn-primary">Vincular</button></div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<div class="table-container" data-ui="mb-1">
+    <h3 data-ui="mb-075">Orçado x realizado no mês</h3>
+    <table class="tx-table">
+        <thead><tr><th>Titular</th><th>Categoria</th><th>Orçado</th><th>Realizado</th><th>Diferença</th></tr></thead>
+        <tbody>
+            {% for row in budget_rows %}
+            <tr>
+                <td>{{ row.budget.owner.name }}</td>
+                <td>{{ row.budget.category.category_name }}</td>
+                <td class="amount-neutral">{{ row.budget.planned_amount|money }}</td>
+                <td class="amount-negative">{{ row.actual_amount|money }}</td>
+                <td class="{{ row.difference|amount_class }}">{{ row.difference|money_signed }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" data-ui="empty-2">Nenhum orçamento cadastrado para o filtro atual.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="table-container">
+    <h3 data-ui="mb-075">Movimentos classificados recentemente</h3>
+    <table class="tx-table">
+        <thead><tr><th>ID</th><th>Data</th><th>Conta</th><th>Descrição</th><th>Valor</th><th>Projeto</th><th>Tags</th></tr></thead>
+        <tbody>
+            {% for entry in recent_entries %}
+            <tr>
+                <td>#{{ entry.id }}</td>
+                <td>{{ entry.due_date|date:'d/m/Y' }}</td>
+                <td>{{ entry.account.owner.name }} / {{ entry.account.account_name }}</td>
+                <td>{{ entry.description|default:'-' }}</td>
+                <td class="{{ entry.entry_amount|amount_class }}">{{ entry.entry_amount|money_signed }}</td>
+                <td>{% if entry.linked_project %}{{ entry.linked_project.project_name }}{% else %}-{% endif %}</td>
+                <td>
+                    {% for tag in entry.linked_tags %}<span class="badge">{{ tag.tag_name }}</span>{% empty %}-{% endfor %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" data-ui="empty-2">Nenhum movimento encontrado.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

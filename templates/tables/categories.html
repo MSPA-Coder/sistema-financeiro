@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% load static %}
+{% load icons %}
+
+{% block title %}Cadastros • Categorias{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/categories.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>Cadastros • Categorias</h1>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% include "tables/_nav.html" %}
+
+<div class="chart-card">
+    <div class="section-header"><h4>Nova categoria</h4></div>
+    <form method="post" action="{% url 'transactions:create_category' %}" class="add-form">
+        {% csrf_token %}
+        <input type="text" name="category_name" aria-label="Nome da categoria" placeholder="Nome da categoria..." maxlength="100" required autofocus data-ui="flex-1">
+        <label data-ui="checkbox-label-inline">
+            <input type="checkbox" name="is_internal" aria-label="Categoria interna" data-ui="checkbox-reset"> Interna
+        </label>
+        <button type="submit" class="btn btn-primary btn-sm">{% icon 'plus' %}<span>Incluir</span></button>
+    </form>
+
+    <div class="table-container" data-ui="table-plain-flex">
+        <form id="categoriesFilterForm" method="get">
+            {% if current_filter_type %}<input type="hidden" name="filter_type" value="{{ current_filter_type }}">{% endif %}
+        </form>
+        <table>
+            <thead>
+                <tr>
+                    <th>Nome</th>
+                    <th>
+                        <select aria-label="Filtrar por tipo" data-filter="true" data-filter-form="categoriesFilterForm" data-filter-param="filter_type">
+                            <option value="">Todos os tipos</option>
+                            <option value="normal" {% if current_filter_type == 'normal' %}selected{% endif %}>Normal</option>
+                            <option value="internal" {% if current_filter_type == 'internal' %}selected{% endif %}>Interna</option>
+                        </select>
+                    </th>
+                    <th data-ui="w-100">Ações</th>
+                </tr>
+            </thead>
+            {% include "tables/_categories_table.html" %}
+        </table>
+    </div>
+</div>
+{% endblock %}

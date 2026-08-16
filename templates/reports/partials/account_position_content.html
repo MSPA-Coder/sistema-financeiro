@@ -1,0 +1,39 @@
+{% load money_filters %}
+<div class="table-container">
+    <table class="report-table">
+        <thead>
+            <tr>
+                <th>Titular</th>
+                <th>Instituição</th>
+                <th>Conta</th>
+                <th class="value-col">Saldo Inicial</th>
+                <th class="value-col">Geração de Caixa</th>
+                <th class="value-col">Saldo Final</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in report_rows %}
+            <tr>
+                <td>{{ row.owner_name }}</td>
+                <td>{{ row.institution_name }}</td>
+                <td>
+                    <a href="{% url 'transactions:transactions_view' %}?period={{ selected_period }}&amp;mode={{ view_mode }}&amp;owner_id={{ current_owner_id|default:'' }}&amp;institution_id={{ current_institution_id|default:'' }}&amp;account_id={{ row.account_id }}">{{ row.account_name }}</a>
+                </td>
+                <td class="value-col {{ row.start_balance|amount_class }}">{{ row.start_balance|money_signed }}</td>
+                <td class="value-col {{ row.cash_generation|amount_class }}">{{ row.cash_generation|money_signed }}</td>
+                <td class="value-col {{ row.end_balance|amount_class }}"><strong>{{ row.end_balance|money_signed }}</strong></td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" data-ui="empty-2">Nenhum dado encontrado.</td></tr>
+            {% endfor %}
+            {% if report_rows %}
+            <tr class="summary-row">
+                <td colspan="3">TOTAL</td>
+                <td class="value-col {{ total_start|amount_class }}">{{ total_start|money_signed }}</td>
+                <td class="value-col {{ total_generation|amount_class }}">{{ total_generation|money_signed }}</td>
+                <td class="value-col {{ total_end|amount_class }}">{{ total_end|money_signed }}</td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>

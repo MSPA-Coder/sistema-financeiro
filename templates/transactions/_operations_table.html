@@ -1,0 +1,114 @@
+{% load money_filters icons %}
+<div id="operations-results">
+<div class="chart-card">
+    <div class="section-header">
+        <h4>{% if operation_id %}Operação selecionada{% else %}Operações com parcelas, recorrência ou contraparte{% endif %}</h4>
+        <span data-ui="muted-sm">{{ operations|length }} operação(ões) nesta página de {{ total_operations }}</span>
+    </div>
+
+    <div class="table-container">
+        <table class="operation-table">
+            <thead>
+                <tr>
+                    <th>Tipo</th>
+                    <th>Descrição</th>
+                    <th>Conta de Origem</th>
+                    <th>Conta de Destino</th>
+                    <th>Categoria</th>
+                    <th>Início</th>
+                    <th>Fim</th>
+                    <th>Qtde.</th>
+                    <th class="amount">Valor</th>
+                    <th>Status</th>
+                    <th data-ui="w-140">Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for op in operations %}
+                <tr>
+                    <td>
+                        <span class="badge {% if op.operation_type == 'installment' %}badge-installment{% elif op.operation_type == 'recurring' %}badge-recurring{% else %}badge-internal{% endif %}">{{ op.operation_label }}</span>
+                    </td>
+                    <td>
+                        {{ op.description }}
+                        <div class="operation-id">{{ op.operation_id }}</div>
+                    </td>
+                    <td>{{ op.origin_account }}</td>
+                    <td>{{ op.destination_account }}</td>
+                    <td>{{ op.category }}</td>
+                    <td>{{ op.start_date|date:"d/m/Y"|default:"-" }}</td>
+                    <td>{{ op.end_date|date:"d/m/Y"|default:"-" }}</td>
+                    <td>{{ op.entries_count }}</td>
+                    <td class="amount">{{ op.total_amount|money }}</td>
+                    <td>{{ op.status_summary }}</td>
+                    <td class="actions">
+                        {% if operation_id == op.operation_id and show_entries %}
+                        <a class="btn btn-sm btn-icon btn-action-view" title="Ocultar detalhes" href="?operation_type={{ operation_type }}&amp;status={{ status }}&amp;start={{ start }}&amp;end={{ end }}&amp;page_size={{ page_size }}">{% icon 'eye' %}</a>
+                        {% else %}
+                        <a class="btn btn-sm btn-icon btn-action-view" title="Ver operação" href="?operation_id={{ op.operation_id }}&amp;show_entries=1&amp;operation_type={{ operation_type }}&amp;status={{ status }}&amp;start={{ start }}&amp;end={{ end }}&amp;page_size={{ page_size }}">{% icon 'eye' %}</a>
+                        {% endif %}
+                        <a class="btn btn-sm btn-icon btn-action-edit" title="Ver lançamentos" href="{% url 'transactions:transactions_view' %}?operation_id={{ op.operation_id }}">{% icon 'link' %}</a>
+                    </td>
+                </tr>
+                <tr id="op-{{ forloop.counter }}" class="details-row" {% if show_entries and operation_id == op.operation_id %}data-ui="table-row"{% endif %}>
+                    <td colspan="11">
+                        <div class="details-box">
+                            <div class="details-title">Lançamentos vinculados a esta operação</div>
+                            <div class="table-container">
+                                <table class="nested-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Vencimento</th>
+                                            <th>Tipo</th>
+                                            <th>Conta</th>
+                                            <th>Categoria</th>
+                                            <th>Descrição</th>
+                                            <th>Parcela</th>
+                                            <th class="amount">Valor</th>
+                                            <th>Status</th>
+                                            <th>Origem</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for entry in op.entries %}
+                                        <tr>
+                                            <td>{{ entry.due_date|date:"d/m/Y"|default:"-" }}</td>
+                                            <td>{{ entry.get_entry_type_display }}</td>
+                                            <td>{{ entry.account.owner.name }} / {{ entry.account.institution.institution_name }} / {{ entry.account.account_name }}</td>
+                                            <td>{{ entry.category.category_name }}</td>
+                                            <td>{{ entry.description|default:"-" }}</td>
+                                            <td>{% if entry.installments > 1 %}{{ entry.current_installment }}/{{ entry.installments }}{% else %}-{% endif %}</td>
+                                            {% if entry.entry_type == 'receita' %}
+                                            <td class="amount {{ entry.entry_amount|amount_class }}">{{ entry.entry_amount|money_signed }}</td>
+                                            {% else %}
+                                            <td class="amount {{ entry.entry_amount|neg|amount_class }}">{{ entry.entry_amount|neg|money_signed }}</td>
+                                            {% endif %}
+                                            <td>{{ entry.get_status_display }}</td>
+                                            <td>{% if entry.source_entry_id %}Contraparte de #{{ entry.source_entry_id }}{% else %}Original{% endif %}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="11" class="empty-state">Nenhuma operação encontrada.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if total_operations > page_size %}
+    <div data-ui="operation-actions">
+        {% if page > 1 %}
+        <a class="btn btn-ghost btn-sm" href="?page={{ page|add:"-1" }}&amp;page_size={{ page_size }}&amp;operation_type={{ operation_type }}&amp;status={{ status }}&amp;start={{ start }}&amp;end={{ end }}">Página anterior</a>
+        {% endif %}
+        {% if has_next_page %}
+        <a class="btn btn-ghost btn-sm" href="?page={{ page|add:"1" }}&amp;page_size={{ page_size }}&amp;operation_type={{ operation_type }}&amp;status={{ status }}&amp;start={{ start }}&amp;end={{ end }}">Próxima página</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+</div>

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Dashboard • Fluxo de Caixa{% endblock %}
+{% load static icons %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/dashboard.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="top-filter-card">
+    <form method="get" class="top-filter-row" data-auto-submit="true">
+        <label class="top-filter-field compact">
+            Período
+            <input type="month" name="period" value="{{ selected_period }}" {% if system_start_date %}min="{{ system_start_date|date:'Y-m' }}"{% endif %}>
+        </label>
+        <label class="top-filter-field compact">
+            Modo
+            <select name="mode">
+                {% for value, label in view_mode_options %}
+                <option value="{{ value }}" {% if value == view_mode %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="top-filter-field">
+            Titular
+            <select name="owner_id">
+                <option value="">Todos</option>
+                {% for owner in owners %}
+                <option value="{{ owner.id }}" {% if current_owner_id == owner.id %}selected{% endif %}>{{ owner.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="top-filter-field">
+            Instituicao
+            <select name="institution_id">
+                <option value="">Todas</option>
+                {% for bank in banks %}
+                <option value="{{ bank.account__institution_id }}" {% if current_institution_id == bank.account__institution_id %}selected{% endif %}>{{ bank.account__institution__institution_name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="top-filter-field">
+            Conta
+            <select name="account_id">
+                <option value="">Todas</option>
+                {% for account in accounts %}
+                <option value="{{ account.account_id }}" {% if current_account_id == account.account_id %}selected{% endif %}>{{ account.account__account_name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <div class="top-filter-actions">
+            <a href="{% url 'dashboard:dashboard' %}?period={{ today_period }}&mode=todos" class="btn btn-ghost btn-sm" data-ajax-nav>{% icon 'x' %}<span>Limpar</span></a>
+        </div>
+    </form>
+</div>
+
+{% endblock %}
+
+{% block content %}
+{% include "dashboard/_content.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/dashboard.js' %}"></script>
+{% endblock %}

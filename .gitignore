@@ -1,0 +1,84 @@
+# ---------------------------------------------------------------------------
+# Nucleo comum aos quatro projetos. Mantenha esta secao em sincronia; o que for
+# especifico deste projeto vai no fim do arquivo.
+# ---------------------------------------------------------------------------
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+ENV/
+
+# Caches de ferramentas
+.cache/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Empacotamento
+build/
+dist/
+*.egg
+*.egg-info/
+
+# Segredos e certificados
+.env
+.env.*
+!.env.example
+!.env.docker.example
+.certs/
+.secrets/
+
+# Dados locais: nunca versionados, nem mesmo vazios
+backups/
+instance/
+logs/*
+!logs/.gitkeep
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Ferramentas de agente
+.codex/
+.agents/
+.claude/
+
+# Editor: a configuracao compartilhada e versionada, o resto nao
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/extensions.json
+!.vscode/launch.json
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# ---------------------------------------------------------------------------
+# Especifico do ControleBancario (Django)
+# ---------------------------------------------------------------------------
+
+# Uploads de comprovantes e assets coletados por `collectstatic`: ambos sao
+# conteudo de runtime, servidos a partir de volume, nunca do repositorio.
+media/
+staticfiles/
+
+# Relatorio gerado pela migracao Flask -> Django.
+migration_report.json

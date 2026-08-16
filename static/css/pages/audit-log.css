@@ -1,0 +1,8 @@
+    /* .section-card ja vem do core (application.css). */
+    table { width:100%; border-collapse:collapse; margin-top:1rem; font-size:0.9rem; }
+    th, td { padding:0.36rem 0.45rem; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
+    th { background:var(--card); color:var(--muted); }
+    .audit-filter-label { display:block; margin-bottom:0.3rem; font-size:0.75rem; color:var(--muted); }
+    .audit-filter-select { width:100%; padding:0.22rem 0.4rem; border:1px solid var(--border); border-radius:4px; background:var(--card); color:var(--text); }
+    .audit-filter-clear { margin-top:0.6rem; text-align:right; }
+    .audit-filter-clear a { color:var(--muted); text-decoration:none; font-size:0.82rem; }

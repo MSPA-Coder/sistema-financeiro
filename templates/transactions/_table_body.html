@@ -1,0 +1,89 @@
+{% load static l10n money_filters icons %}
+{# Partial HTMX: corpo da tabela de lançamentos + cartões de resumo (OOB). #}
+<div class="table-container" id="transactions-table-container">
+    <table class="tx-table">
+        <thead>
+            <tr>
+                <th class="col-date">{% if view_mode == 'realizado' %}Realização{% else %}Vencimento{% endif %}</th>
+                <th class="col-type">Tipo</th>
+                <th>Categoria</th>
+                <th>Descrição</th>
+                <th>Parcelas</th>
+                <th class="amount col-value">Valor</th>
+                {% if view_mode == 'realizado' %}<th class="amount col-realized">Valor Realizado</th>{% endif %}
+                {% if show_balance_column %}<th class="amount col-balance">Saldo</th>{% endif %}
+                {% if show_actions_column %}<th>Ações</th>{% endif %}
+            </tr>
+            <tr class="filter-header-row">
+                <th class="filter-date">
+                    <select name="filter_date" aria-label="Filtrar por data" data-filter-form="contextForm" data-filter-param="filter_date">
+                        <option value="">Todas</option>
+                        {% for d in available_dates %}<option value="{{ d }}" {% if d == filter_date %}selected{% endif %}>{{ d|slice:"8:10" }}/{{ d|slice:"5:7" }}</option>{% endfor %}
+                    </select>
+                </th>
+                <th class="filter-type">
+                    <select name="filter_type" aria-label="Filtrar por tipo" data-filter-form="contextForm" data-filter-param="filter_type">
+                        <option value="">Todos</option>
+                        {% for t in available_types %}<option value="{{ t }}" {% if t == filter_type %}selected{% endif %}>{{ t|capfirst }}</option>{% endfor %}
+                    </select>
+                </th>
+                <th>
+                    <select name="filter_category" aria-label="Filtrar por categoria" data-filter-form="contextForm" data-filter-param="filter_category">
+                        <option value="">Todas</option>
+                        {% for c in available_categories %}<option value="{{ c }}" {% if c == filter_category %}selected{% endif %}>{{ c }}</option>{% endfor %}
+                    </select>
+                </th>
+                <th colspan="{{ filter_actions_colspan }}" data-ui="filter-clear-header">
+                    <button type="button" class="btn btn-ghost btn-sm" data-clear-filters="contextForm" data-clear-params="filter_date,filter_type,filter_category,operation_id,entry_id" title="Limpar filtros">{% icon 'x' %}<span>Limpar</span></button>
+                </th>
+            </tr>
+        </thead>
+        <tbody id="transactions-tbody" hx-trigger="tableRefresh from:body" hx-get="{% url 'transactions:transactions_view' %}?{{ request.GET.urlencode }}" hx-target="#transactions-table-container" hx-swap="outerHTML">
+            {% for t in txs %}
+            <tr id="tx-row-{{ t.id }}" class="{% if entry_id and t.id == entry_id %}tx-highlight{% endif %}">
+                <td>{% if t.display_date %}{{ t.display_date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                <td>{{ t.entry_type|capfirst }}</td>
+                <td>{{ t.category.category_name }}</td>
+                <td>{{ t.description }}</td>
+                <td>{% if t.installments > 1 %}{{ t.current_installment }}/{{ t.installments }}{% else %}-{% endif %}</td>
+                {% if t.status == 'realizado' and t.realized_amount != None %}{% if t.entry_type == 'receita' %}<td class="amount {{ t.realized_amount|amount_class }}">{{ t.realized_amount|money_signed }}</td>{% else %}<td class="amount {{ t.realized_amount|neg|amount_class }}">{{ t.realized_amount|neg|money_signed }}</td>{% endif %}{% else %}{% if t.entry_type == 'receita' %}<td class="amount {{ t.entry_amount|amount_class }}">{{ t.entry_amount|money_signed }}</td>{% else %}<td class="amount {{ t.entry_amount|neg|amount_class }}">{{ t.entry_amount|neg|money_signed }}</td>{% endif %}{% endif %}
+                {% if view_mode == 'realizado' %}
+                <td class="amount {% if t.realized_amount %}{% if t.entry_type == 'receita' %}{{ t.realized_amount|amount_class }}{% else %}{{ t.realized_amount|neg|amount_class }}{% endif %}{% else %}amount-neutral{% endif %}">
+                    {% if t.realized_amount %}{% if t.entry_type == 'receita' %}{{ t.realized_amount|money_signed }}{% else %}{{ t.realized_amount|neg|money_signed }}{% endif %}{% else %}-{% endif %}
+                </td>
+                {% endif %}
+                {% if show_balance_column %}
+                <td class="amount {{ t.running_balance|default:0|amount_class }}">{% if t.is_last_of_day %}{{ t.running_balance|money_signed }}{% endif %}</td>
+                {% endif %}
+                {% if show_actions_column %}
+                <td class="actions">
+                    {% if can_update_transactions %}<button type="button" class="btn btn-sm btn-icon btn-action-edit" title="Editar" data-toggle-edit="tx-edit-{{ t.id }}">{% icon 'edit' %}</button>{% endif %}
+                    {% if can_delete_transactions %}<button type="button" class="btn btn-sm btn-icon btn-action-delete" title="Excluir" data-transaction-action="delete" data-delete-url="{% url 'transactions:transaction_delete' t.id %}?{{ request.GET.urlencode }}" data-delete-supports-scope="{% if t.supports_scope %}true{% else %}false{% endif %}">{% icon 'delete' %}</button>{% endif %}
+                    {% if t.supports_scope and can_view_operations and t.bank_operation_id %}<a class="btn btn-sm btn-icon btn-action-view" title="Ver operação" href="{% url 'transactions:operations_view' %}?operation_id={{ t.bank_operation.operation_key }}&amp;show_entries=1">{% icon 'link' %}</a>{% endif %}
+                    {% if can_realize_transactions and t.status != 'realizado' and t.status != 'cancelado' %}<button type="button" class="btn btn-sm btn-icon btn-action-realize" title="Realizar" data-transaction-action="realize" data-transaction-id="{{ t.id }}" data-due-date="{{ t.due_date|date:'Y-m-d' }}" data-planned-value="{{ t.entry_amount|unlocalize }}">{% icon 'check' %}</button>{% endif %}
+                </td>
+                {% endif %}
+            </tr>
+            {% if can_update_transactions and show_actions_column %}
+            <tr id="tx-edit-{{ t.id }}" class="edit-row">
+                <td colspan="{{ table_columns }}">
+                    <form method="POST" action="{% url 'transactions:transaction_edit' t.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="tx-form">
+                        {% csrf_token %}
+                        {% with form_id="edit-"|add:t.id|stringformat:"s" %}
+                        {% include "transactions/_fields.html" with t=t form_id=form_id %}
+                        {% endwith %}
+                        <div class="span-4 form-actions">
+                            <button type="button" class="btn btn-ghost btn-sm" data-toggle-edit="tx-edit-{{ t.id }}" data-toggle-force="false">{% icon 'x' %}<span>Cancelar</span></button>
+                            <button type="submit" class="btn btn-primary btn-sm">{% icon 'save' %}<span>Salvar</span></button>
+                        </div>
+                    </form>
+                </td>
+            </tr>
+            {% endif %}
+            {% empty %}
+            <tr><td colspan="{{ table_columns }}" data-ui="empty-2">Nenhum lançamento encontrado.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% if render_oob_summary %}{% include "transactions/_summary_cards.html" with oob=True %}{% endif %}

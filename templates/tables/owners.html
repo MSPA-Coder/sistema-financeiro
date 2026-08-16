@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% load static %}
+{% load icons %}
+
+{% block title %}Cadastros • Titulares{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/owners.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>Cadastros • Titulares</h1>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% include "tables/_nav.html" %}
+
+<div class="chart-card">
+    <div class="section-header"><h4>Novo titular</h4></div>
+    <form method="post" action="{% url 'accounts:create_owner' %}" class="add-form">
+        {% csrf_token %}
+        <input type="text" name="name" aria-label="Nome do titular" placeholder="Nome do titular..." maxlength="100" required autofocus data-ui="flex-1">
+        <button type="submit" class="btn btn-primary btn-sm">{% icon 'plus' %}<span>Incluir</span></button>
+    </form>
+
+    <div class="table-container" data-ui="table-plain-flex">
+        <table>
+            <thead>
+                <tr>
+                    <th>Nome</th>
+                    <th data-ui="w-100">Ações</th>
+                </tr>
+            </thead>
+            {% include "tables/_owners_table.html" %}
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,37 @@
+.upcoming-filter-row { flex-wrap:nowrap; overflow-x:visible; gap:0.4rem; }
+    .upcoming-filter-row .top-filter-field { flex:1 1 7.5rem; min-width:0; }
+    .upcoming-filter-row .top-filter-date { flex:0 1 8.2rem; min-width:7.4rem; }
+    .upcoming-filter-row .top-filter-actions { flex:0 0 auto; }
+    .decision-strip { display:grid; grid-template-columns:minmax(14rem, 1.35fr) repeat(4, minmax(8rem, 1fr)); gap:0.65rem; margin-bottom:0.75rem; }
+    .decision-card { background:var(--card); border:1px solid var(--border); border-left:4px solid var(--border); border-radius:var(--radius); padding:0.7rem 0.75rem; min-width:0; box-shadow:0 1px 3px rgba(0,0,0,0.05); }
+    .decision-card strong { display:block; font-size:0.78rem; color:var(--muted); font-weight:600; margin-bottom:0.2rem; }
+    .decision-card .decision-value { font-size:1rem; font-weight:700; line-height:1.25; overflow-wrap:anywhere; }
+    .decision-card .decision-note { color:var(--muted); font-size:0.76rem; margin-top:0.25rem; }
+    .decision-card.success { border-left-color:var(--semantic-positive); }
+    .decision-card.warning { border-left-color:var(--warning); }
+    .decision-card.danger { border-left-color:var(--semantic-negative); }
+    .decision-card.neutral { border-left-color:var(--muted); }
+    .table-container { background:var(--card); padding:0.65rem; border-radius:var(--radius); box-shadow:0 1px 3px rgba(0,0,0,0.06); overflow-x:auto; margin-bottom:0.75rem; }
+    .report-table { width:100%; border-collapse:collapse; font-size:0.78rem; min-width:54rem; table-layout:fixed; }
+    .report-table th, .report-table td { padding:0.38rem 0.35rem; text-align:left; border-bottom:1px solid var(--border); vertical-align:top; }
+    .report-table th { background:var(--bg-header); color:var(--muted); font-weight:600; position:sticky; top:0; z-index:2; white-space:nowrap; }
+    .report-table .value-col { text-align:right; white-space:nowrap; width:7.8rem; }
+    .report-table .date-col { width:5.8rem; white-space:nowrap; }
+    .report-table .account-col { width:11rem; }
+    .report-table .status-col { width:9rem; }
+    .report-table .summary-row td { background:var(--bg-header); font-weight:700; border-top:2px solid var(--border); }
+    .action-pill { display:inline-flex; align-items:center; max-width:100%; border-radius:999px; padding:0.14rem 0.45rem; font-size:0.72rem; font-weight:700; white-space:nowrap; }
+    .action-pill.success { color:var(--semantic-positive); background:color-mix(in srgb, var(--semantic-positive) 12%, transparent); }
+    .action-pill.warning { color:var(--warning); background:color-mix(in srgb, var(--warning) 14%, transparent); }
+    .action-pill.danger { color:var(--semantic-negative); background:color-mix(in srgb, var(--semantic-negative) 12%, transparent); }
+    .action-pill.neutral { color:var(--muted); background:var(--bg-header); }
+    .action-message { display:block; color:var(--muted); font-size:0.72rem; margin-top:0.18rem; line-height:1.25; }
+    .line-description { color:var(--muted); font-size:0.72rem; margin-top:0.12rem; overflow-wrap:anywhere; }
+    .internal-badge { display:inline-flex; align-items:center; border:1px solid var(--border); border-radius:999px; padding:0.05rem 0.35rem; font-size:0.68rem; color:var(--muted); margin-left:0.25rem; white-space:nowrap; }
+    @media (max-width: 1100px) {
+        .upcoming-filter-row { flex-wrap:wrap; }
+        .decision-strip { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 700px) {
+        .decision-strip { grid-template-columns:1fr; }
+    }

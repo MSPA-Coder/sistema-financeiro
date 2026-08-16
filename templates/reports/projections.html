@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% load static %}
+{% load money_filters %}
+{% load icons %}
+{% block title %}Projeções{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/projections.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="top-filter-card">
+    <form method="get" class="top-filter-row projection-filter-row" data-auto-submit="true">
+        <label class="top-filter-field compact top-filter-month-range">
+            Mês inicial
+            <input type="month" name="start_month" value="{{ start_month }}" {% if system_start_date %}min="{{ system_start_date|date:'Y-m' }}"{% endif %}>
+        </label>
+        <label class="top-filter-field compact top-filter-month-range">
+            Mês final
+            <input type="month" name="end_month" value="{{ end_month }}" {% if system_start_date %}min="{{ system_start_date|date:'Y-m' }}"{% endif %}>
+        </label>
+        <label class="top-filter-field compact">
+            Status
+            <select name="mode">
+                {% for mode_value, mode_label in view_mode_options %}
+                <option value="{{ mode_value }}" {% if mode_value == view_mode %}selected{% endif %}>{{ mode_label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="top-filter-field">
+            Titular
+            <select name="owner_id">
+                <option value="">Todos os Titulares</option>
+                {% for owner in owners %}
+                <option value="{{ owner.id }}" {% if owner.id == current_owner_id %}selected{% endif %}>{{ owner.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="top-filter-field">
+            Instituição
+            <select name="institution_id">
+                <option value="">Todas as Instituições</option>
+                {% for bank in banks %}
+                <option value="{{ bank.id }}" {% if bank.id == current_institution_id %}selected{% endif %}>{{ bank.institution_name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="top-filter-field">
+            Conta
+            <select name="account_id">
+                <option value="">Todas as Contas</option>
+                {% for account in accounts %}
+                <option value="{{ account.id }}" {% if account.id == current_account_id %}selected{% endif %}>{{ account.account_name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <div class="top-filter-field compact projection-view-field" title="Alterna entre a visão resumida e a visão com colunas de status.">
+            <input type="hidden" name="detail" value="{{ projection_detail }}">
+            <span>Visão</span>
+            <div class="mode-toggle projection-view-actions">
+                {% if projection_detail == 'summary' %}
+                <button type="button" class="mode-btn active" data-projection-detail="complete">Completa</button>
+                {% else %}
+                <button type="button" class="mode-btn active" data-projection-detail="summary">Resumo</button>
+                {% endif %}
+            </div>
+        </div>
+        <div class="top-filter-actions">
+            <a href="{% url 'reports:projections_view' %}?mode=a_vencer&amp;start_month={{ default_start_month }}&amp;end_month={{ default_end_month }}&amp;detail=complete"
+               class="btn btn-ghost btn-sm" data-ajax-nav>{% icon 'x' %}<span>Limpar</span></a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="report-content">
+    {% include "reports/partials/projections_content.html" %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/projections.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,21 @@
+.charts-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(480px,1fr)); gap:1rem; margin-bottom:1.1rem; }
+    .dashboard-secondary-charts { margin-top:1.1rem; }
+    .chart-card { background:var(--card); padding:1rem; border-radius:var(--radius); box-shadow:0 1px 3px rgba(0,0,0,0.06); min-height:300px; display:flex; flex-direction:column; }
+    .chart-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:0.65rem; }
+    .chart-header h4 { margin:0; color:var(--muted); font-size:0.95rem; font-weight:600; }
+    .no-data { text-align:center; padding:3rem; color:var(--muted); font-style:italic; }
+    canvas { max-height:300px; width:100% !important; }
+    .health-card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:0 1px 3px rgba(0,0,0,0.06); padding:0.9rem 1.1rem; margin-bottom:1.1rem; }
+    .health-title { display:flex; align-items:center; gap:0.55rem; margin:0 0 0.65rem; color:var(--text); font-size:1.05rem; font-weight:800; }
+    .health-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; margin-bottom:1rem; }
+    .health-metric { border:1px solid var(--border); border-radius:var(--radius); background:var(--bg-page); padding:0.52rem 0.7rem; text-align:center; min-width:0; }
+    .health-metric-label { color:var(--muted); font-size:0.78rem; letter-spacing:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .health-metric-value { font-size:1.65rem; line-height:1.1; font-weight:800; margin-top:0.18rem; }
+    .health-metric-note { color:var(--muted); font-size:0.78rem; line-height:1.25; margin-top:0.18rem; }
+    .health-trend-main { display:flex; align-items:baseline; justify-content:center; gap:0.45rem; }
+    .health-trend-unit { color:var(--muted); font-size:0.82rem; font-weight:600; }
+    .health-section-title { color:var(--muted); font-size:0.86rem; font-weight:800; margin:0.85rem 0 0.35rem; }
+    .health-chart-row { min-height:170px; }
+    .health-chart-row canvas { max-height:180px; }
+    @media(max-width:700px) { .charts-grid { grid-template-columns:1fr; } }
+    @media(max-width:820px) { .health-summary { grid-template-columns:1fr; } .health-metric-label { white-space:normal; } }

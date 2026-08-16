@@ -1,0 +1,15 @@
+.section-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; border-bottom:1px solid var(--border); padding-bottom:0.5rem; gap:1rem; flex-wrap:wrap; }
+    .section-header h4 { margin:0; color:var(--muted); font-size:0.95rem; font-weight:600; }
+    /* .actions ja vem do core (application.css). */
+    .empty-state { text-align:center; padding:1.5rem; color:var(--muted); font-style:italic; }
+    .badge { display:inline-flex; align-items:center; padding:2px 7px; border-radius:999px; font-size:0.75rem; font-weight:700; }
+    .badge-installment { background:var(--warning); color:#fff; }
+    .badge-recurring { background:var(--primary); color:#fff; }
+    .badge-internal { background:var(--success); color:#fff; }
+    .details-row { display:none; background:rgba(0,0,0,0.02); }
+    .details-box { padding:0.52rem 0.7rem; }
+    .details-title { color:var(--muted); font-size:0.85rem; margin-bottom:0.5rem; font-weight:600; }
+    .nested-table { font-size:0.8rem; min-width:850px; }
+    .amount { text-align:right; white-space:nowrap; }
+    .operation-id { color:var(--muted); font-size:0.72rem; word-break:break-all; }
+    .operation-table { min-width:1100px; }

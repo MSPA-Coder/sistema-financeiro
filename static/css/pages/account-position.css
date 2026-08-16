@@ -1,0 +1,10 @@
+.table-container { background:var(--card); padding:0.65rem; border-radius:var(--radius); box-shadow:0 1px 3px rgba(0,0,0,0.06); overflow-x:auto; }
+    .report-table { width:100%; border-collapse:collapse; font-size:0.8rem; min-width:0; table-layout:fixed; }
+    .report-table th, .report-table td { padding:0.35rem 0.35rem; text-align:left; border-bottom:1px solid var(--border); }
+    .report-table th { background: var(--bg-header); color: var(--muted); font-weight:600; position:sticky; top:0; z-index:2; white-space:nowrap; }
+    .report-table .value-col { text-align:right; white-space:nowrap; width:9rem; }
+    .report-table .summary-row td { background: var(--bg-header); font-weight:700; border-top:2px solid var(--border); }
+    .projection-filter-row { flex-wrap:nowrap; overflow-x:visible; gap:0.4rem; }
+    .projection-filter-row .top-filter-field { flex:1 1 7.5rem; min-width:0; }
+    .projection-filter-row .top-filter-field.compact { min-width:0; }
+    .projection-filter-row .top-filter-actions { flex:0 0 auto; }

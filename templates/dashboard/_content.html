@@ -1,0 +1,58 @@
+<div class="charts-grid">
+    <div class="chart-card">
+        <div class="chart-header">
+            <h4>Distribuição por Categoria - {% if filter_type == 'receita' %}Receitas{% else %}Despesas{% endif %}</h4>
+            {% include 'components/filter_type.html' %}
+        </div>
+        {% if chart_cats_labels %}
+        <canvas id="catChart" width="800" height="300"></canvas>
+        {% else %}<div class="no-data">Sem lançamentos no mês</div>{% endif %}
+    </div>
+
+    <div class="chart-card">
+        <div class="chart-header"><h4>📉 Evolução do Saldo</h4></div>
+        {% if daily_dates %}<canvas id="dailyChart" width="800" height="300"></canvas>{% else %}<div class="no-data">Sem dados diários</div>{% endif %}
+    </div>
+</div>
+
+<section class="health-card" aria-label="Saúde Financeira: 6 meses antes e 6 depois do mês selecionado">
+    <h2 class="health-title">Saúde Financeira — 6 Meses Antes e Depois</h2>
+    <div class="health-summary">
+        <div class="health-metric">
+            <div class="health-metric-label">Cobertura Média</div>
+            <div class="health-metric-value {{ financial_health.average_coverage_class }}">{{ financial_health.average_coverage }}</div>
+            <div class="health-metric-note">receita cobre a despesa</div>
+        </div>
+        <div class="health-metric">
+            <div class="health-metric-label">Meses Positivos</div>
+            <div class="health-metric-value amount-positive">{{ financial_health.positive_months }} / {{ financial_health.total_months }}</div>
+            <div class="health-metric-note">fecharam com sobra</div>
+        </div>
+        <div class="health-metric">
+            <div class="health-metric-label">Tendência (últimos 3m vs 3m anteriores)</div>
+            <div class="health-trend-main {{ financial_health.trend_class }}">
+                <span class="health-metric-value">{{ financial_health.trend_symbol }} {{ financial_health.trend_percent }}</span>
+                <span class="health-trend-unit">geração</span>
+            </div>
+            <div class="health-metric-note {{ financial_health.trend_class }}">{{ financial_health.trend_caption }}</div>
+        </div>
+    </div>
+    <div class="health-section-title">Índice de Cobertura Mensal (receita ÷ despesa)</div>
+    <div class="health-chart-row"><canvas id="coverageChart" width="800" height="180"></canvas></div>
+    <div class="health-section-title">Geração Líquida Mensal (receita − despesa) + média móvel 3m</div>
+    <div class="health-chart-row"><canvas id="generationChart" width="800" height="180"></canvas></div>
+</section>
+
+<div class="charts-grid dashboard-secondary-charts">
+    <div class="chart-card">
+        <div class="chart-header"><h4>📈 Projeção - {{ selected_period }}</h4></div>
+        {% if chart_proj_months %}<canvas id="projChart" width="800" height="300"></canvas>{% else %}<div class="no-data">Sem dados</div>{% endif %}
+    </div>
+
+    <div class="chart-card">
+        <div class="chart-header"><h4>📈 Evolução Mensal - {% if view_mode == 'realizado' %}Realizado{% else %}{{ view_mode|title }}{% endif %}</h4></div>
+        <canvas id="evolutionChart" width="800" height="300"></canvas>
+    </div>
+</div>
+
+{{ chart_data|json_script:"dashChartData" }}

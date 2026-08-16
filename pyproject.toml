@@ -1,0 +1,68 @@
+# Configuracao de ferramentas do ControleBancario.
+#
+# A secao [tool.ruff] e comum aos quatro projetos do mantenedor; so
+# `target-version` e `known-first-party` variam, porque dependem da versao de
+# Python da imagem e do layout de pacotes. Mantenha o resto em sincronia.
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+extend-exclude = [".venv", "backups", "instance", "staticfiles", "media"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # Pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501",   # comprimento de linha: responsabilidade do formatador
+    "RUF012", # `Meta` de model Django usa listas de classe por design
+    # Exceção registrada ao conjunto compartilhado: parte deste repositório usa
+    # tabulação, herdada da conversão Flask -> Django. Normalizar geraria ~330
+    # alterações de indentação sem mudar comportamento, e o ruído esconderia as
+    # mudanças de segurança em revisão. A dívida fica anotada aqui; o dia em que
+    # `ruff format` passar no repositório inteiro, estas duas linhas saem.
+    "W191",   # tab-indentation
+    "W293",   # blank-line-with-whitespace
+]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "accounts",
+    "bank_statements",
+    "banking",
+    "core",
+    "dashboard",
+    "financeiro",
+    "management",
+    "reports",
+    "transactions",
+    "scripts",
+    "tests",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Migracoes Django sao geradas: a ordem de import e as expressoes longas de
+# schema vem da ferramenta, e reescreve-las a mao so afasta o arquivo do que
+# seria regerado.
+"*/migrations/*.py" = ["E501", "I001"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "financeiro.settings"
+testpaths = ["tests"]
+addopts = "-q --tb=short"
+# Sem isto o pytest coloca `tests/` no sys.path em vez da raiz, e os apps
+# Django nao sao importaveis dentro do conteiner.
+pythonpath = ["."]

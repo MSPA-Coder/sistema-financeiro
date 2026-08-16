@@ -1,0 +1,20 @@
+# Override de desenvolvimento, carregado automaticamente pelo `docker compose`
+# quando presente ao lado de compose.yaml.
+#
+# Monta o repositorio do host sobre o codigo da imagem e troca o comando do
+# servico `web` para o servidor de desenvolvimento do Django: recarrega
+# sozinho a cada mudanca de arquivo Python. Templates ja atualizam na hora
+# mesmo sem isso, por nao haver cache de templates configurado.
+#
+# Para rodar exatamente o que foi construido na imagem (gunicorn, sem bind
+# mount, mais proximo de producao), ignore este arquivo:
+#   docker compose -f compose.yaml up
+#
+# Para rodar Ruff e a suite minima, use o perfil `quality` de compose.yaml.
+services:
+  web:
+    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+    environment:
+      DEBUG: "True"
+    volumes:
+      - .:/workspace

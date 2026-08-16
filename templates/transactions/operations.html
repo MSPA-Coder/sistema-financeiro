@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% load static icons %}
+
+{% block title %}Operações{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/operations.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="top-filter-card">
+    <form method="get" class="top-filter-row" data-auto-submit="true">
+        <input type="hidden" name="page_size" value="{{ page_size }}">
+        <label class="top-filter-field compact">
+            Início a partir de
+            <input type="date" name="start" value="{{ start }}" aria-label="Início a partir de" {% if system_start_date %}min="{{ system_start_date }}"{% endif %}>
+        </label>
+        <label class="top-filter-field compact">
+            Fim até
+            <input type="date" name="end" value="{{ end }}" aria-label="Fim até" {% if system_start_date %}min="{{ system_start_date }}"{% endif %}>
+        </label>
+        <label class="top-filter-field">
+            Tipo da operação
+            <select name="operation_type" aria-label="Tipo da operação">
+                <option value="">Todos</option>
+                {% for value, label in operation_labels.items %}
+                <option value="{{ value }}" {% if operation_type == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="top-filter-field">
+            Status
+            <select name="status" aria-label="Status">
+                <option value="">Todos</option>
+                {% for s in statuses %}
+                <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s|capfirst }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <div class="top-filter-actions">
+            <a href="{% url 'transactions:operations_view' %}" class="btn btn-ghost btn-sm" data-ajax-nav>{% icon 'x' %}<span>Limpar</span></a>
+            <a href="{% url 'transactions:transactions_view' %}" class="btn btn-primary btn-sm">{% icon 'back' %}<span>Voltar</span></a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if operation_id %}
+<div class="flash info">Exibindo a operação relacionada ao lançamento selecionado. <a href="{% url 'transactions:operations_view' %}">Limpar seleção</a>.</div>
+{% endif %}
+
+{% include "transactions/_operations_table.html" %}
+{% endblock %}

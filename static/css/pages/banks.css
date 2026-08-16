@@ -1,0 +1,7 @@
+/* .section-header is defined in base.css. */
+    /* .add-form is defined in base.css. */
+    /* .edit-row NAO tem equivalente em core/application.css (so existe .edit-row.is-editing la); mantido. */
+    .edit-row { display:none; background:rgba(0,0,0,0.02); }
+    /* .edit-form is defined in base.css. */
+    /* .empty-state (texto/padding/cor) ja vem do core; so o italico e especifico desta pagina. */
+    .empty-state { font-style:italic; }

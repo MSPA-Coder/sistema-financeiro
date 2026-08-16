@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+{% load static icons dict_filters %}
+
+{% block title %}Permissões{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/permissions.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="permissions-header">
+    <div>
+        <h1>Administração de Permissões</h1>
+    </div>
+    <form method="get" class="permissions-user-form" data-auto-submit="true">
+        <label for="user_id">Usuário
+            <select id="user_id" name="user_id" class="form-control">
+                {% for u in users %}
+                <option value="{{ u.id }}" {% if selected_user and selected_user.id == u.id %}selected{% endif %}>{{ u.username }} — {{ u.get_user_type_display }}</option>
+                {% endfor %}
+            </select>
+        </label>
+    </form>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="permissions-layout">
+    {% if not selected_user %}
+    <div class="section-card full-width">
+        <div class="empty-state">Cadastre pelo menos um usuário antes de configurar permissões.</div>
+    </div>
+    {% else %}
+
+    <div class="section-card full-width permissions-compact-card">
+        <h4>Resumo efetivo do usuário selecionado</h4>
+        <p class="permissions-help">Este resumo considera permissões marcadas e dependências automáticas. Administrators continuam com acesso total por regra sistêmica.</p>
+        <div class="summary-grid">
+            <div class="summary-card"><strong>{{ summary.owner_view_count }}</strong><span>titulares com visualização</span></div>
+            <div class="summary-card"><strong>{{ summary.owner_create_count }}</strong><span>titulares com criação</span></div>
+            <div class="summary-card"><strong>{{ summary.owner_update_count }}</strong><span>titulares com edição</span></div>
+            <div class="summary-card"><strong>{{ summary.owner_delete_count }}</strong><span>titulares com exclusão</span></div>
+            <div class="summary-card"><strong>{{ summary.function_allowed_count }}/{{ summary.function_total_count }}</strong><span>permissões funcionais marcadas</span></div>
+            <div class="summary-card"><strong>{{ summary.critical_allowed_count }}/{{ summary.critical_total_count }}</strong><span>permissões críticas marcadas</span></div>
+        </div>
+        {% if summary.missing_recommended_permissions %}
+        <p class="permissions-help">Faltam permissões comuns do perfil Operador: {{ summary.missing_recommended_permissions|join:", " }}.</p>
+        {% endif %}
+    </div>
+
+    <div class="section-card full-width permissions-compact-card">
+        <h4>Perfis rápidos</h4>
+        <p class="permissions-help">Use como ponto de partida. Após aplicar um perfil, ajuste permissões individuais se necessário.</p>
+        <div class="quick-profiles">
+            {% for profile_key, profile in profile_definitions.items %}
+            <form method="post" class="profile-card">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="apply_profile">
+                <input type="hidden" name="user_id" value="{{ selected_user.id }}">
+                <input type="hidden" name="profile_key" value="{{ profile_key }}">
+                <h5>{{ profile.label }}</h5>
+                <p>{{ profile.description }}</p>
+                <button type="submit" class="btn btn-primary btn-sm">Aplicar perfil {{ profile.label }}</button>
+            </form>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="permissions-paired-grid">
+        {% if can_manage_users %}
+        <div class="section-card">
+            <div class="section-header"><h4>Usuários</h4></div>
+            <form method="post" class="add-form">
+                {% csrf_token %}
+                <input type="hidden" name="table" value="users">
+                <input type="hidden" name="action" value="add">
+                <input type="text" name="username" aria-label="Nome do usuário" placeholder="Nome do usuário..." maxlength="150" required data-ui="flex-1">
+                <select name="user_type" aria-label="Tipo de usuário" required data-ui="w-170">
+                    {% for user_type in user_type_options %}
+                    <option value="{{ user_type }}">{{ user_type }}</option>
+                    {% endfor %}
+                </select>
+                <input type="password" name="password" aria-label="Senha inicial" placeholder="Senha inicial..." maxlength="256" required data-ui="flex-1">
+                <input type="password" name="password_confirm" aria-label="Confirmar senha inicial" placeholder="Confirmar senha..." maxlength="256" required data-ui="flex-1">
+                <button type="submit" class="btn btn-primary btn-sm">{% icon 'plus' %}<span>Incluir</span></button>
+            </form>
+            <div class="table-container" data-ui="table-plain-flex">
+                <table>
+                    <thead><tr><th>Nome</th><th>Tipo</th><th data-ui="w-100">Ações</th></tr></thead>
+                    <tbody>
+                        {% for u in users %}
+                        <tr>
+                            <td>{{ u.username }}</td>
+                            <td>{{ u.get_user_type_display }}</td>
+                            <td class="actions">
+                                <button type="button" class="btn btn-primary btn-sm" data-toggle-edit="edit-user-{{ u.id }}">{% icon 'edit' %}<span>Editar</span></button>
+                                <form method="post" data-ui="inline">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="table" value="users">
+                                    <input type="hidden" name="action" value="delete">
+                                    <input type="hidden" name="id" value="{{ u.id }}">
+                                    <button type="submit" class="btn btn-danger btn-sm" data-confirm="Excluir usuário {{ u.username }}? Esta ação não poderá ser desfeita.">{% icon 'delete' %}<span>Excluir</span></button>
+                                </form>
+                            </td>
+                        </tr>
+                        <tr id="edit-user-{{ u.id }}" class="edit-row"><td colspan="3">
+                            <form method="post" class="edit-form">
+                                {% csrf_token %}
+                                <input type="hidden" name="table" value="users">
+                                <input type="hidden" name="action" value="edit">
+                                <input type="hidden" name="id" value="{{ u.id }}">
+                                <input type="text" name="username" value="{{ u.username }}" aria-label="Nome do usuário" maxlength="150" required data-ui="flex-1">
+                                <select name="user_type" aria-label="Tipo de usuário" required data-ui="w-170">
+                                    {% for user_type in user_type_options %}
+                                    <option value="{{ user_type }}" {% if u.user_type == user_type %}selected{% endif %}>{{ user_type }}</option>
+                                    {% endfor %}
+                                </select>
+                                <input type="password" name="password" aria-label="Nova senha" placeholder="Nova senha (opcional)" maxlength="256" data-ui="flex-1">
+                                <input type="password" name="password_confirm" aria-label="Confirmar nova senha" placeholder="Confirmar nova senha" maxlength="256" data-ui="flex-1">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" name="must_change_password" {% if u.must_change_password %}checked{% endif %}>
+                                    Trocar no próximo login
+                                </label>
+                                <button type="submit" class="btn btn-primary btn-sm">{% icon 'save' %}<span>Salvar</span></button>
+                            </form>
+                        </td></tr>
+                        {% empty %}
+                        <tr><td colspan="3" class="empty-state">Nenhum usuário cadastrado.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="section-card">
+            <div class="section-header" data-ui="section-header-start">
+                <div>
+                    <h4>Usuário x Titular</h4>
+                    <p class="permissions-help">Controla o escopo dos dados financeiros. Criar, editar ou excluir pressupõe visualizar o titular.</p>
+                </div>
+            </div>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="save_owner_access">
+                <input type="hidden" name="user_id" value="{{ selected_user.id }}">
+                <div class="matrix-toolbar">
+                    <input type="search" class="filter-input" data-filter-target="owner-row" aria-label="Filtrar titulares" placeholder="Filtrar titulares...">
+                    <div class="button-row">
+                        <button type="button" class="btn btn-sm" data-owner-bulk="view">Marcar Ver</button>
+                        <button type="button" class="btn btn-sm" data-owner-bulk="create">Marcar Criar</button>
+                        <button type="button" class="btn btn-sm" data-owner-bulk="update">Marcar Editar</button>
+                        <button type="button" class="btn btn-sm" data-owner-bulk="delete">Marcar Excluir</button>
+                        <button type="button" class="btn btn-warning btn-sm" data-owner-clear>Limpar titulares</button>
+                    </div>
+                </div>
+                <div class="table-container" data-ui="table-plain">
+                    <table class="matrix-table">
+                        <thead><tr><th>Titular</th><th>Ver</th><th>Criar</th><th>Editar</th><th>Excluir</th></tr></thead>
+                        <tbody>
+                            {% for owner in owners %}
+                            {% with access=owner_access_by_owner_id|get_item:owner.id %}
+                            <tr data-filter-row="owner-row">
+                                <td>{{ owner.name }}</td>
+                                <td><input type="checkbox" data-owner-action="view" name="owner_{{ owner.id }}_view" aria-label="Permitir ver {{ owner.name }}" {% if access.can_view %}checked{% endif %}></td>
+                                <td><input type="checkbox" data-owner-action="create" name="owner_{{ owner.id }}_create" aria-label="Permitir criar para {{ owner.name }}" {% if access.can_create %}checked{% endif %}></td>
+                                <td><input type="checkbox" data-owner-action="update" name="owner_{{ owner.id }}_update" aria-label="Permitir editar {{ owner.name }}" {% if access.can_update %}checked{% endif %}></td>
+                                <td><input type="checkbox" data-owner-action="delete" name="owner_{{ owner.id }}_delete" aria-label="Permitir excluir {{ owner.name }}" {% if access.can_delete %}checked{% endif %}></td>
+                            </tr>
+                            {% endwith %}
+                            {% empty %}
+                            <tr><td colspan="5" class="empty-state">Nenhum titular cadastrado.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="form-footer">
+                    <button type="submit" class="btn btn-primary">Salvar acessos por titular</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="section-card full-width">
+        <div class="section-header" data-ui="section-header-start">
+            <div>
+                <h4>Usuário x Permissões Funcionais</h4>
+                <p class="permissions-help">Controla quais telas e ações o usuário pode executar. Permissões críticas ficam destacadas.</p>
+            </div>
+        </div>
+
+        <div class="warning-panel">
+            Permissões críticas incluem exclusão de lançamentos, otimização de banco, gestão de usuários e gestão de permissões.
+            O sistema impede que o usuário ativo remova o próprio acesso a <span class="permission-key">permissions.manage</span>.
+        </div>
+
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="save_function_permissions">
+            <input type="hidden" name="user_id" value="{{ selected_user.id }}">
+            <div class="matrix-toolbar">
+                <input type="search" class="filter-input" data-filter-target="permission-row" aria-label="Filtrar permissões" placeholder="Filtrar permissões...">
+                <div class="button-row">
+                    <button type="button" class="btn btn-sm" data-permission-bulk="all">Marcar todas visíveis</button>
+                    <button type="button" class="btn btn-warning btn-sm" data-permission-clear>Limpar visíveis</button>
+                </div>
+            </div>
+            <div class="table-container" data-ui="table-plain">
+                {% for section in permission_sections %}
+                <div class="permission-group-title">{{ section.name }}</div>
+                {% if section.has_subgroups %}<div class="permission-menu-branch">{% endif %}
+                <table class="matrix-table permission-table-root">
+                    <thead>
+                        <tr>
+                            <th data-ui="w-347">Permissão</th>
+                            <th>Descrição</th>
+                            <th data-ui="w-110">Permitido</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for group in section.groups %}
+                        {% if group.has_subgroup %}
+                        <tr class="permission-subgroup-row">
+                            <td colspan="3"><div class="permission-subgroup-title">{{ group.name }}</div></td>
+                        </tr>
+                        {% endif %}
+                        {% for permission in group.permissions %}
+                        {% with is_critical=permission.name|in_set:critical_permission_keys implied_keys=permission_dependency_keys|get_item:permission.name %}
+                        <tr data-filter-row="permission-row" class="permission-row{% if group.has_subgroup %} permission-row-child{% endif %}{% if is_critical %} permission-critical{% endif %}">
+                            <td class="permission-key">
+                                {{ permission.name }}
+                                {% if is_critical %}<span class="critical-badge">crítica</span>{% endif %}
+                            </td>
+                            <td class="permission-description">{{ permission.description }}</td>
+                            <td>
+                                {% if protect_self_permissions_manage and permission.name == 'permissions.manage' %}
+                                <input type="hidden" name="permission_{{ permission.name }}" value="on">
+                                <input type="checkbox" data-permission-checkbox data-permission-key="{{ permission.name }}" data-protected-permission="permissions.manage" checked disabled aria-disabled="true" aria-label="Permissão {{ permission.name }}" title="Você não pode remover o próprio acesso a permissions.manage.">
+                                {% else %}
+                                <input type="checkbox"
+                                       data-permission-checkbox
+                                       data-permission-key="{{ permission.name }}"
+                                       {% if implied_keys %}data-implies-permissions="{{ implied_keys|join:"," }}"{% endif %}
+                                       name="permission_{{ permission.name }}"
+                                       aria-label="Permissão {{ permission.name }}"
+                                       {% if permission.name in allowed_permission_keys %}checked{% endif %}>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endwith %}
+                        {% endfor %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% if section.has_subgroups %}</div>{% endif %}
+                {% empty %}
+                <div class="empty-state">Nenhuma permissão funcional cadastrada.</div>
+                {% endfor %}
+            </div>
+            <div class="form-footer">
+                <button type="submit" class="btn btn-primary">Salvar permissões funcionais</button>
+            </div>
+        </form>
+    </div>
+
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/permissions.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% load icons %}
+<nav id="appSidebar" class="app-sidebar-nav" aria-label="Navegação principal">
+    <div class="sidebar-brand">
+        <div class="sidebar-brand-mark">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+            </svg>
+        </div>
+        <div class="sidebar-brand-text">
+            <div class="sidebar-brand-title-row">
+                <div class="sidebar-brand-title">Controle Bancário</div>
+                <button type="button" class="sidebar-privacy-toggle" data-privacy-toggle aria-pressed="false" aria-label="Ocultar valores" title="Ocultar valores">
+                    <span data-privacy-icon-visible aria-hidden="true">{% icon 'eye' %}</span>
+                    <span data-privacy-icon-hidden hidden aria-hidden="true">{% icon 'eye-off' %}</span>
+                </button>
+            </div>
+            <div class="sidebar-brand-subtitle">Fluxo de Caixa</div>
+        </div>
+    </div>
+
+    <div class="sidebar-menu">
+        {% for item in app_menu_items %}
+            {% include "components/_nav_item.html" with item=item %}
+        {% endfor %}
+    </div>
+
+    {% if current_active_user %}
+    <div class="sidebar-user-card">
+        <span class="sidebar-user-avatar">{{ current_active_user.username|slice:':1'|upper }}</span>
+        <span class="sidebar-user-info">
+            <strong>{{ current_active_user.username }}</strong>
+            <small>{{ current_active_user.user_type }}</small>
+        </span>
+        <span class="sidebar-user-actions">
+            <form method="post" action="{% url 'logout' %}">
+                {% csrf_token %}
+                <button
+                    type="submit"
+                    class="btn btn-primary btn-sm sidebar-user-action-btn"
+                    hx-post="{% url 'logout' %}"
+                    hx-include="closest form"
+                >Sair</button>
+            </form>
+        </span>
+    </div>
+    {% endif %}
+</nav>

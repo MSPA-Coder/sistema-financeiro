@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% load icons %}
+
+{% block title %}Banco de Dados{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>Banco de Dados</h1>
+        <p>Diagnóstico de integridade e otimização (VACUUM ANALYZE).</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="section-card">
+    <h3>Manutenção</h3>
+    <p>Backup e restauração são operações administrativas externas à aplicação (fora de escopo desta tela).</p>
+    <div class="form-group">
+        <label>Última otimização</label>
+        <input type="text" class="form-control" value="{{ last_optimize_info }}" aria-label="Última otimização" readonly>
+    </div>
+    <div class="btn-group">
+        <form method="post" action="{% url 'core:settings_health_check' %}" class="inline-form">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary">{% icon 'database' %}<span>Health Check</span></button>
+        </form>
+        <form method="post" action="{% url 'core:settings_optimize' %}" class="inline-form">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-success">{% icon 'refresh' %}<span>Otimizar (VACUUM ANALYZE)</span></button>
+        </form>
+    </div>
+</div>
+
+<div class="section-card">
+    <h3>Inspeção de Dados</h3>
+    <form method="get" class="btn-group form-spaced" data-auto-submit="true">
+        <select name="table_name" class="form-control form-control-fit" aria-label="Tabela para inspeção">
+            <option value="">Selecione uma tabela...</option>
+            {% for t in available_tables %}
+            <option value="{{ t }}" {% if t == selected_table %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+        </select>
+    </form>
+    {% if table_rows %}
+    <div class="table-inspection-scroll">
+        <table>
+            <thead><tr>{% for col in table_columns %}<th>{{ col }}</th>{% endfor %}</tr></thead>
+            <tbody>
+                {% for row in table_rows %}
+                <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% elif selected_table %}
+    <p class="text-muted">Tabela vazia.</p>
+    {% endif %}
+</div>
+{% endblock %}

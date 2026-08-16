@@ -1,0 +1,50 @@
+.permissions-layout { display:grid; grid-template-columns: 1fr; gap:1rem; }
+    .permissions-paired-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap:1rem; }
+    .permissions-compact-card { min-height:0 !important; }
+    .permissions-header { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; }
+    .permissions-user-form { display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; }
+    .permissions-help { color:var(--muted); font-size:0.88rem; line-height:1.45; margin-top:0.25rem; }
+    .section-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; border-bottom:1px solid var(--border); padding-bottom:0.5rem; }
+    .add-form { display:flex; gap:0.5rem; flex-wrap:wrap; align-items:flex-end; margin-bottom:1rem; background:rgba(0,0,0,0.02); padding:0.55rem; border-radius:6px; }
+    /* .edit-row NAO tem equivalente em core/application.css (so existe .edit-row.is-editing la); mantido. */
+    .edit-row { display:none; background:rgba(0,0,0,0.02); }
+    .edit-form { display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap; padding:0.5rem; }
+    .edit-form .checkbox-label { display:inline-flex; align-items:center; gap:0.35rem; color:var(--muted); font-size:0.78rem; font-weight:600; }
+    .add-form input[type="text"], .add-form input[type="password"], .edit-form input[type="text"], .edit-form input[type="password"] { flex:1 1 10rem !important; min-width:0; max-width:100%; }
+    .add-form select, .edit-form select { flex:0 1 10rem; min-width:0; max-width:100%; }
+    .add-form .btn, .edit-form .btn { flex:0 0 auto; }
+    .summary-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:0.45rem; margin-top:0.55rem; }
+    .summary-card { border:1px solid var(--border); border-radius:8px; padding:0.5rem 0.65rem; background:rgba(148, 163, 184, 0.07); }
+    .summary-card strong { display:block; font-size:1.05rem; margin-bottom:0.05rem; }
+    .summary-card span { color:var(--muted); font-size:0.76rem; }
+    .quick-profiles { display:grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap:0.45rem; margin-top:0.55rem; }
+    .profile-card { border:1px solid var(--border); border-radius:8px; padding:0.55rem 0.65rem; background:var(--card); display:flex; flex-direction:column; gap:0.35rem; }
+    .profile-card h5 { margin:0; font-size:0.9rem; }
+    .profile-card p { margin:0; color:var(--muted); font-size:0.82rem; line-height:1.35; }
+    .matrix-toolbar { display:flex; justify-content:space-between; align-items:center; gap:0.75rem; flex-wrap:wrap; margin:0.75rem 0; }
+    .matrix-toolbar .button-row { display:flex; gap:0.5rem; flex-wrap:wrap; }
+    .matrix-table th, .matrix-table td { text-align:center; vertical-align:middle; }
+    .matrix-table th:first-child, .matrix-table td:first-child { text-align:left; }
+    .matrix-table input[type="checkbox"] { width:auto; margin:0; }
+    .permission-group-title { margin:0.75rem 0 0.35rem; color:var(--muted); font-size:0.88rem; font-weight:700; letter-spacing:0.04em; }
+    .permission-menu-branch { margin:0.1rem 0 0.85rem 1.25rem; padding-left:0.85rem; border-left:1px solid var(--border); }
+    .permission-subgroup-title { margin:0 0 0.4rem; color:var(--text); font-size:0.86rem; font-weight:700; }
+    .permission-table-root { margin-bottom:0.85rem; }
+    .permission-menu-branch .matrix-table { margin-bottom:0; }
+    .permission-subgroup-row td { background:rgba(148, 163, 184, 0.08); border-top:1px solid var(--border); }
+    .permission-subgroup-row .permission-subgroup-title { margin:0; }
+    .permission-row-child td:first-child { padding-left:1.55rem; }
+    .permission-key { font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size:0.82rem; }
+    .permission-description { text-align:left; }
+    .permission-critical { border-left:4px solid var(--warning); }
+    .critical-badge { display:inline-flex; align-items:center; border:1px solid var(--warning); color:var(--warning); border-radius:999px; padding:0.08rem 0.42rem; font-size:0.72rem; margin-left:0.4rem; font-weight:700; }
+    .warning-panel { border:1px solid var(--warning); border-radius:8px; padding:0.55rem; color:var(--text); background:rgba(245, 158, 11, 0.08); font-size:0.88rem; line-height:1.45; }
+    .form-footer { display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem; }
+    /* .empty-state (texto/padding/cor) ja vem do core; so o italico e especifico desta pagina. */
+    .empty-state { font-style:italic; }
+    .filter-input { min-width:260px; }
+    @media (max-width: 768px) {
+        .permissions-paired-grid { grid-template-columns: 1fr; }
+        .permission-menu-branch { margin-left:0.45rem; padding-left:0.55rem; }
+        .permission-row-child td:first-child { padding-left:1rem; }
+    }

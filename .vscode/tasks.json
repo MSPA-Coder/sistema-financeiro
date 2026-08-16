@@ -1,0 +1,23 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Docker: subir ambiente",
+      "type": "shell",
+      "command": "docker compose --env-file .env.docker up --build -d",
+      "problemMatcher": []
+    },
+    {
+      "label": "Docker: ver logs",
+      "type": "shell",
+      "command": "docker compose --env-file .env.docker logs -f web",
+      "problemMatcher": []
+    },
+    {
+      "label": "Docker: parar ambiente",
+      "type": "shell",
+      "command": "docker compose --env-file .env.docker down",
+      "problemMatcher": []
+    }
+  ]
+}

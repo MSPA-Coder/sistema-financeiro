@@ -1,0 +1,118 @@
+{% load money_filters %}
+<section class="decision-strip" aria-label="Resumo dos próximos movimentos">
+    <div class="decision-card {{ report.summary.action_level }}">
+        <strong>Providência</strong>
+        <div class="decision-value">{{ report.summary.action_label }}</div>
+        <div class="decision-note">
+            {{ report.summary.action_message }}
+            {% if report.summary.action_amount > 0 %} Valor de referência: {{ report.summary.action_amount|money }}.{% endif %}
+        </div>
+    </div>
+    <div class="decision-card">
+        <strong>Saldo inicial</strong>
+        <div class="decision-value {{ report.summary.start_balance|amount_class }}">{{ report.summary.start_balance|money_signed }}</div>
+    </div>
+    <div class="decision-card">
+        <strong>Movimento líquido</strong>
+        <div class="decision-value {{ report.summary.net_movement|amount_class }}">{{ report.summary.net_movement|money_signed }}</div>
+    </div>
+    <div class="decision-card">
+        <strong>Menor saldo</strong>
+        <div class="decision-value {{ report.summary.minimum_balance|amount_class }}">{{ report.summary.minimum_balance|money_signed }}</div>
+        <div class="decision-note">{{ report.summary.minimum_balance_date|date:'d/m/Y' }}</div>
+    </div>
+    <div class="decision-card">
+        <strong>Saldo final</strong>
+        <div class="decision-value {{ report.summary.end_balance|amount_class }}">{{ report.summary.end_balance|money_signed }}</div>
+    </div>
+</section>
+
+<div class="table-container">
+    <table class="report-table">
+        <thead>
+            <tr>
+                <th>Titular</th>
+                <th>Instituição</th>
+                <th>Conta</th>
+                <th class="value-col">Saldo inicial</th>
+                <th class="value-col">Entradas</th>
+                <th class="value-col">Saídas</th>
+                <th class="value-col">Transf. int.</th>
+                <th class="value-col">Menor saldo</th>
+                <th class="value-col">Saldo final</th>
+                <th class="status-col">Ação</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in report.account_rows %}
+            <tr>
+                <td>{{ row.owner_name }}</td>
+                <td>{{ row.institution_name }}</td>
+                <td>
+                    <a href="{% url 'transactions:transactions_view' %}?period={{ report.start_date|date:'Y-m' }}&amp;mode={{ view_mode }}&amp;owner_id={{ current_owner_id|default:'' }}&amp;institution_id={{ current_institution_id|default:'' }}&amp;account_id={{ row.account_id }}">{{ row.account_name }}</a>
+                </td>
+                <td class="value-col {{ row.start_balance|amount_class }}">{{ row.start_balance|money_signed }}</td>
+                <td class="value-col amount-positive">{{ row.income|money_signed }}</td>
+                <td class="value-col amount-negative">{{ row.expense|neg|money_signed }}</td>
+                <td class="value-col {{ row.internal_net|amount_class }}">{{ row.internal_net|money_signed }}</td>
+                <td class="value-col {{ row.minimum_balance|amount_class }}">{{ row.minimum_balance|money_signed }}<span class="action-message">{{ row.minimum_balance_date|date:'d/m/Y' }}</span></td>
+                <td class="value-col {{ row.end_balance|amount_class }}">{{ row.end_balance|money_signed }}</td>
+                <td>
+                    <span class="action-pill {{ row.action_level }}">{{ row.action_label }}</span>
+                    <span class="action-message">{{ row.action_message }}{% if row.action_amount > 0 %} {{ row.action_amount|money }}.{% endif %}</span>
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="10" data-ui="empty-2">Nenhuma conta com movimento no período.</td></tr>
+            {% endfor %}
+            {% if report.account_rows %}
+            <tr class="summary-row">
+                <td colspan="3">TOTAL</td>
+                <td class="value-col {{ report.summary.start_balance|amount_class }}">{{ report.summary.start_balance|money_signed }}</td>
+                <td class="value-col amount-positive">{{ report.summary.income|money_signed }}</td>
+                <td class="value-col amount-negative">{{ report.summary.expense|neg|money_signed }}</td>
+                <td class="value-col {{ report.summary.internal_net|amount_class }}">{{ report.summary.internal_net|money_signed }}</td>
+                <td class="value-col {{ report.summary.minimum_balance|amount_class }}">{{ report.summary.minimum_balance|money_signed }}</td>
+                <td class="value-col {{ report.summary.end_balance|amount_class }}">{{ report.summary.end_balance|money_signed }}</td>
+                <td>{{ report.summary.action_label }}</td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+
+<div class="table-container">
+    <table class="report-table">
+        <thead>
+            <tr>
+                <th class="date-col">Data</th>
+                <th class="account-col">Conta</th>
+                <th>Categoria</th>
+                <th>Descrição</th>
+                <th class="value-col">Valor</th>
+                <th class="value-col">Saldo após</th>
+                <th class="status-col">Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for line in report.movement_lines %}
+            <tr>
+                <td class="date-col">
+                    <a href="{% url 'transactions:transactions_view' %}?period={{ line.movement_date|date:'Y-m' }}&amp;mode={{ view_mode }}&amp;owner_id={{ current_owner_id|default:'' }}&amp;institution_id={{ current_institution_id|default:'' }}&amp;account_id={{ line.account_id }}">{{ line.movement_date|date:'d/m/Y' }}</a>
+                </td>
+                <td class="account-col">{{ line.account_name }}</td>
+                <td>{{ line.category_name }}{% if line.is_internal %}<span class="internal-badge">Interna</span>{% endif %}</td>
+                <td>
+                    {% if line.entry_type == 'receita' %}Receita{% else %}Despesa{% endif %}
+                    {% if line.description %}<div class="line-description">{{ line.description }}</div>{% endif %}
+                </td>
+                <td class="value-col {{ line.signed_amount|amount_class }}">{{ line.signed_amount|money_signed }}</td>
+                <td class="value-col {{ line.balance_after|amount_class }}">{{ line.balance_after|money_signed }}</td>
+                <td class="status-col">{{ line.status }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" data-ui="empty-2">Nenhum lançamento encontrado no período.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

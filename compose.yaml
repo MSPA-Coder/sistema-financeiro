@@ -1,0 +1,151 @@
+name: controle-bancario
+
+x-app-build: &app-build
+  build:
+    context: .
+    target: runtime
+    secrets:
+      - local_ca
+
+x-app-environment: &app-environment
+  DJANGO_SETTINGS_MODULE: financeiro.settings
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: ${POSTGRES_USER:-postgres}
+  POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+  POSTGRES_DB: ${POSTGRES_DB:-controle_bancario}
+  DJANGO_SECRET_KEY_FILE: /run/secrets/django_secret_key
+  REQUIRE_FILE_SECRETS: "true"
+  TZ: America/Sao_Paulo
+  PYTHONUNBUFFERED: "1"
+
+x-app-secrets: &app-secrets
+  secrets:
+    - django_secret_key
+    - postgres_password
+
+x-service-logging: &service-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# Serviços de aplicação não precisam escrever na camada da imagem. Os únicos
+# caminhos persistentes e graváveis são volumes declarados pelo serviço.
+x-app-hardening: &app-hardening
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:mode=1777,rw,noexec,nosuid,size=64m
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    mem_limit: 512m
+    stop_grace_period: 60s
+    logging: *service-logging
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-controle_bancario}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      TZ: America/Sao_Paulo
+    secrets:
+      - postgres_password
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-controle_bancario}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Etapa controlada de inicializacao: aplica migrations e materializa os
+  # assets com hash no volume que o `web` consome. O `web` so sobe depois que
+  # esta etapa termina com sucesso.
+  migrate:
+    <<: [*app-build, *app-hardening, *app-secrets]
+    mem_limit: 512m
+    environment:
+      <<: *app-environment
+    pids_limit: 128
+    stop_grace_period: 30s
+    logging: *service-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # `--clear` é necessário: sem ele, um asset removido do código continua
+    # sendo servido a partir do volume indefinidamente.
+    command:
+      - sh
+      - -c
+      - "python manage.py migrate --noinput && python manage.py collectstatic --noinput --clear"
+    restart: "no"
+    volumes:
+      - app_logs:/workspace/logs
+      - static_volume:/workspace/staticfiles
+
+  web:
+    <<: [*app-build, *app-hardening, *app-secrets]
+    restart: unless-stopped
+    mem_limit: 512m
+    init: true
+    pids_limit: 256
+    stop_grace_period: 45s
+    logging: *service-logging
+    environment:
+      <<: *app-environment
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      DEBUG: ${DEBUG:-False}
+    ports:
+      - "127.0.0.1:${APP_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    command: ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "3", "--threads", "4", "--worker-class", "gthread", "--timeout", "60", "financeiro.wsgi:application"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    volumes:
+      - app_logs:/workspace/logs
+      - static_volume:/workspace/staticfiles
+      - media_volume:/workspace/media
+
+  # Ruff e a suíte mínima de segurança. Fica atrás de um perfil para não subir
+  # junto com a aplicação: `docker compose --profile quality run --rm quality`.
+  quality:
+    <<: *app-secrets
+    build:
+      context: .
+      target: quality
+      secrets:
+        - local_ca
+    environment:
+      <<: *app-environment
+    profiles: ["quality"]
+    stop_grace_period: 15s
+    logging: *service-logging
+
+volumes:
+  postgres_data:
+  app_logs:
+  static_volume:
+  media_volume:
+
+secrets:
+  local_ca:
+    file: .certs/local-root-ca.crt
+  django_secret_key:
+    file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/django_secret_key
+  postgres_password:
+    file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/postgres_password

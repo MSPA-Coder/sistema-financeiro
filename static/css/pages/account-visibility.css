@@ -1,0 +1,9 @@
+    /* .section-card ja vem do core (application.css). */
+    .btn { padding:0.5rem 1rem; border:none; border-radius:4px; cursor:pointer; font-weight:500; transition:0.2s; }
+    .btn-primary { background:var(--primary); color:#fff; } .btn-primary:hover { opacity:0.9; }
+    .preference-table { width:100%; border-collapse:collapse; margin-top:0.75rem; }
+    .preference-table th, .preference-table td { padding:0.55rem 0.5rem; border-bottom:1px solid var(--border); text-align:left; }
+    .preference-table th { font-size:0.82rem; color:var(--muted); font-weight:700; }
+    .preference-table td:nth-last-child(-n+2), .preference-table th:nth-last-child(-n+2) { text-align:center; width:9rem; }
+    .preference-table input[type="checkbox"] { width:1rem; height:1rem; accent-color:var(--primary); }
+    .preference-empty { color:var(--muted); font-size:0.9rem; margin:0.8rem 0 0; }

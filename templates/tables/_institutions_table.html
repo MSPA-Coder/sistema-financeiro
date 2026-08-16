@@ -1,0 +1,40 @@
+{% load icons %}
+<tbody id="institutionsTableBody">
+{% for institution in institutions %}
+    <tr>
+        <td>{{ institution.institution_type }}</td>
+        <td>{{ institution.institution_name }}</td>
+        <td>
+            {% if institution.homologada %}
+            <span class="badge badge-success">Sim</span>
+            {% else %}
+            <span class="badge">Não</span>
+            {% endif %}
+        </td>
+        <td class="actions">
+            <button type="button" class="btn btn-sm btn-icon btn-action-edit" title="Editar" data-toggle-edit="edit-institution-{{ institution.id }}">{% icon 'edit' %}</button>
+            <form method="post" action="{% url 'banking:delete_institution' institution.id %}" data-ui="inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-icon btn-action-delete" title="Excluir" data-confirm="Excluir a instituição {{ institution.institution_name }}? Esta ação não pode ser desfeita.">{% icon 'delete' %}</button>
+            </form>
+        </td>
+    </tr>
+    <tr id="edit-institution-{{ institution.id }}" class="edit-row">
+        <td colspan="4">
+            <form method="post" action="{% url 'banking:update_institution' institution.id %}" class="edit-form">
+                {% csrf_token %}
+                <select name="institution_type" aria-label="Tipo de instituição" required data-ui="w-140">
+                    <option value="Banco" {% if institution.institution_type == "Banco" %}selected{% endif %}>Banco</option>
+                    <option value="Corretora" {% if institution.institution_type == "Corretora" %}selected{% endif %}>Corretora</option>
+                </select>
+                <input type="text" name="institution_name" value="{{ institution.institution_name }}" aria-label="Nome da instituição" maxlength="100" required data-ui="flex-1">
+                <button type="submit" class="btn btn-primary btn-sm">{% icon 'save' %}<span>Salvar</span></button>
+            </form>
+        </td>
+    </tr>
+{% empty %}
+    <tr>
+        <td colspan="4" class="empty-state">Nenhuma instituição cadastrada.</td>
+    </tr>
+{% endfor %}
+</tbody>
