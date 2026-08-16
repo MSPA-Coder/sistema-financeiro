@@ -66,6 +66,7 @@ RUN groupadd --system app \
 COPY --from=runtime-dependencies /install /usr/local
 COPY --chmod=755 manage.py ./manage.py
 COPY accounts ./accounts
+COPY bank_statements ./bank_statements
 COPY banking ./banking
 COPY core ./core
 COPY dashboard ./dashboard
@@ -88,4 +89,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/', timeout=5)" || exit 1
 
 # Default command for production (can be overridden by docker-compose)
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "3", "--threads", "4", "--worker-class", "gthread", "--timeout", "60", "financeiro.wsgi:application"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "3", "--threads", "4", "--worker-class", "gthread", "--timeout", "60", "--no-control-socket", "financeiro.wsgi:application"]
