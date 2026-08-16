@@ -186,7 +186,7 @@ class CsvStatementAdapter:
 # extração simples via regex.
 
 _RE_TAG = re.compile(r"<([A-Z0-9.]+)>\s*([^\n<]*)", re.IGNORECASE)
-_RE_XML_STMTTRN = re.compile(r"<STMTTRN>(.*?)</STMTTRN>", re.DOTALL | re.IGNORECASE)
+_RE_XML_STMTTRN_TAG = re.compile(r"</?STMTTRN>", re.IGNORECASE)
 
 
 def _parse_ofx_date(raw: str) -> date:
@@ -226,14 +226,30 @@ def _extract_transactions_sgml(content: str) -> list[dict[str, str]]:
 
 
 def _extract_transactions_xml(content: str) -> list[dict[str, str]]:
-    """Extrai transações de OFX 2.x (XML com tags de fechamento)."""
+    """Extrai transações de OFX 2.x com varredura linear das tags de bloco.
+
+    Não use ``<STMTTRN>(.*?)</STMTTRN>`` aqui: em entrada malformada com muitas
+    aberturas e nenhum fechamento, o mecanismo de backtracking pode revisitar o
+    restante do arquivo para cada abertura. A varredura abaixo avança por cada
+    tag uma vez e mantém a tolerância anterior a blocos incompletos.
+    """
     txs: list[dict[str, str]] = []
-    for block_match in _RE_XML_STMTTRN.finditer(content):
+    block_start: int | None = None
+    for tag_match in _RE_XML_STMTTRN_TAG.finditer(content):
+        tag = tag_match.group(0)
+        if not tag.startswith("</"):
+            if block_start is None:
+                block_start = tag_match.end()
+            continue
+        if block_start is None:
+            continue
+
         tags: dict[str, str] = {}
-        for match in _RE_TAG.finditer(block_match.group(1)):
+        for match in _RE_TAG.finditer(content[block_start : tag_match.start()]):
             tags[match.group(1).upper()] = match.group(2).strip()
         if tags:
             txs.append(tags)
+        block_start = None
     return txs
 
 
