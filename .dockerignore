@@ -12,8 +12,15 @@ __pycache__
 .env
 .env.*
 .certs
+.secrets
+*.key
+*.pem
+*.crt
 instance
 backups
+logs
+media
+staticfiles
 legacy
 htmlcov
 .coverage

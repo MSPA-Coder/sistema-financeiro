@@ -43,3 +43,56 @@ jobs:
         run: docker compose --profile quality build --no-cache quality
       - name: Executar quality
         run: docker compose --profile quality run --rm quality
+      - name: Construir runtime imutavel
+        run: docker compose -f compose.yaml build --no-cache web
+      - name: Verificar fronteira do runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          # `docker compose images -q` lista somente contêineres já criados;
+          # após `build` ele pode devolver um ID antigo ou inexistente. A
+          # configuração é a fonte do nome da imagem que acabou de ser criada.
+          runtime_image="$(docker compose config --images | grep -x 'controle-bancario-web')"
+          test -n "$runtime_image"
+
+          docker run --rm --entrypoint sh "$runtime_image" -ec '
+            require_read_only() {
+              if test -w "$1"; then
+                echo "Caminho de codigo gravavel no runtime: $1" >&2
+                exit 1
+              fi
+            }
+            require_writable() {
+              if ! test -w "$1"; then
+                echo "Diretorio de estado nao gravavel no runtime: $1" >&2
+                exit 1
+              fi
+            }
+            require_absent() {
+              if command -v "$1" >/dev/null; then
+                echo "Ferramenta proibida no runtime: $1" >&2
+                exit 1
+              fi
+            }
+
+            require_read_only /workspace
+            require_read_only /workspace/financeiro
+            require_writable /workspace/logs
+            require_writable /workspace/staticfiles
+            require_writable /workspace/media
+            test ! -e /workspace/requirements-dev.txt || {
+              echo "requirements-dev.txt encontrado no runtime." >&2
+              exit 1
+            }
+            require_absent curl
+            require_absent pg_dump
+            require_absent gcc
+            python -m pip check
+          '
+
+          runtime_container="$(docker create "$runtime_image")"
+          trap 'docker rm -f "$runtime_container" >/dev/null' EXIT
+          if docker export "$runtime_container" | tar -t | grep -E '(^|/)workspace/(\.secrets(/|$)|\.env(\..*)?$|requirements-dev\.txt$|.*\.(key|pem|crt)$)'; then
+            echo "Arquivo local, segredo ou dependencia de desenvolvimento encontrado no runtime." >&2
+            exit 1
+          fi

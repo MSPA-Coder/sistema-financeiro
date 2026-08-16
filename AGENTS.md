@@ -11,7 +11,7 @@ Antes de alterar, leia a fonte pertinente e confirme o comportamento no código:
 - `CONTEXT.md`: arquitetura, domínio, segurança e decisões de produto.
 - `README.md`: instalação, operação e variáveis de ambiente.
 - `TESTING.md`: comandos e validação proporcional.
-- `compose.yaml`, `compose.override.yaml` e `Dockerfile`: serviços e imagem
+- `compose.yaml`, `compose.dev.yaml` e `Dockerfile`: serviços e imagem
   efetivamente executados.
 - Migrations e testes: fonte de verdade para schema e controles automatizados.
 
@@ -32,18 +32,18 @@ Compose. Execução Django fora do Compose pode fornecer segredos diretamente de
 forma explícita, mas não é o caminho operacional.
 
 ```powershell
-# Desenvolvimento: o override monta o código e usa runserver.
-docker compose --env-file .env.docker up --build -d
-
-# Caminho construído, sem override de desenvolvimento.
+# Caminho padrão: imagem construída, imutável e mais próximo da operação.
 docker compose --env-file .env.docker -f compose.yaml up --build -d
 
-# Verificação Django e geração de migration, com o código montado pelo override.
-docker compose --env-file .env.docker run --rm web python manage.py check
-docker compose --env-file .env.docker run --rm web python manage.py makemigrations
+# Desenvolvimento explícito: monta o código e usa runserver.
+docker compose --env-file .env.docker -f compose.yaml -f compose.dev.yaml up --build -d
+
+# Verificação Django e geração de migration no runtime construído.
+docker compose --env-file .env.docker -f compose.yaml run --rm web python manage.py check
+docker compose --env-file .env.docker -f compose.yaml -f compose.dev.yaml run --rm web python manage.py makemigrations
 
 # Ruff e suíte mínima; o serviço quality é explícito e não depende do override.
-docker compose --env-file .env.docker --profile quality run --rm quality
+docker compose --env-file .env.docker -f compose.yaml --profile quality run --rm quality
 ```
 
 `web` é o único serviço de aplicação; `migrate` aplica migrations e

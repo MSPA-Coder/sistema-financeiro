@@ -64,10 +64,17 @@ a CA local:
 .\scripts\export_local_ca.ps1
 ```
 
-Construa e inicie:
+Construa e inicie o modo padrão imutável:
 
 ```powershell
 docker compose --env-file .env.docker up --build -d
+```
+
+Para desenvolvimento com montagem do código e recarga automática, o arquivo
+deve ser escolhido de forma explícita:
+
+```powershell
+docker compose --env-file .env.docker -f compose.yaml -f compose.dev.yaml up --build -d
 ```
 
 A aplicação fica em `http://127.0.0.1:<APP_PORT>`. O exemplo de ambiente usa
@@ -98,13 +105,13 @@ PostgreSQL e dos anexos.
 | `web` | Gunicorn, usuário não-root e filesystem raiz somente leitura; logs, assets e anexos usam volumes graváveis dedicados |
 | `quality` | Ruff e suíte mínima de segurança/fumaça, sob o perfil `quality` |
 
-`compose.yaml` sozinho executa exatamente o que foi construído na imagem.
-`compose.override.yaml` ajusta o `web` para desenvolvimento, monta o repositório
-e usa o servidor de desenvolvimento; ele é carregado automaticamente pelo
-`docker compose`. Para rodar somente o que está na imagem:
+`compose.yaml` é o caminho padrão e executa exatamente o que foi construído na
+imagem. `compose.dev.yaml` é opcional: ajusta o `web` para desenvolvimento,
+monta o repositório e usa o servidor de desenvolvimento. Ele não é carregado
+automaticamente; selecione-o apenas quando precisar editar código:
 
 ```powershell
-docker compose --env-file .env.docker -f compose.yaml up --build -d
+docker compose --env-file .env.docker -f compose.yaml -f compose.dev.yaml up --build -d
 ```
 
 ## Configuração
