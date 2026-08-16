@@ -99,10 +99,13 @@ backup validado, revisão da migration e bootstrap em PostgreSQL vazio são
 obrigatórios. Para dependências, Dockerfile ou Compose, reconstrua a imagem e
 suba a pilha completa.
 
-A suíte mínima em `tests/` cobre cabeçalhos/CSP, autenticação, CSRF,
-autorização e grafo de migrations; ela não substitui o bootstrap real nem a
-verificação manual. Ao concluir, informe comandos executados, resultado e
-controles omitidos com o motivo.
+A suíte focada em `tests/` cobre cabeçalhos/CSP, autenticação, CSRF,
+autorização e grafo de migrations. A CI mínima executa essa mesma sequência
+em pushes/PRs para `main` e semanalmente; o Dependabot acompanha `pip`, Docker
+e GitHub Actions em atualizações minor/patch agrupadas. Isso não substitui o
+bootstrap real ou a verificação manual, nem constitui cobertura ampla, análise
+de tipos ou auditoria total. Ao concluir, informe comandos executados,
+resultado e controles omitidos com o motivo.
 
 ## Política de versões
 
