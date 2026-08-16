@@ -53,15 +53,37 @@ jobs:
           test -n "$runtime_image"
 
           docker run --rm --entrypoint sh "$runtime_image" -ec '
-            test ! -w /workspace
-            test ! -w /workspace/financeiro
-            test -w /workspace/logs
-            test -w /workspace/staticfiles
-            test -w /workspace/media
-            test ! -e /workspace/requirements-dev.txt
-            ! command -v curl
-            ! command -v pg_dump
-            ! command -v gcc
+            require_read_only() {
+              if test -w "$1"; then
+                echo "Caminho de codigo gravavel no runtime: $1" >&2
+                exit 1
+              fi
+            }
+            require_writable() {
+              if ! test -w "$1"; then
+                echo "Diretorio de estado nao gravavel no runtime: $1" >&2
+                exit 1
+              fi
+            }
+            require_absent() {
+              if command -v "$1" >/dev/null; then
+                echo "Ferramenta proibida no runtime: $1" >&2
+                exit 1
+              fi
+            }
+
+            require_read_only /workspace
+            require_read_only /workspace/financeiro
+            require_writable /workspace/logs
+            require_writable /workspace/staticfiles
+            require_writable /workspace/media
+            test ! -e /workspace/requirements-dev.txt || {
+              echo "requirements-dev.txt encontrado no runtime." >&2
+              exit 1
+            }
+            require_absent curl
+            require_absent pg_dump
+            require_absent gcc
             python -m pip check
           '
 
