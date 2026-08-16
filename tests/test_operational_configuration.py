@@ -17,6 +17,7 @@ from django.db import connection
 
 ROOT_DO_PROJETO = Path(__file__).resolve().parents[1]
 COMPOSE = ROOT_DO_PROJETO / "compose.yaml"
+DOCKERIGNORE = ROOT_DO_PROJETO / ".dockerignore"
 
 
 def _import_settings(ambiente: dict[str, str], code: str = "import financeiro.settings"):
@@ -102,6 +103,39 @@ def test_compose_exige_os_segredos_operacionais():
     assert "REQUIRE_FILE_SECRETS: \"true\"" in conteudo
     assert "POSTGRES_PASSWORD: ${" not in conteudo
     assert "DJANGO_SECRET_KEY: ${" not in conteudo
+
+
+def test_contexto_de_build_exclui_segredos_e_estado_local():
+    """O contexto nao pode entregar arquivos locais a uma instrucao COPY."""
+    regras = set(DOCKERIGNORE.read_text(encoding="utf-8").splitlines())
+
+    for regra in {
+        ".env",
+        ".env.*",
+        ".certs",
+        ".secrets",
+        "backups",
+        "logs",
+        "media",
+        "staticfiles",
+    }:
+        assert regra in regras
+
+
+def test_postgres_tem_hardening_equivalente_ao_runtime():
+    """O banco pode gravar PGDATA, mas nao precisa de privilegios extras."""
+    conteudo = COMPOSE.read_text(encoding="utf-8")
+    inicio = conteudo.index("x-postgres-hardening:")
+    fim = conteudo.index("services:")
+    bloco = conteudo[inicio:fim]
+
+    assert 'user: "postgres"' in bloco
+    assert "read_only: true" in bloco
+    assert "- ALL" in bloco
+    assert "- no-new-privileges:true" in bloco
+    assert "/tmp:mode=1777,rw,noexec,nosuid,size=64m" in bloco
+    assert "/var/run/postgresql:mode=1777,rw,noexec,nosuid,size=16m" in bloco
+    assert "pids_limit: 256" in bloco
 
 
 def test_bootstrap_de_migrations_antecipa_o_web():

@@ -43,3 +43,31 @@ jobs:
         run: docker compose --profile quality build --no-cache quality
       - name: Executar quality
         run: docker compose --profile quality run --rm quality
+      - name: Construir runtime imutavel
+        run: docker compose build web
+      - name: Verificar fronteira do runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime_image="$(docker compose images -q web)"
+          test -n "$runtime_image"
+
+          docker run --rm --entrypoint sh "$runtime_image" -ec '
+            test ! -w /workspace
+            test ! -w /workspace/financeiro
+            test -w /workspace/logs
+            test -w /workspace/staticfiles
+            test -w /workspace/media
+            test ! -e /workspace/requirements-dev.txt
+            ! command -v curl
+            ! command -v pg_dump
+            ! command -v gcc
+            python -m pip check
+          '
+
+          runtime_container="$(docker create "$runtime_image")"
+          trap 'docker rm -f "$runtime_container" >/dev/null' EXIT
+          if docker export "$runtime_container" | tar -t | grep -E '(^|/)workspace/(\.secrets(/|$)|\.env(\..*)?$|requirements-dev\.txt$|.*\.(key|pem|crt)$)'; then
+            echo "Arquivo local, segredo ou dependencia de desenvolvimento encontrado no runtime." >&2
+            exit 1
+          fi
