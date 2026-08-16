@@ -8,6 +8,8 @@ updates:
     open-pull-requests-limit: 3
     groups:
       minor-and-patch:
+        applies-to: version-updates
+        patterns: ["*"]
         update-types: [minor, patch]
   - package-ecosystem: docker
     directory: "/"
@@ -17,6 +19,8 @@ updates:
     open-pull-requests-limit: 3
     groups:
       minor-and-patch:
+        applies-to: version-updates
+        patterns: ["*"]
         update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: "/"
@@ -26,4 +30,6 @@ updates:
     open-pull-requests-limit: 3
     groups:
       minor-and-patch:
+        applies-to: version-updates
+        patterns: ["*"]
         update-types: [minor, patch]
