@@ -162,10 +162,13 @@ Antes de qualquer alteração em dados reais:
 
 ## Verificação
 
-O projeto não mantém suíte automática de regressão nem CI, mas mantém a
-suíte mínima de segurança e fumaça (autenticação, CSRF, autorização,
-cabeçalhos, bootstrap de schema). Antes de mudar dados ou schema, faça
-backup; depois percorra manualmente o fluxo alterado.
+O projeto mantém CI mínima no GitHub Actions: ela valida a configuração Compose
+e executa Ruff com a suíte focada de segurança e fumaça (autenticação, CSRF,
+autorização, cabeçalhos e bootstrap de schema) em pushes/PRs para `main` e
+semanalmente. O Dependabot monitora `pip`, Docker e GitHub Actions. Isso não é
+uma suíte ampla de regressão, cobertura, análise de tipos ou auditoria total.
+Antes de mudar dados ou schema, faça backup; depois percorra manualmente o
+fluxo alterado.
 
 ```powershell
 docker compose --env-file .env.docker --profile quality run --rm quality

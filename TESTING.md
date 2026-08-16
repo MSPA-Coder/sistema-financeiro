@@ -1,12 +1,14 @@
 # Verificação manual
 
 Este projeto não mantém uma suíte ampla de regressão, cobertura, análise de
-tipos, auditoria automática de dependências ou CI. A decisão é deliberada:
+tipos ou um scanner adicional como `pip-audit` dentro da suíte. A decisão é deliberada:
 hoje há um único usuário e desenvolvedor, e o custo de manter esses controles
 é maior que seu benefício prático. O que permanece é uma suíte focada de alto
 valor (`tests/`), mais o Ruff: acesso, cabeçalhos, CSRF, autorização, grafo de
 migrations, falha sem segredo, isolamento do banco de teste e contrato de
-bootstrap do Compose.
+bootstrap do Compose. A CI mínima executa essa sequência em pushes/PRs para
+`main` e semanalmente; o Dependabot mantém atualizações minor/patch agrupadas
+de `pip`, Docker e GitHub Actions.
 
 Antes dos comandos Docker, provisione os arquivos secretos locais a partir do
 arquivo de ambiente, sem imprimir seus valores:

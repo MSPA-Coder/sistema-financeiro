@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "47 3 * * 2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Qualidade
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Criar CA efêmera para o build
+        run: |
+          mkdir -p .certs
+          openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
+            -keyout /tmp/local-root-ca.key \
+            -out .certs/local-root-ca.crt \
+            -subj "/CN=ControleBancario CI Local CA"
+          rm -f /tmp/local-root-ca.key
+      - name: Criar segredos efêmeros de CI
+        run: |
+          umask 077
+          mkdir -p .secrets
+          printf '%s\n' 'ci-django-secret-key-not-for-production' > .secrets/django_secret_key
+          printf '%s\n' 'ci-postgres-password-not-for-production' > .secrets/postgres_password
+      - name: Validar Compose
+        run: docker compose config --quiet
+      - name: Construir quality sem cache
+        run: docker compose --profile quality build --no-cache quality
+      - name: Executar quality
+        run: docker compose --profile quality run --rm quality
