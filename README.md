@@ -77,8 +77,8 @@ deve ser escolhido de forma explícita:
 docker compose --env-file .env.docker -f compose.yaml -f compose.dev.yaml up --build -d
 ```
 
-A aplicação fica em `http://127.0.0.1:<APP_PORT>`. O exemplo de ambiente usa
-`5201`; sem essa variável, o fallback do Compose é `8000`. O
+A aplicação fica em `http://127.0.0.1:<APP_PORT>`. O exemplo de ambiente e o
+fallback do Compose usam `5201`. O
 Compose inicia o PostgreSQL, aguarda o health check, aplica as migrations,
 gera os assets e só então libera a aplicação. Dados e arquivos operacionais
 ficam em volumes Docker persistentes.
@@ -130,7 +130,7 @@ docker compose --env-file .env.docker -f compose.yaml -f compose.dev.yaml up --b
 | `POSTGRES_PASSWORD_FILE` | arquivo montado para Django e PostgreSQL; obrigatório no Compose | `/run/secrets/postgres_password` |
 | `COMPOSE_SECRETS_DIRECTORY` | diretório local dos arquivos de segredo | `.secrets` |
 | `POSTGRES_DB` | banco da aplicação | `controle_bancario` |
-| `APP_PORT` | porta publicada do serviço `web` | `8000` (o exemplo usa `5201`) |
+| `APP_PORT` | porta publicada do serviço `web` | `5201` |
 | `SESSION_COOKIE_AGE` | duração da sessão em segundos | `86400` |
 | `LOG_MAX_BYTES` / `LOG_BACKUP_COUNT` | rotação do log em arquivo | `5242880` / `5` |
 

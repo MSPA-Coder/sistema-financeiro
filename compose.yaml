@@ -73,7 +73,7 @@ services:
     secrets:
       - postgres_password
     ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5202}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -122,7 +122,7 @@ services:
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
       DEBUG: ${DEBUG:-False}
     ports:
-      - "127.0.0.1:${APP_PORT:-8000}:8000"
+      - "127.0.0.1:${APP_PORT:-5201}:8000"
     depends_on:
       postgres:
         condition: service_healthy
