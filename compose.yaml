@@ -121,6 +121,7 @@ services:
       <<: *app-environment
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
       DEBUG: ${DEBUG:-False}
+      USE_HTTPS: ${USE_HTTPS:-False}
     ports:
       - "127.0.0.1:${APP_PORT:-5201}:8000"
     depends_on:

@@ -143,6 +143,10 @@ loopback sobre HTTP: `DEBUG=False` (sem vazar traceback) e `USE_HTTPS=False`
 um proxy TLS à frente** — sem o proxy, o redirect leva a uma porta que ninguém
 atende.
 
+Para o piloto HTTP no VPS, mantenha `USE_HTTPS=False`, defina
+`ALLOWED_HOSTS=bancario-mspa.duckdns.org,127.0.0.1` e use o Nginx como proxy
+reverso. O procedimento reproduzível está em `docs/deployment-vps.md`.
+
 ## Banco e migrações
 
 O schema é versionado por migrations Django, uma pasta `migrations/` por app.
