@@ -8,6 +8,7 @@ o teste decorativo.
 from __future__ import annotations
 
 from django.conf import settings
+from django.test import override_settings
 
 
 def test_post_sem_token_e_rejeitado(client_com_csrf):
@@ -22,7 +23,7 @@ def test_post_com_token_invalido_e_rejeitado(client_com_csrf):
     assert resposta.status_code == 403
 
 
-def _decisao_do_csrf(origin: str | None):
+def _decisao_do_csrf(origin: str | None, *, secure: bool = False):
     """Roda o middleware de CSRF sobre um POST montado a mao.
 
     Exercita a decisao sem passar pela view, que consultaria o banco -- a suite
@@ -39,7 +40,9 @@ def _decisao_do_csrf(origin: str | None):
     cookie = requisicao_get.META["CSRF_COOKIE"]
 
     extras = {"HTTP_ORIGIN": origin} if origin is not None else {}
-    requisicao = fabrica.post("/login", {"csrfmiddlewaretoken": token}, **extras)
+    requisicao = fabrica.post(
+        "/login", {"csrfmiddlewaretoken": token}, secure=secure, **extras
+    )
     requisicao.COOKIES[settings.CSRF_COOKIE_NAME] = cookie
 
     middleware = CsrfViewMiddleware(lambda _r: HttpResponse())
@@ -55,6 +58,11 @@ def test_post_valido_do_navegador_e_aceito():
     comando nao manda `Origin` nenhum e nao reproduzia a falha.
     """
     assert _decisao_do_csrf("http://testserver") is None
+
+
+@override_settings(CSRF_TRUSTED_ORIGINS=["https://bancario-mspa.duckdns.org"])
+def test_post_https_de_origem_confiavel_e_aceito():
+    assert _decisao_do_csrf("https://bancario-mspa.duckdns.org", secure=True) is None
 
 
 def test_origin_nulo_e_recusado():

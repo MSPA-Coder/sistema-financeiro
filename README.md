@@ -123,6 +123,7 @@ docker compose --env-file .env.docker -f compose.yaml -f compose.dev.yaml up --b
 | `DEBUG` | modo de depuração | `False` |
 | `USE_HTTPS` | cookies `Secure`, redirect HTTPS, HSTS e `X-Forwarded-Proto` | `False` |
 | `ALLOWED_HOSTS` | hosts aceitos pelo Django | `localhost,127.0.0.1` |
+| `CSRF_TRUSTED_ORIGINS` | origens HTTPS aceitas em POSTs protegidos por CSRF | vazio |
 | `POSTGRES_HOST` | host do PostgreSQL | `postgres` no Compose |
 | `POSTGRES_PORT` | porta do PostgreSQL | `5432` |
 | `POSTGRES_USER` | usuário do PostgreSQL | `postgres` |
@@ -143,9 +144,10 @@ loopback sobre HTTP: `DEBUG=False` (sem vazar traceback) e `USE_HTTPS=False`
 um proxy TLS à frente** — sem o proxy, o redirect leva a uma porta que ninguém
 atende.
 
-Para o piloto HTTP no VPS, mantenha `USE_HTTPS=False`, defina
-`ALLOWED_HOSTS=bancario-mspa.duckdns.org,127.0.0.1` e use o Nginx como proxy
-reverso. O procedimento reproduzível está em `docs/deployment-vps.md`.
+No VPS, defina `USE_HTTPS=True`, mantenha
+`ALLOWED_HOSTS=bancario-mspa.duckdns.org,127.0.0.1`, defina
+`CSRF_TRUSTED_ORIGINS=https://bancario-mspa.duckdns.org` e use o Nginx como
+proxy TLS. O procedimento reproduzível está em `docs/deployment-vps.md`.
 
 ## Banco e migrações
 

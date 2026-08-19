@@ -208,6 +208,20 @@ LOGOUT_REDIRECT_URL = '/login'
 # `Secure` simplesmente nao seriam enviados e o redirect para HTTPS levaria a
 # uma porta que ninguem atende. Ligue junto com um proxy TLS a frente.
 USE_HTTPS = os.environ.get('USE_HTTPS', 'False').lower() == 'true'
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',')
+    if origin.strip()
+]
+
+if USE_HTTPS:
+    if not CSRF_TRUSTED_ORIGINS:
+        raise RuntimeError(
+            'CSRF_TRUSTED_ORIGINS e obrigatoria quando USE_HTTPS=True. '
+            'Informe as origens HTTPS publicas separadas por virgula.'
+        )
+    if any(not origin.startswith('https://') for origin in CSRF_TRUSTED_ORIGINS):
+        raise RuntimeError('CSRF_TRUSTED_ORIGINS deve conter somente origens HTTPS validas.')
 
 # Session settings
 SESSION_COOKIE_NAME = 'controle_bancario_session'

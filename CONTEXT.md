@@ -56,7 +56,8 @@ Configuração vem do ambiente, sem padrões permissivos:
   desenvolvimento.
 - `USE_HTTPS` (padrão `False`) controla o endurecimento de transporte —
   cookies `Secure`, redirect para HTTPS, HSTS e confiança em
-  `X-Forwarded-Proto`. É propriedade da implantação, não do modo de depuração:
+  `X-Forwarded-Proto`. Quando ligado, `CSRF_TRUSTED_ORIGINS` precisa enumerar
+  as origens HTTPS públicas aceitas em POSTs. É propriedade da implantação, não do modo de depuração:
   a instalação padrão publica em loopback sobre HTTP, onde cookies `Secure`
   não seriam enviados.
 - O banco é configurado por `POSTGRES_HOST/PORT/USER/PASSWORD/DB`.

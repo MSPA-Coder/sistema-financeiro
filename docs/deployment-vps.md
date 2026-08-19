@@ -1,13 +1,18 @@
-# Implantação de teste no VPS
+# Implantação no VPS
 
-Esta implantação publica o Controle Bancário somente pelo Nginx em
-`http://bancario-mspa.duckdns.org`. O Docker mantém o Django em
+Esta implantação publica o Controle Bancário pelo Nginx em
+`https://bancario-mspa.duckdns.org`. O Docker mantém o Django em
 `127.0.0.1:5201` e o PostgreSQL em `127.0.0.1:5202`; não abra essas portas no
 firewall nem na OCI.
 
 O banco e os anexos do computador local não são copiados automaticamente. A
 primeira subida no VPS cria uma base independente e vazia. Uma futura migração
 precisa de backup validado do PostgreSQL e cópia deliberada do volume de mídia.
+
+O arquivo `.env.vps` da implantação TLS precisa conter
+`USE_HTTPS=True` e
+`CSRF_TRUSTED_ORIGINS=https://bancario-mspa.duckdns.org`; sem a origem
+confiável, o Django recusa os POSTs de login protegidos por CSRF.
 
 ## Primeira instalação
 
@@ -35,7 +40,16 @@ montada de forma somente leitura tanto no banco quanto no Django; por isso é
 legível pelos dois contêineres. A chave de sessão é legível somente pelo
 usuário da aplicação.
 
-Instale a configuração do Nginx e valide-a antes de recarregar o serviço:
+Instale Certbot e emita o certificado. A porta 80 precisa estar acessível pela
+internet para a validação HTTP inicial:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d bancario-mspa.duckdns.org
+```
+
+Instale a configuração TLS do Nginx e valide-a antes de recarregar o serviço:
 
 ```bash
 sudo install -m 0644 deploy/nginx/controle-bancario.conf /etc/nginx/sites-available/controle-bancario
@@ -52,6 +66,8 @@ docker compose --env-file .env.vps -f compose.yaml up --build -d
 docker compose --env-file .env.vps -f compose.yaml ps
 curl -I http://127.0.0.1:5201/health/
 curl -I http://bancario-mspa.duckdns.org/
+curl -I https://bancario-mspa.duckdns.org/
+sudo systemctl status certbot.timer
 ```
 
 ## Atualização, backup e rollback
