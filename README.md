@@ -199,6 +199,22 @@ O processo completo está em `TESTING.md`.
 - `scripts/package_clean_zip.py`: pacote limpo, sem dados locais e artefatos de
   desenvolvimento.
 
+## Produção
+
+O sistema roda em um VPS Oracle (Ubuntu 24.04), publicado pelo Nginx com
+certificado Let's Encrypt em <https://bancario-mspa.duckdns.org>. O contêiner
+escuta apenas em `127.0.0.1:5201`; só 80 e 443 ficam abertos na internet.
+
+O fluxo de mudança tem sentido único: **máquina de desenvolvimento → GitHub →
+VPS**. O código no servidor é um espelho do `main` e nunca a origem de uma
+alteração; a implantação é feita por `~/deploy.sh bancario`, que recusa rodar se
+encontrar alteração não commitada no servidor. O repositório é privado e o VPS o
+lê por uma *deploy key* somente-leitura.
+
+A base do VPS é independente da instalação local — os dois ambientes não
+sincronizam dados. Detalhes de instalação, atualização e rollback estão em
+[Implantação no VPS](docs/deployment-vps.md).
+
 ## Documentação do projeto
 
 - `CONTEXT.md`: produto, arquitetura, invariantes e limitações conhecidas.

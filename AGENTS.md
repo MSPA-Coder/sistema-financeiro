@@ -107,6 +107,26 @@ bootstrap real ou a verificação manual, nem constitui cobertura ampla, anális
 de tipos ou auditoria total. Ao concluir, informe comandos executados,
 resultado e controles omitidos com o motivo.
 
+## Implantação em produção
+
+O sistema roda em um VPS Oracle atrás de Nginx com TLS, em
+`https://bancario-mspa.duckdns.org`, a partir de
+`/home/ubuntu/apps/controle-bancario`.
+
+O código do servidor é espelho do `main`, em sentido único: desenvolvimento na
+máquina local, commit, push ao GitHub, e só então implantação. **Não edite
+código, não commite e não faça merge no VPS** — `~/deploy.sh bancario` aborta ao
+encontrar árvore suja, e a *deploy key* do servidor é somente leitura, então um
+push de lá falharia de qualquer forma.
+
+`.secrets/` (`postgres_password`, `django_secret_key`) e `.certs/` não são
+versionados e vivem apenas no servidor; um reclone precisa restaurá-los, ou o
+build falha e o banco fica inacessível. Os dados ficam nos volumes
+`controle-bancario_postgres_data` e `controle-bancario_media_volume`, fora da
+pasta do código: substituir o diretório do projeto não os afeta. A base do VPS é
+independente da local. Consulte `docs/deployment-vps.md` antes de qualquer
+operação no VPS.
+
 ## Política de versões
 
 Compatibilidade mínima suportada: Python 3.14, PostgreSQL 17 e Django 5.2;
