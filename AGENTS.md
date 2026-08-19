@@ -129,6 +129,15 @@ operação no VPS.
 
 ## Política de versões
 
+**Faixas de dependência: alargue o teto, mantenha o piso.** O Dependabot roda
+com `versioning-strategy: widen`. Quando ele propuser elevar o mínimo, aproveite
+apenas a parte que alarga o teto e recuse a que sobe o piso. O piso registra a
+compatibilidade mínima efetivamente verificada, não a versão mais nova
+disponível: elevá-lo declara uma incompatibilidade que ninguém comprovou e não
+muda nada do que é instalado, porque o pip já resolve para a versão mais nova
+permitida pela faixa.
+
+
 Compatibilidade mínima suportada: Python 3.14, PostgreSQL 17 e Django 5.2;
 as faixas completas de bibliotecas estão em `requirements*.txt`. Atualmente
 testa-se a família das imagens `python:3.14-slim` e `postgres:17-alpine` com as
