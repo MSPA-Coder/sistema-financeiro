@@ -166,7 +166,7 @@ def log_audit_event(entity_name: str, entity_id, action: str, *, old_values=None
 
 # --- Parâmetros: política de senha ---
 
-_PASSWORD_MIN_LENGTH_FLOOR = 15
+_PASSWORD_MIN_LENGTH_FLOOR = 8
 _PASSWORD_MAX_FAILURES_CEILING = 1000
 
 
