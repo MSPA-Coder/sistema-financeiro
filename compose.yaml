@@ -133,10 +133,11 @@ services:
     command: ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "3", "--threads", "4", "--worker-class", "gthread", "--timeout", "60", "--no-control-socket", "financeiro.wsgi:application"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; request = urllib.request.Request('http://127.0.0.1:8000/health/', headers={'X-Forwarded-Proto': 'https'}); urllib.request.urlopen(request, timeout=3)"]
-      interval: 10s
+      interval: 60s
       timeout: 5s
-      retries: 12
+      retries: 3
       start_period: 15s
+      start_interval: 1s
     volumes:
       - app_logs:/workspace/logs
       - static_volume:/workspace/staticfiles
