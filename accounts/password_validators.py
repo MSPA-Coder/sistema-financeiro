@@ -1,6 +1,6 @@
 """Validador de senha com política configurável via AppSetting.
 
-Tamanho mínimo configurável (com piso de 15 caracteres, que a configuração não
+Tamanho mínimo configurável (com piso de 8 caracteres, que a configuração não
 pode furar) mais requisitos opcionais de maiúsculas, números e especiais.
 
 Ocupa o lugar de `MinimumLengthValidator` em AUTH_PASSWORD_VALIDATORS de
@@ -14,11 +14,11 @@ import re
 
 from django.core.exceptions import ValidationError
 
-DEFAULT_MIN_LENGTH = 15
+DEFAULT_MIN_LENGTH = 8
 DEFAULT_MIN_UPPERCASE = 0
 DEFAULT_MIN_NUMBERS = 0
 DEFAULT_MIN_SPECIAL = 0
-MIN_LENGTH_FLOOR = 15
+MIN_LENGTH_FLOOR = 8
 MAX_LENGTH_CEILING = 256
 
 _SPECIAL_CHARS_RE = re.compile(r"[^A-Za-z0-9]")
