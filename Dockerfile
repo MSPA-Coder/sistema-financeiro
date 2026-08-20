@@ -88,9 +88,9 @@ ENV DJANGO_SETTINGS_MODULE=financeiro.settings \
 
 EXPOSE 8000
 
-# Health check endpoint
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/', timeout=5)" || exit 1
+# O health check e declarado no compose.yaml, nao aqui: ele depende do
+# cabecalho X-Forwarded-Proto que o proxy reverso injeta, contexto que a
+# imagem nao tem como conhecer. Os outros tres projetos seguem a mesma regra.
 
 # Default command for production (can be overridden by docker-compose)
 CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "3", "--threads", "4", "--worker-class", "gthread", "--timeout", "60", "--no-control-socket", "financeiro.wsgi:application"]
