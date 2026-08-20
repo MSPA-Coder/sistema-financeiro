@@ -167,10 +167,11 @@ docker compose --env-file .env.docker run --rm web python manage.py makemigratio
 Revise manualmente toda migration gerada. Mudanças destrutivas e
 transformações de dados exigem plano, backup validado e validação explícitos.
 
-Antes de qualquer alteração em dados reais:
+Antes de qualquer alteração em dados reais, pelo BackupRestore (projeto
+irmão que centraliza dump, catálogo e verificação dos quatro projetos):
 
 ```powershell
-.\scripts\backup_postgres.ps1 -OutputDirectory D:\Backups\ControleBancario
+python cli.py backup --projeto controle_bancario --tipos banco
 ```
 
 ## Verificação
@@ -192,8 +193,9 @@ O processo completo está em `TESTING.md`.
 
 ## Scripts operacionais
 
-- `scripts/backup_postgres.ps1`: dump PostgreSQL validado com
-  `pg_restore --list`.
+- Backup: pelo BackupRestore, projeto irmão (`python cli.py backup --projeto
+  controle_bancario --tipos banco`); não há script de backup neste
+  repositório.
 - `scripts/export_local_ca.ps1`: exporta a CA local usada no build quando
   necessária.
 - `scripts/package_clean_zip.py`: pacote limpo, sem dados locais e artefatos de
