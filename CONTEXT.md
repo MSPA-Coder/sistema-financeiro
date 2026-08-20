@@ -236,10 +236,10 @@ mês/ano em JavaScript para "corrigir" isso.
 Logs vão para console e para um arquivo rotacionado em `logs/`
 (`LOG_MAX_BYTES`, `LOG_BACKUP_COUNT`). Não há correlação por `X-Request-ID`.
 
-Backups do PostgreSQL usam `pg_dump` em formato customizado com validação por
-`pg_restore --list` (`scripts/backup_postgres.ps1`). A restauração é
-administrativa e ocorre com a aplicação parada. Anexos ficam em volume
-separado do volume do banco.
+Backups do PostgreSQL são responsabilidade do BackupRestore, projeto irmão:
+`pg_dump` em formato customizado com validação por `pg_restore --list`,
+catálogo e retenção próprios. A restauração é administrativa e ocorre com a
+aplicação parada. Anexos ficam em volume separado do volume do banco.
 
 ## Notas de manutenção
 

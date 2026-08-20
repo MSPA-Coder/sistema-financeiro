@@ -19,10 +19,10 @@ arquivo de ambiente, sem imprimir seus valores:
 
 ## Antes de alterar código ou schema
 
-1. Faça backup do PostgreSQL:
+1. Faça backup do PostgreSQL pelo BackupRestore, projeto irmão:
 
    ```powershell
-   .\scripts\backup_postgres.ps1 -OutputDirectory D:\Backups\ControleBancario
+   python cli.py backup --projeto controle_bancario --tipos banco
    ```
 
 2. Execute a aplicação e percorra manualmente a tela ou fluxo alterado.

@@ -56,15 +56,16 @@ PostgreSQL é a fonte de verdade. Bancos novos nascem por `manage.py migrate`;
 não use `create_all`, SQLite ou dump como bootstrap. Cada alteração de schema
 exige migration Django revisada. Antes de mudança destrutiva, conversão de
 dados, adoção de schema ou manutenção que possa afetar dados reais, faça backup
-validado e obtenha autorização explícita:
+validado e obtenha autorização explícita, pelo BackupRestore (projeto irmão):
 
 ```powershell
-.\scripts\backup_postgres.ps1 -OutputDirectory D:\Backups\ControleBancario
+python cli.py backup --projeto controle_bancario --tipos banco
 ```
 
-O script produz dump customizado e confere `pg_restore --list`; isso não prova
-uma restauração completa. Restauração é administrativa, com a aplicação parada
-e procedimento testado. Não execute `docker compose down -v`, não mova volumes
+O BackupRestore produz dump customizado e confere `pg_restore --list` antes de
+catalogar; isso não prova uma restauração completa — para isso existe
+`cli.py ensaio`. Restauração é administrativa, com a aplicação parada e
+procedimento testado. Não execute `docker compose down -v`, não mova volumes
 ou anexos reais e não apague backups sem autorização inequívoca.
 
 Autenticação é obrigatória; autorização fica no servidor; escritas exigem CSRF.
