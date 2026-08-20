@@ -71,7 +71,11 @@ ou anexos reais e não apague backups sem autorização inequívoca.
 Autenticação é obrigatória; autorização fica no servidor; escritas exigem CSRF.
 Preserve CSP sem código inline, validação de uploads, logs sem dados sensíveis,
 cookies `HttpOnly`/`SameSite=Lax` e `Secure` quando `USE_HTTPS=True`. Exposição
-pública requer proxy TLS e configuração deliberada de `USE_HTTPS` e hosts.
+pública requer proxy TLS e configuração deliberada de `USE_HTTPS` e hosts. O
+piso de senha (mínimo 8 caracteres, duplicado em
+`accounts/password_validators.py` e `core/services.py` — os dois precisam
+mudar juntos) segue a mesma política dos três apps Flask do mantenedor; é
+projeto Django e não compartilha código com eles, só o valor do piso.
 
 ## Invariantes essenciais
 
