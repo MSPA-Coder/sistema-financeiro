@@ -1,6 +1,13 @@
 name: controle-bancario
 
 x-app-build: &app-build
+  # Nome fixo em vez do derivado do diretório. Sem isto o Compose batiza a
+  # imagem a partir do nome da pasta, que muda conforme onde o repositório foi
+  # clonado — no CI seria um nome, no VPS outro. A varredura de vulnerabilidade
+  # precisa apontar para uma imagem por NOME, e nome que depende do caminho do
+  # checkout não serve de alvo. Entra no âncora para `migrate` e `web`
+  # compartilharem a mesma imagem, que é o que já acontecia de fato.
+  image: controle-bancario:local
   build:
     context: .
     target: runtime

@@ -162,3 +162,35 @@ Evolua versões deliberadamente: avalie compatibilidade e notas de migração,
 atualize imagem/faixas e documentação como uma única mudança, reconstrua do
 zero, rode `quality` e valide o fluxo afetado. Não trate uma versão observada
 num contêiner local como nova mínima suportada sem registrá-la e testá-la.
+
+## Barreiras de segurança no CI (desde 2026-08-21)
+
+Duas verificações novas reprovam o PR, e as duas respondem perguntas
+diferentes:
+
+- **`pip-audit`** roda dentro da imagem `quality` e pergunta se alguma
+  dependência Python *instalada* tem CVE conhecido. Auditar o ambiente
+  instalado, e não o arquivo de requisitos, é o que responde sobre o que está
+  rodando em vez do que está escrito.
+- **Trivy** varre a imagem *servida* e cobre o que o `pip-audit` não vê: os
+  pacotes do sistema operacional da imagem base.
+
+Se uma delas reprovar, o conserto é atualizar a dependência ou a base — não
+afrouxar a verificação. Vulnerabilidade sem correção publicada já é filtrada
+(`--ignore-unfixed` no Trivy); no `pip-audit`, a saída é `--ignore-vuln <ID>`
+com um comentário dizendo por quê, para cada exceção ser uma decisão explícita
+e datada em vez de um vermelho permanente que se aprende a ignorar.
+
+Três coisas que parecem detalhe e não são:
+
+1. **O Trivy roda como contêiner, não como action de marketplace.** A política
+   destes repositórios é `allowed_actions: selected` com apenas
+   `github_owned_allowed` — action de terceiro é barrada antes de o workflow
+   rodar, e o sintoma é `startup_failure` sem log nenhum. Não troque por uma
+   action "porque é mais limpo".
+2. **A varredura usa `docker save` + `--input`, sem montar
+   `/var/run/docker.sock`.** Montar o socket é dar root na prática. Foi o
+   motivo de o `autoheal` ter sido recusado no VPS, e vale igual aqui.
+3. **O serviço servido declara `image:` com nome fixo no `compose.yaml`.** Sem
+   isso o Compose batiza a imagem pelo nome do diretório, que muda conforme
+   onde o repositório foi clonado — e a varredura fica sem alvo estável.
