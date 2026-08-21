@@ -7,6 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /workspace
 
+RUN python -m pip install --no-cache-dir --upgrade pip
+
 # quality: Ruff e a suite minima de seguranca, mais o servidor de
 # desenvolvimento montado por compose.dev.yaml. Nunca e o estagio
 # publicado: `compose.yaml` usa `runtime` para migrate e web.
