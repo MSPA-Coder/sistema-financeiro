@@ -74,14 +74,38 @@ jobs:
         run: docker compose --profile quality run --rm quality pip-audit --progress-spinner=off --cache-dir /tmp/pip-audit-cache
       - name: Construir runtime imutavel
         run: docker compose -f compose.yaml build --no-cache web
+
+      # O `pip-audit` acima cobre as dependencias Python. Esta varredura cobre o
+      # que ele nao ve: os pacotes do sistema operacional da imagem base.
+      #
+      # `ignore-unfixed: true` de proposito. CVE de pacote de sistema sem
+      # correcao publicada nao e acionavel: reprovar por ele travaria PR sem
+      # relacao nenhuma com o assunto e ensinaria a ignorar o vermelho, que e o
+      # oposto do que uma varredura serve para fazer.
+      #
+      # O alvo e um nome FIXO (`image:` no compose). O nome derivado do
+      # diretorio muda conforme onde o repositorio foi clonado e nao serviria.
+      - name: Varredura de vulnerabilidade da imagem servida
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: controle-bancario:local
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
       - name: Verificar fronteira do runtime
         shell: bash
         run: |
           set -euo pipefail
-          # `docker compose images -q` lista somente contêineres já criados;
-          # após `build` ele pode devolver um ID antigo ou inexistente. A
-          # configuração é a fonte do nome da imagem que acabou de ser criada.
-          runtime_image="$(docker compose config --images | grep -x 'controle-bancario-web')"
+          # `docker compose images -q` lista somente conteineres ja criados;
+          # apos `build` ele pode devolver um ID antigo ou inexistente. A
+          # configuracao e a fonte do nome da imagem que acabou de ser criada.
+          #
+          # O nome e fixo (`image:` no compose) desde 2026-08-21. Antes era o
+          # derivado do diretorio (`controle-bancario-web`), que muda conforme
+          # onde o repositorio foi clonado -- e por isso nao servia de alvo
+          # para a varredura de vulnerabilidade.
+          runtime_image="$(docker compose config --images | grep -x 'controle-bancario:local')"
           test -n "$runtime_image"
 
           docker run --rm --entrypoint sh "$runtime_image" -ec '
