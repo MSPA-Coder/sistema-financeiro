@@ -40,9 +40,28 @@ def test_cabecalho_do_middleware_presente(client, cabecalho, valor):
 
 
 def test_permissions_policy_restringe_dispositivos(client):
+    # `browsing-topics` entrou no conjunto comum vindo do ControleRendaVariavel,
+    # onde o Flask-Talisman o escrevia sozinho: recusar a Topics API e
+    # estritamente mais restritivo que nao declarar nada.
     politica = client.get(ROTA).headers.get("Permissions-Policy", "")
-    for recurso in ("camera=()", "microphone=()", "geolocation=()"):
+    for recurso in (
+        "camera=()",
+        "microphone=()",
+        "geolocation=()",
+        "browsing-topics=()",
+    ):
         assert recurso in politica
+
+
+def test_csp_libera_data_uri_so_para_imagem(client):
+    # A folga existe por um motivo so: o favicon do base.html e um SVG
+    # embutido no proprio `<link rel="icon">`. O `font-src 'self' data:` que
+    # esta politica tinha era sobra -- o projeto nao tem `@font-face` nem
+    # arquivo de fonte -- e saiu.
+    csp = client.get(ROTA).headers.get("Content-Security-Policy", "")
+    assert "img-src 'self' data:" in csp
+    assert "font-src 'self';" in csp
+    assert csp.count("data:") == 1
 
 
 @pytest.mark.parametrize(
@@ -67,6 +86,18 @@ def test_configuracao_defensiva_do_django():
     # `no-referrer` o navegador manda `Origin: null` em POST de mesma origem e
     # o CSRF do Django recusa a requisicao com o token correto.
     assert settings.SECURE_REFERRER_POLICY == "same-origin"
+
+
+def test_settings_do_django_nao_discordam_do_conjunto_comum():
+    # Tres destes cabecalhos tem dois escritores: a configuracao do Django e o
+    # middleware, que agora le os valores de `sharedauth.security`. Os dois
+    # usam `setdefault`, entao uma divergencia nao quebraria nada visivelmente
+    # -- o navegador receberia o valor de quem escrevesse primeiro. Este teste
+    # e o que transforma "manter igual a mao" em algo verificado.
+    assert SECURITY_HEADERS["X-Content-Type-Options"] == "nosniff"
+    assert settings.SECURE_CONTENT_TYPE_NOSNIFF is True
+    assert SECURITY_HEADERS["X-Frame-Options"] == settings.X_FRAME_OPTIONS
+    assert SECURITY_HEADERS["Referrer-Policy"] == settings.SECURE_REFERRER_POLICY
 
 
 def test_csp_do_middleware_e_a_declarada():

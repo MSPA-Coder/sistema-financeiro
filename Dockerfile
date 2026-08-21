@@ -12,14 +12,30 @@ WORKDIR /workspace
 # publicado: `compose.yaml` usa `runtime` para migrate e web.
 FROM base AS quality
 
+# `requirements.txt` inclui `sharedauth` de um repositorio Git privado
+# (github.com/MSPA-Coder/SharedAuth) -- pip precisa de `git` no PATH e de
+# credencial para HTTPS. O secret `github_token` (BuildKit, nunca vira camada
+# da imagem) autentica so para o RUN que instala; `git config --unset` na
+# mesma instrucao remove o token do `.gitconfig` antes de commitar a camada.
+#
+# Este projeto instala o pacote **sem** o extra `[flask]`: so o nucleo, que e
+# Python puro (`security` e `formatting`). Pedir o extra aqui traria Flask,
+# Flask-WTF e Flask-Limiter para dentro de uma imagem Django.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt requirements-dev.txt ./
 
 RUN --mount=type=secret,id=local_ca,required=false \
     if [ -f /run/secrets/local_ca ]; then \
         cp /run/secrets/local_ca /usr/local/share/ca-certificates/local-root-ca.crt; \
         update-ca-certificates; \
-    fi \
-    && python -m pip install --no-cache-dir -r requirements-dev.txt
+    fi
+RUN --mount=type=secret,id=github_token \
+    git config --global url."https://x-access-token:$(cat /run/secrets/github_token)@github.com/".insteadOf "https://github.com/" \
+    && python -m pip install --no-cache-dir -r requirements-dev.txt \
+    && git config --global --unset url."https://x-access-token:$(cat /run/secrets/github_token)@github.com/".insteadOf
 COPY . .
 
 # `logs/` e estado local e fica fora do contexto de build. O estagio de
@@ -47,14 +63,23 @@ CMD ["sh", "-c", "ruff check . && pytest"]
 # opcional atende apenas ao download durante o build e nao e copiado ao runtime.
 FROM base AS runtime-dependencies
 
+# `git` fica so neste estagio intermediario: a imagem final copia `/install` e
+# nao herda nem o binario nem o `.gitconfig`.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt ./
 
 RUN --mount=type=secret,id=local_ca,required=false \
     if [ -f /run/secrets/local_ca ]; then \
         cp /run/secrets/local_ca /usr/local/share/ca-certificates/local-root-ca.crt; \
         update-ca-certificates; \
-    fi \
-    && python -m pip install --no-cache-dir --prefix=/install -r requirements.txt
+    fi
+RUN --mount=type=secret,id=github_token \
+    git config --global url."https://x-access-token:$(cat /run/secrets/github_token)@github.com/".insteadOf "https://github.com/" \
+    && python -m pip install --no-cache-dir --prefix=/install -r requirements.txt \
+    && git config --global --unset url."https://x-access-token:$(cat /run/secrets/github_token)@github.com/".insteadOf
 
 
 # Estagio de producao: somente dependencias e arquivos de runtime. Codigo fica
