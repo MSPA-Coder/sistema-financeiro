@@ -41,11 +41,28 @@ def test_rota_publica_nao_redireciona_para_login(client, rota):
     )
 
 
-def test_health_responde_sem_sessao(client):
+def test_health_responde_sem_sessao(client, banco_sondavel):
     # E o que o Docker consulta para decidir se o contêiner esta saudavel; um
     # health atras do login deixaria o orquestrador lendo o redirecionamento
     # como "doente".
-    assert client.get("/health/").status_code == 200
+    resposta = client.get("/health/")
+    assert resposta.status_code == 200
+    assert resposta.json() == {"servico": "controle-bancario", "status": "ok"}
+
+
+def test_health_sem_barra_tambem_responde(client, banco_sondavel):
+    # Os tres apps Flask servem `/health`; aqui o `APPEND_SLASH` respondia 301
+    # e um vigia que nao segue redirecionamento marcava o projeto como fora.
+    assert client.get("/health").status_code == 200
+
+
+def test_health_reporta_503_com_banco_fora(client, banco_fora):
+    # O teste que faltava. Ate 2026-08-21 esta rota devolvia `"ok"` fixo: o
+    # Docker marcava o conteiner saudavel com o banco inteiramente fora, que e
+    # justamente a situacao que o health check existe para detectar.
+    resposta = client.get("/health/")
+    assert resposta.status_code == 503
+    assert resposta.json()["status"] == "erro"
 
 
 def test_login_url_configurada():

@@ -12,12 +12,14 @@ from django.conf import settings
 
 from core.security import CONTENT_SECURITY_POLICY, SECURITY_HEADERS
 
-# `/health/` responde sem sessao e sem consultar o banco: e o alvo certo para
-# medir cabecalho, que e aplicado por middleware em toda resposta.
+# `/health/` responde sem sessao: e o alvo certo para medir cabecalho, que e
+# aplicado por middleware em toda resposta. Desde 2026-08-21 a rota consulta
+# o banco, entao os testes daqui pedem `banco_sondavel` -- sem isso mediriam
+# o cabecalho de um 503, que passaria igual e esconderia a intencao.
 ROTA = "/health/"
 
 
-def test_csp_fechada_na_propria_origem(client):
+def test_csp_fechada_na_propria_origem(client, banco_sondavel):
     csp = client.get(ROTA).headers.get("Content-Security-Policy", "")
     assert "default-src 'self'" in csp
     assert "script-src 'self'" in csp
@@ -26,7 +28,7 @@ def test_csp_fechada_na_propria_origem(client):
     assert "frame-ancestors 'none'" in csp
 
 
-def test_csp_nao_admite_inline_nem_origem_externa(client):
+def test_csp_nao_admite_inline_nem_origem_externa(client, banco_sondavel):
     csp = client.get(ROTA).headers.get("Content-Security-Policy", "")
     assert "unsafe-inline" not in csp
     assert "unsafe-eval" not in csp
@@ -39,7 +41,7 @@ def test_cabecalho_do_middleware_presente(client, cabecalho, valor):
     assert client.get(ROTA).headers.get(cabecalho) == valor
 
 
-def test_permissions_policy_restringe_dispositivos(client):
+def test_permissions_policy_restringe_dispositivos(client, banco_sondavel):
     # `browsing-topics` entrou no conjunto comum vindo do ControleRendaVariavel,
     # onde o Flask-Talisman o escrevia sozinho: recusar a Topics API e
     # estritamente mais restritivo que nao declarar nada.
@@ -53,7 +55,7 @@ def test_permissions_policy_restringe_dispositivos(client):
         assert recurso in politica
 
 
-def test_csp_libera_data_uri_so_para_imagem(client):
+def test_csp_libera_data_uri_so_para_imagem(client, banco_sondavel):
     # A folga existe por um motivo so: o favicon do base.html e um SVG
     # embutido no proprio `<link rel="icon">`. O `font-src 'self' data:` que
     # esta politica tinha era sobra -- o projeto nao tem `@font-face` nem
