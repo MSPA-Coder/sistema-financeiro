@@ -78,21 +78,35 @@ jobs:
       # O `pip-audit` acima cobre as dependencias Python. Esta varredura cobre o
       # que ele nao ve: os pacotes do sistema operacional da imagem base.
       #
-      # `ignore-unfixed: true` de proposito. CVE de pacote de sistema sem
-      # correcao publicada nao e acionavel: reprovar por ele travaria PR sem
-      # relacao nenhuma com o assunto e ensinaria a ignorar o vermelho, que e o
-      # oposto do que uma varredura serve para fazer.
+      # RODA COMO CONTEINER, NAO COMO ACTION. A politica de Actions deste
+      # repositorio e `selected` com apenas `github_owned_allowed` -- action de
+      # terceiro e barrada antes de o workflow rodar, e o sintoma e
+      # `startup_failure` sem log. Conformar-se a politica e melhor que
+      # afrouxa-la para caber uma ferramenta.
       #
-      # O alvo e um nome FIXO (`image:` no compose). O nome derivado do
-      # diretorio muda conforme onde o repositorio foi clonado e nao serviria.
+      # `docker save` + `--input` em vez de montar /var/run/docker.sock: montar
+      # o socket do Docker e dar root na pratica, que foi exatamente o motivo
+      # de o `autoheal` ter sido recusado no VPS. Nao vale reabrir aqui.
+      #
+      # Imagem fixada por digest do indice multi-arquitetura, pelo mesmo motivo
+      # que as actions sao fixadas por SHA.
+      #
+      # `--ignore-unfixed` de proposito: CVE de pacote de sistema sem correcao
+      # publicada nao e acionavel. Reprovar por ele travaria PR sem relacao
+      # nenhuma com o assunto e ensinaria a ignorar o vermelho.
       - name: Varredura de vulnerabilidade da imagem servida
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: controle-bancario:local
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: '1'
-          format: table
+        run: |
+          set -euo pipefail
+          docker save controle-bancario:local -o "$RUNNER_TEMP/imagem.tar"
+          docker run --rm \
+            -v "$RUNNER_TEMP:/varredura:ro" \
+            aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+            image --input /varredura/imagem.tar \
+                  --scanners vuln \
+                  --severity HIGH,CRITICAL \
+                  --ignore-unfixed \
+                  --exit-code 1 \
+                  --format table
       - name: Verificar fronteira do runtime
         shell: bash
         run: |
