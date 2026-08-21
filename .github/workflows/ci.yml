@@ -119,7 +119,7 @@ jobs:
           # derivado do diretorio (`controle-bancario-web`), que muda conforme
           # onde o repositorio foi clonado -- e por isso nao servia de alvo
           # para a varredura de vulnerabilidade.
-          runtime_image="$(docker compose config --images | grep -x 'controle-bancario:local')"
+          runtime_image="$(docker compose config --images | grep -x 'controle-bancario:local' | head -1)"
           test -n "$runtime_image"
 
           docker run --rm --entrypoint sh "$runtime_image" -ec '
