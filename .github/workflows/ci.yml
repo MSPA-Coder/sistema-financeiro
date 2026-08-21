@@ -51,6 +51,23 @@ jobs:
         run: docker compose --profile quality build --no-cache quality
       - name: Executar quality
         run: docker compose --profile quality run --rm quality
+
+      # O Dependabot abre PR quando sai versao nova. Nao e a mesma pergunta que
+      # "a versao que esta instalada AGORA tem CVE conhecido?" -- e essa segunda
+      # ninguem fazia em nenhum dos seis repositorios.
+      #
+      # Roda dentro da propria imagem `quality`, que ja instala exatamente o que
+      # a imagem servida instala, mais as ferramentas de teste. Auditar o
+      # ambiente instalado responde a pergunta certa; auditar o arquivo de
+      # requisitos responderia sobre o que esta ESCRITO, nao sobre o que esta
+      # rodando.
+      #
+      # Reprova em qualquer achado, de proposito. Vulnerabilidade sem correcao
+      # publicada sai por `--ignore-vuln ID` com um comentario dizendo por que:
+      # cada excecao vira uma decisao explicita e datada, em vez de um vermelho
+      # permanente que se aprende a ignorar.
+      - name: Auditar dependencias instaladas (CVE conhecido)
+        run: docker compose --profile quality run --rm quality pip-audit --progress-spinner=off
       - name: Construir runtime imutavel
         run: docker compose -f compose.yaml build --no-cache web
       - name: Verificar fronteira do runtime
