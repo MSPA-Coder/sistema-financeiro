@@ -138,11 +138,13 @@ COPY static ./static
 # A ultima linha e a propria verificacao: se `pip` continuar no PATH, o build
 # falha aqui em vez de entregar uma imagem que so parece limpa.
 RUN set -eu; \
+    python -m pip check; \
     for raiz in /usr/local/lib/python*/site-packages /opt/venv/lib/python*/site-packages; do \
       [ -d "$raiz" ] || continue; \
       rm -rf "$raiz"/pip "$raiz"/pip-*.dist-info \
              "$raiz"/setuptools "$raiz"/setuptools-*.dist-info \
              "$raiz"/pkg_resources "$raiz"/_distutils_hack \
+             "$raiz"/distutils-precedence.pth \
              "$raiz"/wheel "$raiz"/wheel-*.dist-info; \
     done; \
     rm -f /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.* \

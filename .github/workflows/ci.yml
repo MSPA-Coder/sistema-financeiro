@@ -154,7 +154,10 @@ jobs:
             require_absent curl
             require_absent pg_dump
             require_absent gcc
-            python -m pip check
+            # `python -m pip check` saiu daqui: a imagem servida nao tem
+            # mais pip (ver o Dockerfile). A verificacao passou para o
+            # BUILD, no estagio runtime, logo antes de o pip ser removido
+            # -- mesmo conjunto de dependencias, so que no lugar certo.
           '
 
           runtime_container="$(docker create "$runtime_image")"
