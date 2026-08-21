@@ -74,8 +74,17 @@ cookies `HttpOnly`/`SameSite=Lax` e `Secure` quando `USE_HTTPS=True`. Exposiçã
 pública requer proxy TLS e configuração deliberada de `USE_HTTPS` e hosts. O
 piso de senha (mínimo 8 caracteres, duplicado em
 `accounts/password_validators.py` e `core/services.py` — os dois precisam
-mudar juntos) segue a mesma política dos três apps Flask do mantenedor; é
-projeto Django e não compartilha código com eles, só o valor do piso.
+mudar juntos) segue a mesma política dos três apps Flask do mantenedor.
+
+Este projeto **compartilha código** com eles em dois pontos, desde a v0.2.0 do
+[SharedAuth](https://github.com/MSPA-Coder/SharedAuth): os valores dos
+cabeçalhos defensivos e da CSP (`core/security.py`) e a formatação de números
+em pt-BR (`core/templatetags/money_filters.py`). Instala **só o núcleo** do
+pacote, sem o extra `[flask]` — o núcleo é Python puro e não arrasta um
+framework web que este projeto não usa; pedir o extra aqui seria erro. A
+biblioteca não aplica nada: quem aplica os cabeçalhos continua sendo o
+middleware deste projeto. Autenticação, permissões e o modelo de usuário
+seguem inteiramente próprios — Django, sem nada em comum com os apps Flask.
 
 ## Invariantes essenciais
 

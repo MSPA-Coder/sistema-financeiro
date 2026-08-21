@@ -29,6 +29,17 @@ patrimônio completo ou ERP não fazem parte da implementação atual.
 Docker Desktop com WSL 2 e um editor. Python, PostgreSQL e as ferramentas de
 qualidade rodam dentro dos contêineres — não é preciso instalá-los no host.
 
+Uma das dependências é privada: os valores dos cabeçalhos de segurança e a
+formatação de números em pt-BR vêm de
+[SharedAuth](https://github.com/MSPA-Coder/SharedAuth), biblioteca
+compartilhada com os outros projetos do mantenedor. Este projeto instala **só
+o núcleo** dela, sem o extra `[flask]` — o núcleo é Python puro e não arrasta
+um framework web que este projeto não usa. O build precisa de um token de
+leitura em `.secrets/github_token.txt` (secret de build do BuildKit, nunca vai
+para a imagem); na CI ele vem do secret `SHAREDAUTH_READ_TOKEN` do
+repositório. Autenticação, permissões e modelo de usuário continuam
+inteiramente deste projeto.
+
 ## Primeira execução
 
 ```powershell
