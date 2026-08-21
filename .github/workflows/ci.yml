@@ -66,8 +66,12 @@ jobs:
       # publicada sai por `--ignore-vuln ID` com um comentario dizendo por que:
       # cada excecao vira uma decisao explicita e datada, em vez de um vermelho
       # permanente que se aprende a ignorar.
+      # `--cache-dir` em /tmp porque HOME e /app na imagem e /app/.cache nao
+      # existe: sem isto o pip-audit morre tentando criar o proprio cache,
+      # antes de auditar coisa alguma. Mesmo motivo de RUFF_CACHE_DIR e
+      # PYTEST_ADDOPTS ja apontarem para /tmp no Dockerfile.
       - name: Auditar dependencias instaladas (CVE conhecido)
-        run: docker compose --profile quality run --rm quality pip-audit --progress-spinner=off
+        run: docker compose --profile quality run --rm quality pip-audit --progress-spinner=off --cache-dir /tmp/pip-audit-cache
       - name: Construir runtime imutavel
         run: docker compose -f compose.yaml build --no-cache web
       - name: Verificar fronteira do runtime
