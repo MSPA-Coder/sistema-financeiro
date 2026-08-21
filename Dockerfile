@@ -7,7 +7,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /workspace
 
-RUN python -m pip install --no-cache-dir --upgrade pip
+# Correcoes de seguranca da base e das ferramentas de empacotamento.
+#
+# `apt-get upgrade` porque a `python:3.14-slim` publicada carrega pacotes do
+# Debian com CVE ja corrigido a montante; sem isto a correcao so chega quando a
+# imagem oficial for republicada. O `setuptools` que vem na base tambem fica
+# para tras -- o 70.3.0 tinha CVE-2025-47273, travessia de caminho.
+#
+# Achado pela varredura Trivy que entrou nesta mesma fase. Antes dela ninguem
+# perguntava se a imagem que esta rodando tem CVE.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip install --no-cache-dir --upgrade pip setuptools
 
 # quality: Ruff e a suite minima de seguranca, mais o servidor de
 # desenvolvimento montado por compose.dev.yaml. Nunca e o estagio
