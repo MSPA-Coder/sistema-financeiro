@@ -5,6 +5,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from uuid import uuid4
 
 from django.db import transaction as db_transaction
+from django.db.models import Count
 from django.utils import timezone
 
 from banking.models import FinancialAccount
@@ -952,6 +953,50 @@ def counterparty_account_map(entries: list[CashFlowEntry]) -> dict[int, int | No
     return mapping
 
 
+def current_future_attachment_counts(entries: list[CashFlowEntry]) -> dict[int, int]:
+    """Para cada `entry` parcelado/recorrente, conta em lote quantos
+    comprovantes seriam apagados se a edição fosse salva com o escopo 'este
+    registro e os próximos'.
+
+    Só se aplica a `OPERATION_INSTALLMENT`/`OPERATION_RECURRING`: é o único
+    caminho que apaga e recria o bloco atual/futuro (`_replace_current_future_block`).
+    Transferência interna, mesmo suportando escopo, atualiza os lançamentos
+    no lugar (sem apagar), então não arrisca o anexo.
+    """
+    from bank_statements.models import EntryAttachment
+
+    targets = [
+        e for e in entries
+        if supports_operation_scope(e)
+        and (e.operation_type or OPERATION_SINGLE) in (OPERATION_INSTALLMENT, OPERATION_RECURRING)
+    ]
+    mapping: dict[int, int] = {e.id: 0 for e in entries}
+    if not targets:
+        return mapping
+
+    bank_operation_ids = {e.bank_operation_id for e in targets if e.bank_operation_id}
+    by_operation: dict[int, list[CashFlowEntry]] = {}
+    if bank_operation_ids:
+        for op_entry in CashFlowEntry.objects.filter(bank_operation_id__in=bank_operation_ids):
+            by_operation.setdefault(op_entry.bank_operation_id, []).append(op_entry)
+
+    all_ids = {e.id for group in by_operation.values() for e in group}
+    all_ids.update(e.id for e in targets if not e.bank_operation_id)
+    attachment_counts = dict(
+        EntryAttachment.objects.filter(entry_id__in=all_ids)
+        .values("entry_id")
+        .annotate(total=Count("id"))
+        .values_list("entry_id", "total")
+    )
+
+    for tx in targets:
+        rows = by_operation.get(tx.bank_operation_id) if tx.bank_operation_id else None
+        rows = rows or [tx]
+        block = scoped_entries(tx, rows, OPERATION_SCOPE_CURRENT_FUTURE)
+        mapping[tx.id] = sum(attachment_counts.get(e.id, 0) for e in block)
+    return mapping
+
+
 def _update_single(tx: CashFlowEntry, req: TransactionRequest) -> list[CashFlowEntry]:
     category = CashFlowCategory.objects.get(id=req.category_id)
     if category.is_internal:
@@ -1500,10 +1545,12 @@ def build_transactions_view_context(user, get_params, session) -> dict:
     )
 
     counterparty_map = counterparty_account_map(current_txs)
+    attachment_loss_map = current_future_attachment_counts(current_txs)
     for tx in current_txs:
         tx.display_date = _entry_date_for_view_mode(tx, view_mode)
         tx.counterparty_account_id = counterparty_map.get(tx.id)
         tx.supports_scope = supports_operation_scope(tx)
+        tx.current_future_attachment_count = attachment_loss_map.get(tx.id, 0)
 
     end_exclusive = end_selected + timedelta(days=1)
     saldo_inicial = report_services.decimal_period_start_balance(account_ids, start_selected, end_exclusive, view_mode)

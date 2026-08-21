@@ -150,6 +150,42 @@ function _initTransactionEditToggles(root) {
     });
 }
 
+/* Editar parcelado/recorrente com escopo "Este registro e os próximos" apaga
+   e recria o bloco atual/futuro (ver `_replace_current_future_block` em
+   services.py) - e como `EntryAttachment.entry` usa CASCADE, os comprovantes
+   anexados a esses lançamentos vão junto. O texto de confirmação (com a
+   contagem de comprovantes) vem pronto do servidor em
+   `data-current-future-confirm`, no <select> de escopo.
+
+   Não dá pra usar o `[data-confirm]`/`openConfirmModal` genérico de
+   application.js como está: aquele mecanismo liga o clique UMA vez e depois
+   sempre confirma, olhando o atributo no momento do clique - mas aqui a
+   confirmação só deve valer quando o escopo selecionado NO MOMENTO do clique
+   for "current_future". Por isso o handler abaixo lê o <select> ao vivo a
+   cada clique, e só nesse caso invoca `window.openConfirmModal` (mesmo mecanismo
+   de modal, só que a decisão de abrir é dinâmica). Se `openConfirmModal`
+   não existir (JS não carregou / falhou), o clique NÃO é interceptado: o
+   botão continua sendo um <button type="submit"> normal e o form salva. */
+function _initEditScopeConfirm(root) {
+    (root || document).querySelectorAll('.tx-form').forEach(function (form) {
+        if (form._editScopeConfirmBound) return;
+        var select = form.querySelector('select[name="operation_scope"]');
+        var button = form.querySelector('button[type="submit"]');
+        if (!select || !button) return;
+        form._editScopeConfirmBound = true;
+        button.addEventListener('click', function (e) {
+            if (select.value !== 'current_future') return;
+            var msg = select.dataset.currentFutureConfirm;
+            if (!msg || typeof window.openConfirmModal !== 'function') return;
+            e.preventDefault();
+            window.openConfirmModal('Confirmar alteração', msg, function () {
+                if (typeof form.requestSubmit === 'function') form.requestSubmit(button);
+                else form.submit();
+            });
+        });
+    });
+}
+
 /* -- DOMContentLoaded -- */
 document.addEventListener('DOMContentLoaded', function () {
     initRealizedFields();
@@ -157,6 +193,7 @@ document.addEventListener('DOMContentLoaded', function () {
     _initTransactionModals();
     _initTransactionActions(document);
     _initTransactionEditToggles(document);
+    _initEditScopeConfirm(document);
 });
 
 /* -- Re-init apos AJAX swap -- */
@@ -166,6 +203,7 @@ document.addEventListener('app:contentLoaded', function () {
     _initTransactionModals();
     _initTransactionActions(document);
     _initTransactionEditToggles(document);
+    _initEditScopeConfirm(document);
 });
 
 /* -- HTMX events for table refresh -- */
@@ -178,6 +216,7 @@ document.addEventListener('htmx:afterSwap', function (event) {
     _initTransactionModals();
     _initTransactionActions(document);
     _initTransactionEditToggles(document);
+    _initEditScopeConfirm(document);
 });
 
 document.addEventListener('htmx:load', function (event) {
@@ -188,6 +227,7 @@ document.addEventListener('htmx:load', function (event) {
     _initTransactionModals();
     _initTransactionActions(root);
     _initTransactionEditToggles(root);
+    _initEditScopeConfirm(root);
 });
 
 document.addEventListener('htmx:afterRequest', function (event) {

@@ -92,7 +92,8 @@ edição inline da tabela. Espera no contexto: `t` (CashFlowEntry ou None),
 {% if t and t.supports_scope %}
 <div class="span-2">
     <label>Aplicar alteração</label>
-    <select name="operation_scope" aria-label="Aplicar alteracao" required>
+    <select name="operation_scope" aria-label="Aplicar alteracao" required
+        {% if t.current_future_attachment_count %}data-current-future-confirm="Este registro e as parcelas seguintes serão recriados ao salvar com esse escopo, o que apaga {{ t.current_future_attachment_count }} comprovante{{ t.current_future_attachment_count|pluralize }} anexado{{ t.current_future_attachment_count|pluralize }} a eles. Deseja continuar?"{% endif %}>
         <option value="all">Todos os registros do grupo</option>
         <option value="single" selected>Somente este registro</option>
         <option value="current_future">Este registro e os próximos</option>
