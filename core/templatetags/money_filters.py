@@ -1,10 +1,24 @@
-"""Filtros de apresentação monetária compartilhados entre templates."""
+"""Filtros de apresentação monetária compartilhados entre templates.
+
+A conta de milhar e decimal em pt-BR mora em `sharedauth.formatting`. Ela era
+idêntica, caractere por caractere, à do ControleRendaVariavel — as duas foram
+escritas separadamente e coincidiram até no truque de usar `\\x00` como
+marcador para trocar os separadores sem passar duas vezes pelo mesmo
+caractere. Este projeto é Django e instala só o núcleo do pacote, que é
+Python puro e não arrasta Flask.
+
+`ocultar_zero` continua sendo escolha desta aplicação, agora explícita no
+ponto da chamada: uma tabela de lançamentos larga cheia de "R$ 0,00" só gasta
+largura. As classes por sinal ficam aqui — são nomes de CSS deste projeto,
+não formatação.
+"""
 
 from __future__ import annotations
 
 from decimal import Decimal
 
 from django import template
+from sharedauth.formatting import moeda, moeda_com_sinal
 
 register = template.Library()
 
@@ -15,11 +29,6 @@ def _to_decimal(value) -> Decimal:
     return value if isinstance(value, Decimal) else Decimal(str(value))
 
 
-def _format_brl(amount: Decimal) -> str:
-    us_fmt = f"{amount:,.2f}"
-    return us_fmt.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
-
-
 @register.filter
 def neg(value) -> Decimal:
     return -_to_decimal(value)
@@ -27,20 +36,12 @@ def neg(value) -> Decimal:
 
 @register.filter
 def money(value) -> str:
-    amount = _to_decimal(value)
-    if amount == 0:
-        return ""
-    return f"R$ {_format_brl(amount)}"
+    return moeda(_to_decimal(value), ocultar_zero=True)
 
 
 @register.filter
 def money_signed(value) -> str:
-    amount = _to_decimal(value)
-    if amount > 0:
-        return f"+ R$ {_format_brl(amount)}"
-    if amount < 0:
-        return f"- R$ {_format_brl(abs(amount))}"
-    return ""
+    return moeda_com_sinal(_to_decimal(value))
 
 
 @register.filter

@@ -37,6 +37,14 @@ jobs:
           mkdir -p .secrets
           printf '%s\n' 'ci-django-secret-key-not-for-production' > .secrets/django_secret_key
           printf '%s\n' 'ci-postgres-password-not-for-production' > .secrets/postgres_password
+      - name: Escrever o token de leitura do SharedAuth
+        # PAT de acesso restrito, somente-leitura, só no repositório
+        # SharedAuth -- usado apenas para o `pip install` do requirements.txt
+        # baixar essa dependência privada durante o build da imagem.
+        run: |
+          umask 077
+          mkdir -p .secrets
+          printf '%s' "${{ secrets.SHAREDAUTH_READ_TOKEN }}" > .secrets/github_token.txt
       - name: Validar Compose
         run: docker compose config --quiet
       - name: Construir quality sem cache

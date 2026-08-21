@@ -6,6 +6,7 @@ x-app-build: &app-build
     target: runtime
     secrets:
       - local_ca
+      - github_token
 
 x-app-environment: &app-environment
   DJANGO_SETTINGS_MODULE: financeiro.settings
@@ -152,6 +153,7 @@ services:
       target: quality
       secrets:
         - local_ca
+        - github_token
     environment:
       <<: *app-environment
     profiles: ["quality"]
@@ -167,6 +169,13 @@ volumes:
 secrets:
   local_ca:
     file: .certs/local-root-ca.crt
+  # PAT de acesso restrito (somente-leitura, so no repositorio SharedAuth) --
+  # usado apenas durante o build, para o `pip install` do requirements.txt
+  # baixar a dependencia Git privada. Nunca vira variavel de ambiente do
+  # runtime nem fica na imagem final. Mesmo token ja usado nos tres apps
+  # Flask; aqui o pacote entra sem o extra `[flask]`.
+  github_token:
+    file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/github_token.txt
   django_secret_key:
     file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/django_secret_key
   postgres_password:

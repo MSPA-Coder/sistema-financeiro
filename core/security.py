@@ -15,32 +15,29 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from django.http import HttpRequest, HttpResponse
+from sharedauth.security import SECURITY_HEADERS, montar_csp
 
-CONTENT_SECURITY_POLICY = (
-    "default-src 'self'; "
-    "script-src 'self'; "
-    "style-src 'self'; "
-    "img-src 'self' data:; "
-    "font-src 'self' data:; "
-    "connect-src 'self'; "
-    "object-src 'none'; "
-    "base-uri 'self'; "
-    "form-action 'self'; "
-    "frame-ancestors 'none'"
-)
+__all__ = ["CONTENT_SECURITY_POLICY", "SECURITY_HEADERS", "ContentSecurityPolicyMiddleware"]
 
-
-# Conjunto defensivo comum aos quatro projetos do mantenedor. Manter igual em
-# todos e o que permite auditar um e confiar nos demais.
+# A politica e os valores dos cabecalhos vem de `sharedauth.security`, o mesmo
+# lugar que os tres apps Flask usam. Este projeto instala so o nucleo do
+# pacote (Python puro, sem Flask): a biblioteca nao aplica nada aqui, ela so
+# guarda os valores -- quem aplica continua sendo o middleware abaixo.
 #
-# Nao repete o que o Django ja aplica por configuracao: `X-Content-Type-Options`
-# vem de SECURE_CONTENT_TYPE_NOSNIFF, `X-Frame-Options` de X_FRAME_OPTIONS,
-# `Referrer-Policy` de SECURE_REFERRER_POLICY e o HSTS de SECURE_HSTS_SECONDS.
-SECURITY_HEADERS = {
-    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-    "Cross-Origin-Opener-Policy": "same-origin",
-    "X-Permitted-Cross-Domain-Policies": "none",
-}
+# `imagens_data_uri=True` porque o favicon do `base.html` e um SVG embutido no
+# proprio `<link rel="icon">`. E a unica folga, e ela e pedida por nome.
+#
+# O `font-src 'self' data:` que esta constante tinha era sobra: o projeto nao
+# tem `@font-face` nem nenhum arquivo de fonte. Saiu.
+CONTENT_SECURITY_POLICY = montar_csp(imagens_data_uri=True)
+
+# Ao contrario da versao anterior, o dicionario agora traz tambem os tres
+# cabecalhos que o Django ja emite por configuracao (`SECURE_CONTENT_TYPE_
+# NOSNIFF`, `X_FRAME_OPTIONS`, `SECURE_REFERRER_POLICY`). Nao ha conflito --
+# os valores sao os mesmos e os dois lados usam `setdefault` --, e o ganho e
+# que os valores passam a ter um dono so nos quatro projetos.
+# `tests/test_security_headers.py` afirma que as settings do Django e o
+# dicionario nao podem discordar.
 
 
 class ContentSecurityPolicyMiddleware:
