@@ -65,7 +65,7 @@ def dashboard_view(request):
 		raw_period = f"{selected_year:04d}-{selected_month:02d}"
 
 	view_mode = (request.GET.get("mode") or "todos").strip().lower()
-	valid_modes = {"todos", "a_vencer", "vencidos", "realizado", "cancelado"}
+	valid_modes = {"todos", "a_vencer", "vencidos", "realizado"}
 	if view_mode not in valid_modes:
 		view_mode = "todos"
 
@@ -280,7 +280,6 @@ def dashboard_view(request):
 			("a_vencer", "A vencer"),
 			("vencidos", "Vencidos"),
 			(STATUS_REALIZED, "Realizado"),
-			("cancelado", "Cancelado"),
 		],
 		"filter_type": filter_type,
 		"owners": owner_options,

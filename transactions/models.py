@@ -9,7 +9,6 @@ from core.domain.finance import (
     OPERATION_INTERNAL_TRANSFER,
     OPERATION_RECURRING,
     OPERATION_SINGLE,
-    STATUS_CANCELED,
     STATUS_PENDING,
     STATUS_PROJECTED,
     STATUS_REALIZED,
@@ -74,7 +73,6 @@ class BankOperation(models.Model):
             (STATUS_PROJECTED, 'A vencer'),
             (STATUS_PENDING, 'Vencidos'),
             (STATUS_REALIZED, 'Realizado'),
-            (STATUS_CANCELED, 'Cancelado'),
         ],
         default=STATUS_PROJECTED,
     )
@@ -149,7 +147,6 @@ class CashFlowEntry(models.Model):
             (STATUS_PROJECTED, 'A vencer'),
             (STATUS_PENDING, 'Vencidos'),
             (STATUS_REALIZED, 'Realizado'),
-            (STATUS_CANCELED, 'Cancelado'),
         ],
         default=STATUS_PROJECTED,
     )

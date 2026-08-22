@@ -60,7 +60,7 @@
                     {% if can_update_transactions %}<button type="button" class="btn btn-sm btn-icon btn-action-edit" title="Editar" data-toggle-edit="tx-edit-{{ t.id }}">{% icon 'edit' %}</button>{% endif %}
                     {% if can_delete_transactions %}<button type="button" class="btn btn-sm btn-icon btn-action-delete" title="Excluir" data-transaction-action="delete" data-delete-url="{% url 'transactions:transaction_delete' t.id %}?{{ request.GET.urlencode }}" data-delete-supports-scope="{% if t.supports_scope %}true{% else %}false{% endif %}">{% icon 'delete' %}</button>{% endif %}
                     {% if t.supports_scope and can_view_operations and t.bank_operation_id %}<a class="btn btn-sm btn-icon btn-action-view" title="Ver operação" href="{% url 'transactions:operations_view' %}?operation_id={{ t.bank_operation.operation_key }}&amp;show_entries=1">{% icon 'link' %}</a>{% endif %}
-                    {% if can_realize_transactions and t.status != 'realizado' and t.status != 'cancelado' %}<button type="button" class="btn btn-sm btn-icon btn-action-realize" title="Realizar" data-transaction-action="realize" data-transaction-id="{{ t.id }}" data-due-date="{{ t.due_date|date:'Y-m-d' }}" data-planned-value="{{ t.entry_amount|unlocalize }}">{% icon 'check' %}</button>{% endif %}
+                    {% if can_realize_transactions and t.status != 'realizado' %}<button type="button" class="btn btn-sm btn-icon btn-action-realize" title="Realizar" data-transaction-action="realize" data-transaction-id="{{ t.id }}" data-due-date="{{ t.due_date|date:'Y-m-d' }}" data-planned-value="{{ t.entry_amount|unlocalize }}">{% icon 'check' %}</button>{% endif %}
                 </td>
                 {% endif %}
             </tr>
