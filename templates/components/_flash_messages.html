@@ -1,8 +1,9 @@
 {% load sharedauth_tags %}
-{# Resultados de acao (django.contrib.messages) usam toast: o componente
+{% comment %}Resultados de acao (django.contrib.messages) usam toast: o componente
    comum le este atributo e monta os avisos sozinho (ver o
    cabecalho de sharedauth-ui.js). O que precisa continuar visivel na tela --
    como os avisos de filtro ativo em transactions/index.html -- nao passa por
    aqui, porque nao e "resultado da ultima acao" e sumiria com o toast em
-   poucos segundos. Ver core/htmx.py pra saber por que isto e OOB. #}
+   poucos segundos. Ver core/htmx.py pra saber por que isto e OOB.
+{% endcomment %}
 <div id="flashMessages" hidden data-sa-avisos='{{ messages|avisos_json }}' hx-swap-oob="true"></div>

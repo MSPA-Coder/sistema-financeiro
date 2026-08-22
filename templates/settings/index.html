@@ -84,9 +84,10 @@
         </div>
         <form method="post" action="{% url 'core:settings_run_recurring_projection' %}" data-ui="inline">
             {% csrf_token %}
-            {# A execucao manual e idempotente e pode ser repetida depois de
+            {% comment %}A execucao manual e idempotente e pode ser repetida depois de
                aumentar o horizonte. A guarda mensal se aplica somente ao
-               disparo automatico; ver `transactions/recurring_projection.py`. #}
+               disparo automatico; ver `transactions/recurring_projection.py`.
+            {% endcomment %}
             <button type="submit" class="btn btn-success">{% icon 'refresh' %}<span>Executar Projeção Agora</span></button>
         </form>
     </div>
