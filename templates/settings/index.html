@@ -84,7 +84,12 @@
         </div>
         <form method="post" action="{% url 'core:settings_run_recurring_projection' %}" data-ui="inline">
             {% csrf_token %}
-            <input type="hidden" name="confirm_current_month" value="on">
+            {# O campo oculto `confirm_current_month` saiu daqui: ia FIXO em
+               `value="on"`, entao a trava correspondente na view -- avisar que
+               a projecao ja rodou no mes -- nunca podia reprovar. A trava foi
+               removida junto, e nao "consertada": reexecutar e idempotente,
+               e depois de aumentar o horizonte acima reexecutar e justamente
+               o que se quer. Ver `transactions/recurring_projection.py`. #}
             <button type="submit" class="btn btn-success">{% icon 'refresh' %}<span>Executar Projeção Agora</span></button>
         </form>
     </div>
