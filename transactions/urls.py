@@ -5,6 +5,21 @@ from . import views
 
 app_name = 'transactions'
 
+# Tres rotas POST sairam daqui em 2026-08-22: `cancel_entry`, `close_month` e
+# `reopen_month`. Mudavam estado e NENHUM template as acionava -- conferido por
+# `{% url %}`, por `reverse()`, por caminho literal e no JS, que so conhece as
+# acoes `delete` e `realize`. Eram superficie alcancavel por requisicao direta,
+# sem tela correspondente.
+#
+# Fechar e reabrir mes continuam existindo, em `core:settings_close_month` e
+# `core:settings_reopen_month`, que sao os caminhos que a tela de Fechamento
+# Mensal usa. A versao que saiu era a mais fraca das duas: recebia
+# `closing_balance` do proprio POST, enquanto a que ficou calcula o saldo do
+# razao (`decimal_balance_before`). Um cliente direto podia fechar o mes com
+# qualquer saldo.
+#
+# `tests/test_rotas_orfas_removidas.py` impede a volta.
+
 urlpatterns = [
     # Lista de transações
     path('transactions/', views.transactions_view, name='transactions_view'),
@@ -15,18 +30,11 @@ urlpatterns = [
     # Realizar lançamento
     path('mark_realized/<int:tx_id>/', views.mark_realized, name='mark_realized'),
 
-    # Cancelar lançamento
-    path('cancel/<int:tx_id>/', views.cancel_entry, name='cancel_entry'),
-
     # Criar/editar/excluir lançamento (único, parcelado, recorrente ou
     # transferência interna, conforme a categoria escolhida)
     path('transaction/', views.transaction_new, name='transaction_new'),
     path('transaction/<int:tx_id>/', views.transaction_edit, name='transaction_edit'),
     path('transaction/delete/<int:tx_id>/', views.transaction_delete, name='transaction_delete'),
-
-    # Fechar/reabrir mês
-    path('close-month/<int:account_id>/<int:year>/<int:month>/', views.close_month_view, name='close_month'),
-    path('reopen-month/<int:account_id>/<int:year>/<int:month>/', views.reopen_month_view, name='reopen_month'),
 
     # Cadastros: categorias
     path('tables/categories/', views.categories_view, name='categories_view'),

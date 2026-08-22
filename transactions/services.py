@@ -245,7 +245,24 @@ def unrealize_transaction(entry: CashFlowEntry) -> CashFlowEntry:
 
 
 def cancel_transaction(entry: CashFlowEntry) -> CashFlowEntry:
-    """Cancela um lançamento."""
+    """Cancela um lançamento.
+
+    SEM CHAMADOR desde 2026-08-22, e mantida de proposito. O unico chamador era
+    `transactions:cancel_entry`, uma rota POST que nenhum template acionava e
+    que saiu junto com as outras duas orfas (ver `transactions/urls.py`).
+
+    Mantida, e nao removida, porque cancelar nao e codigo morto solto: e uma
+    funcionalidade que o resto do sistema ja pressupoe. `STATUS_CANCELED` esta
+    nas escolhas do modelo e na restricao CHECK das migracoes, a tela de
+    lancamentos tem o filtro "Cancelado", `_projected_status` da projecao
+    recorrente trata o status, e o rollup de status da operacao (mais abaixo)
+    conta com ele. Apagar esta funcao deixaria o sistema modelando um estado em
+    que nao consegue entrar; o que falta e o botao, nao a regra.
+
+    Consequencia a registrar enquanto o botao nao existe: o filtro "Cancelado"
+    da tela de lancamentos nao tem como encontrar nada que o proprio sistema
+    tenha produzido. E a permissao `transactions.cancel` nao guarda nada hoje.
+    """
     if entry.status == STATUS_CANCELED:
         raise ValueError("Lançamento já está cancelado")
     
