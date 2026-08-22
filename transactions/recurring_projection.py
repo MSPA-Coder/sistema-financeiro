@@ -3,10 +3,32 @@
 Estende, até um horizonte configurável, as ocorrências futuras de cada
 lançamento recorrente. O agrupamento é por `bank_operation_id`.
 
-A execução é idempotente para o mesmo período: ocorrências já materializadas
-são detectadas e não duplicadas, então rodar duas vezes no mesmo mês não
-gera lançamento repetido. O disparo é manual, pela tela de Parâmetros, com
-um controle de "última execução no mês" que evita repetição acidental.
+A execução é idempotente, e **não há** guarda de "já rodou este mês" -- as
+duas coisas juntas, porque a segunda existia e foi removida em 2026-08-22.
+
+Idempotente porque `_extend_operation` só olha para frente: parte da MAIOR
+data existente do grupo e preenche até o horizonte, pulando data que já
+existe. Três consequências, todas testadas em
+`tests/test_projecao_recorrente_idempotente.py`:
+
+- reexecutar no mesmo mês gera zero, porque o horizonte não se move dentro do
+  mês e as ocorrências já alcançam o horizonte;
+- ocorrência apagada à mão no meio da série NÃO ressuscita, porque o
+  preenchimento nunca volta antes da maior data;
+- num mês novo o horizonte avança, e aí reexecutar gera o que falta -- que é
+  o objetivo.
+
+A guarda removida lia `confirm_current_month` do POST, e o template mandava
+esse campo FIXO em `value="on"`: nunca podia reprovar. Não foi "consertada"
+porque consertá-la seria pior. Ela obstruiria o caminho legítimo: depois de
+aumentar o horizonte na mesma tela, reexecutar é exatamente o que se quer, e
+o usuário levaria um "já executada no mês atual" no lugar do resultado. Numa
+operação que não duplica nada, pedir confirmação treina a clicar "sim" sem
+ler -- ver a regra da Fase 9 em `_manutencao/PLANO_SINAL_E_DEFEITOS.md`.
+
+O disparo é manual, pela tela de Parâmetros. O `generated_count` da mensagem
+diz ao usuário quanto foi criado; num clique redundante ele lê "0", que é a
+informação certa.
 """
 from __future__ import annotations
 
@@ -46,20 +68,6 @@ def recurring_projection_horizon_end(today: date | None = None, horizon_months: 
     current_month_start = date(base_date.year, base_date.month, 1)
     horizon_month_start = add_months(current_month_start, months)
     return add_months(horizon_month_start, 1) - timedelta(days=1)
-
-
-def was_projection_run_in_month(raw_value: str | None, month_date: date | None = None) -> bool:
-    if not raw_value:
-        return False
-    try:
-        last_run = datetime.fromisoformat(raw_value).date()
-    except ValueError:
-        try:
-            last_run = date.fromisoformat(raw_value)
-        except ValueError:
-            return False
-    base_date = month_date or date.today()
-    return last_run.year == base_date.year and last_run.month == base_date.month
 
 
 def _projected_status(template: CashFlowEntry, due_date: date, today: date) -> str:

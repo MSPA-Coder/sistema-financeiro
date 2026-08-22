@@ -63,10 +63,7 @@ from core.services import (
     update_user_ui_theme,
 )
 from transactions.models import AccountMonthClose
-from transactions.recurring_projection import (
-    ensure_recurring_projection_horizon,
-    was_projection_run_in_month,
-)
+from transactions.recurring_projection import ensure_recurring_projection_horizon
 from transactions.services import close_month, reopen_month
 
 # --- Permissões (tela) ---
@@ -556,21 +553,15 @@ def settings_update_recurring_projection_view(request):
 @login_required
 @permission_required('settings.projection.manage')
 def settings_run_recurring_projection_view(request):
+    # Nao ha guarda de "ja executou este mes", e isso e deliberado -- ver
+    # `transactions/recurring_projection.py`. A projecao preenche ate o
+    # horizonte e so olha para frente: reexecutar no mesmo mes gera zero. O
+    # numero na mensagem diz exatamente isso ao usuario.
     if request.method == 'POST':
-        import datetime as _dt
-
-        from core.domain.settings import APP_SETTING_LAST_PROJECTION_RUN
-        from core.services import get_app_setting
-
-        confirm_current_month = request.POST.get('confirm_current_month') == 'on'
-        last_run = get_app_setting(APP_SETTING_LAST_PROJECTION_RUN)
-        if was_projection_run_in_month(last_run, _dt.date.today()) and not confirm_current_month:
-            messages.warning(request, "Projeção já executada no mês atual. Confirme para executar novamente.")
-        else:
-            result = ensure_recurring_projection_horizon(update_last_run=True)
-            messages.success(
-                request,
-                f"Projeção de recorrências executada. {result.generated_count} lançamento(s) "
-                f"gerado(s) até {result.horizon_end.strftime('%d/%m/%Y')}.",
-            )
+        result = ensure_recurring_projection_horizon(update_last_run=True)
+        messages.success(
+            request,
+            f"Projeção de recorrências executada. {result.generated_count} lançamento(s) "
+            f"gerado(s) até {result.horizon_end.strftime('%d/%m/%Y')}.",
+        )
     return redirect('core:settings_home')
