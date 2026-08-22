@@ -1,15 +1,17 @@
 {% load static %}
 <!DOCTYPE html>
-{# Pre-autenticacao `ui_theme` resolve para "light": o tema fica no AppUser e
-   ainda nao ha usuario. O atributo segue o mesmo contrato de base.html. #}
+{% comment %}Pre-autenticacao `ui_theme` resolve para "light": o tema fica no AppUser e
+   ainda nao ha usuario. O atributo segue o mesmo contrato de base.html.
+{% endcomment %}
 <html lang="pt-BR" data-theme="{{ ui_theme|default:'light' }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Entrar</title>
-    {# base.css primeiro: e' de onde login.css consome as tokens de tema
+    {% comment %}base.css primeiro: e' de onde login.css consome as tokens de tema
        (--bg-page, --card, --text...). Ver o comentario no topo de login.css
-       sobre por que isto e' um <link> separado, e nao um @import dentro dele. #}
+       sobre por que isto e' um <link> separado, e nao um @import dentro dele.
+    {% endcomment %}
     <link rel="stylesheet" href="{% static 'css/base.css' %}">
     <link rel="stylesheet" href="{% static 'css/pages/login.css' %}">
 </head>

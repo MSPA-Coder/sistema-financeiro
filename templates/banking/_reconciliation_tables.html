@@ -8,9 +8,10 @@
         {% csrf_token %}
         <div class="u-d-flex u-items-center u-gap-05 u-mb-075">
             <h3 class="u-mb-0">Linhas de extrato pendentes de conciliação</h3>
-            {# Conciliar e criar (em lote) não confirmam porque são reversíveis:
+            {% comment %}Conciliar e criar (em lote) não confirmam porque são reversíveis:
                a linha volta a "pendente" ao desfazer a conciliação ou apagar o
-               lançamento criado. "Ignorar" confirma porque não pode ser desfeito. #}
+               lançamento criado. "Ignorar" confirma porque não pode ser desfeito.
+            {% endcomment %}
             <button type="submit" name="bulk_action" value="reconcile" class="btn-sm btn-primary">
                 Conciliar selecionadas
             </button>
