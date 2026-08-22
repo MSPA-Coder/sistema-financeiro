@@ -99,6 +99,12 @@ seguem inteiramente próprios — Django, sem nada em comum com os apps Flask.
 - Toda data/hora persistida é timezone-aware (`timestamptz`).
 - Acesso por titular e permissões são controles de servidor; preferências de
   visibilidade não são permissões.
+- A projeção de recorrências roda **sozinha, uma vez por mês**, a partir do
+  dia configurado em Parâmetros. Quem dispara é
+  `transactions.middleware.ProjecaoRecorrenteMensalMiddleware`, e não um cron
+  ou o `AppConfig.ready()` — o projeto não tem agendador, e depender de
+  reinício faria a execução parar sem sintoma. O botão "Executar Projeção
+  Agora" continua existindo para antecipar; reexecutar é idempotente.
 
 Os detalhes de domínio, inclusive extratos, projeções e peculiaridades de
 interface, permanecem em `CONTEXT.md`.

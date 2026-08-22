@@ -91,6 +91,9 @@ MIDDLEWARE = [
     'django_htmx.middleware.HtmxMiddleware',
     'core.htmx.HtmxFlashMessagesMiddleware',
     'core.security.ContentSecurityPolicyMiddleware',
+    # Por ultimo de proposito: precisa de `request.user`, que vem do
+    # AuthenticationMiddleware acima, e nao tem nada a dizer sobre a resposta.
+    'transactions.middleware.ProjecaoRecorrenteMensalMiddleware',
 ]
 
 ROOT_URLCONF = 'financeiro.urls'
