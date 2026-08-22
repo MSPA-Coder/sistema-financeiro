@@ -8,7 +8,6 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from banking.models import FinancialAccount
 from core.domain.finance import (
     CALC_REPEAT,
     OPERATION_SCOPE_ALL,
@@ -25,8 +24,6 @@ from transactions.operations import OPERATION_LABELS, operations_page_for_user
 from transactions.services import (
     TransactionRequest,
     build_transactions_view_context,
-    cancel_transaction,
-    close_month,
     create_category,
     create_transaction_batch,
     delete_category,
@@ -34,7 +31,6 @@ from transactions.services import (
     list_categories,
     possible_duplicates_for_created_entries,
     realize_transaction,
-    reopen_month,
     transactions_query_params,
     update_category,
     update_transaction_operation,
@@ -186,29 +182,6 @@ def mark_realized(request, tx_id):
 
 
 @login_required
-@permission_required("transactions.cancel", fallback="transactions:transactions_view")
-@require_POST
-def cancel_entry(request, tx_id):
-    """Cancela um lançamento."""
-    entry = get_object_or_404(CashFlowEntry, id=tx_id)
-    if not access.can_access_entry(request.user, entry, "update"):
-        messages.warning(request, "Acesso negado.")
-        return _redirect_to_transactions(request)
-
-    try:
-        cancel_transaction(entry)
-        messages.success(request, "Lançamento cancelado.")
-    except ValueError as e:
-        messages.error(request, str(e))
-
-    if request.headers.get("HX-Request"):
-        response = HttpResponse(status=204)
-        response.headers["HX-Trigger"] = "tableRefresh"
-        return response
-    return _redirect_to_transactions(request)
-
-
-@login_required
 @permission_required("transactions.create", fallback="transactions:transactions_view")
 def transaction_new(request):
     """Cria um lançamento novo (único, parcelado, recorrente ou transferência interna)."""
@@ -318,54 +291,6 @@ def transaction_delete(request, tx_id):
     if request.headers.get("HX-Request"):
         response = HttpResponse(status=204)
         response.headers["HX-Trigger"] = "tableRefresh"
-        return response
-    return _redirect_to_transactions(request)
-
-
-@login_required
-@permission_required("transactions.close_month", fallback="transactions:transactions_view")
-@require_POST
-def close_month_view(request, account_id, year, month):
-    """Fecha um mês para uma conta."""
-    account = get_object_or_404(FinancialAccount, id=account_id)
-    closing_balance_str = request.POST.get('closing_balance', '0')
-
-    try:
-        closing_balance = Decimal(closing_balance_str.replace(',', '.'))
-    except (InvalidOperation, ValueError):
-        messages.error(request, "Saldo inválido.")
-        return _redirect_to_transactions(request)
-
-    try:
-        close_month(account, int(year), int(month), closing_balance, request.user)
-        messages.success(request, f"Mês {month}/{year} fechado com sucesso.")
-    except ValueError as e:
-        messages.error(request, str(e))
-
-    if request.headers.get('HX-Request'):
-        response = HttpResponse(status=204)
-        response.headers['HX-Trigger'] = 'monthClosed'
-        return response
-    return _redirect_to_transactions(request)
-
-
-@login_required
-@permission_required("transactions.reopen_month", fallback="transactions:transactions_view")
-@require_POST
-def reopen_month_view(request, account_id, year, month):
-    """Reabre um mês fechado."""
-    account = get_object_or_404(FinancialAccount, id=account_id)
-    reason = request.POST.get('reason', '')
-
-    try:
-        reopen_month(account, int(year), int(month), reason, request.user)
-        messages.success(request, f"Mês {month}/{year} reaberto com sucesso.")
-    except ValueError as e:
-        messages.error(request, str(e))
-
-    if request.headers.get('HX-Request'):
-        response = HttpResponse(status=204)
-        response.headers['HX-Trigger'] = 'monthReopened'
         return response
     return _redirect_to_transactions(request)
 
