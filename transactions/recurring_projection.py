@@ -30,8 +30,11 @@ O disparo é manual, pela tela de Parâmetros. O `generated_count` da mensagem
 diz ao usuário quanto foi criado; num clique redundante ele lê "0", que é a
 informação certa.
 """
+
 from __future__ import annotations
 
+import calendar
+import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from itertools import groupby
@@ -54,6 +57,8 @@ from reports.services import add_months
 
 from .models import CashFlowEntry
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class RecurringProjectionResult:
@@ -62,12 +67,116 @@ class RecurringProjectionResult:
     processed_operations: int
 
 
-def recurring_projection_horizon_end(today: date | None = None, horizon_months: int | None = None) -> date:
+def recurring_projection_horizon_end(
+    today: date | None = None, horizon_months: int | None = None
+) -> date:
     base_date = today or date.today()
-    months = horizon_months if horizon_months is not None else get_recurring_projection_settings().horizon_months
+    months = (
+        horizon_months
+        if horizon_months is not None
+        else get_recurring_projection_settings().horizon_months
+    )
     current_month_start = date(base_date.year, base_date.month, 1)
     horizon_month_start = add_months(current_month_start, months)
     return add_months(horizon_month_start, 1) - timedelta(days=1)
+
+
+def was_projection_run_in_month(raw_value: str | None, month_date: date | None = None) -> bool:
+    """A projecao ja rodou no mes de `month_date`?
+
+    Esta funcao ja existiu, guardando o botao manual, e foi removida em
+    2026-08-22 por nao proteger nada: reexecutar a mao e idempotente, e o
+    aviso ainda por cima era inalcancavel (o template mandava o campo de
+    confirmacao fixo). Volta agora para o uso em que faz sentido -- segurar a
+    execucao AUTOMATICA, que ninguem pediu e que portanto ninguem espera ver
+    acontecendo duas vezes.
+
+    A diferenca nao e de implementacao, e de proposito: como confirmacao ela
+    obstruia o usuario; como limite de frequencia ela e a razao de a execucao
+    automatica ser previsivel.
+    """
+    if not raw_value:
+        return False
+    try:
+        last_run = datetime.fromisoformat(raw_value).date()
+    except ValueError:
+        try:
+            last_run = date.fromisoformat(raw_value)
+        except ValueError:
+            # Valor ilegivel conta como "nao rodou": errar para o lado de
+            # executar mantem a projecao em dia, e executar de novo nao
+            # duplica nada. Errar para o lado de pular deixaria o horizonte
+            # parado sem ninguem perceber.
+            return False
+    base_date = month_date or date.today()
+    return last_run.year == base_date.year and last_run.month == base_date.month
+
+
+def dia_efetivo_de_execucao(run_day: int, hoje: date) -> int:
+    """O dia em que a execucao automatica e devida, dentro do mes de `hoje`.
+
+    `run_day` vai de 1 a 31 e o padrao do sistema e **31**. Comparar
+    `hoje.day >= run_day` cru faria a execucao automatica nunca acontecer em
+    fevereiro, abril, junho, setembro e novembro -- com o valor PADRAO, ou
+    seja, para quem nunca mexeu na configuracao. Encurtar para o ultimo dia do
+    mes e o que faz "dia 31" significar "fim do mes", que e como a pessoa que
+    escolhe 31 le a opcao.
+    """
+    ultimo_dia = calendar.monthrange(hoje.year, hoje.month)[1]
+    return min(run_day, ultimo_dia)
+
+
+@dataclass(frozen=True)
+class DecisaoProjecaoMensal:
+    """O que a verificacao automatica decidiu, e por que."""
+
+    executou: bool
+    mes_resolvido: bool  # nada mais a fazer neste mes
+    motivo: str
+    resultado: RecurringProjectionResult | None = None
+
+
+def executar_projecao_mensal_se_devido(hoje: date | None = None) -> DecisaoProjecaoMensal:
+    """Executa a projecao no maximo uma vez por mes, a partir do dia marcado.
+
+    Ate 2026-08-22 o campo "Dia de execucao automatica" era salvo, exibido e
+    confirmado por mensagem, e **nao existia execucao automatica alguma** --
+    nem agendador no codigo, nem comando de management, nem cron ou timer no
+    servidor. A projecao so andava quando alguem clicava no botao.
+
+    Quem chama e o middleware (ver `transactions/middleware.py`), e nao o
+    `AppConfig.ready()`. Tres razoes, nesta ordem:
+
+    1. `ready()` roda tambem em `migrate` e `collectstatic`, onde gravar esta
+       errado -- inclusive antes de as migracoes existirem no banco;
+    2. com varios workers do gunicorn, dispara uma vez por worker no boot;
+    3. e sobretudo: so no boot significa que um conteiner de pe ha 40 dias
+       nunca executa. Depender de reinicio e a forma silenciosa de a
+       funcionalidade parar de existir sem ninguem notar -- exatamente o
+       defeito que este projeto passou o mes caçando.
+
+    Concorrencia entre workers e segura sem trava propria: dois que decidam
+    executar ao mesmo tempo serializam no `pg_advisory_xact_lock` de
+    `ensure_recurring_projection_horizon`, e o segundo gera zero porque a
+    operacao e idempotente.
+    """
+    hoje = hoje or date.today()
+    configuracao = get_recurring_projection_settings()
+
+    if was_projection_run_in_month(configuracao.last_projection_run, hoje):
+        return DecisaoProjecaoMensal(False, True, "ja executada neste mes")
+
+    dia_devido = dia_efetivo_de_execucao(configuracao.run_day, hoje)
+    if hoje.day < dia_devido:
+        return DecisaoProjecaoMensal(False, False, f"antes do dia {dia_devido}")
+
+    resultado = ensure_recurring_projection_horizon(today=hoje, update_last_run=True)
+    logger.info(
+        "Projecao recorrente automatica: %s lancamento(s) ate %s.",
+        resultado.generated_count,
+        resultado.horizon_end.isoformat(),
+    )
+    return DecisaoProjecaoMensal(True, True, "executada", resultado)
 
 
 def _projected_status(template: CashFlowEntry, due_date: date, today: date) -> str:
@@ -157,7 +266,10 @@ def ensure_recurring_projection_horizon(
 
     if update_last_run:
         from core.domain.settings import APP_SETTING_LAST_PROJECTION_RUN
-        upsert_app_setting(APP_SETTING_LAST_PROJECTION_RUN, datetime.now().isoformat(timespec="seconds"))
+
+        upsert_app_setting(
+            APP_SETTING_LAST_PROJECTION_RUN, datetime.now().isoformat(timespec="seconds")
+        )
 
     return RecurringProjectionResult(
         horizon_end=horizon_end,
