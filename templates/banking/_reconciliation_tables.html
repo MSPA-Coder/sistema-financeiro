@@ -8,16 +8,23 @@
         {% csrf_token %}
         <div class="u-d-flex u-items-center u-gap-05 u-mb-075">
             <h3 class="u-mb-0">Linhas de extrato pendentes de conciliação</h3>
-            <button type="submit" name="bulk_action" value="reconcile" class="btn-sm btn-primary"
-                    data-confirm="Conciliar todas as linhas selecionadas com seu único movimento candidato? Linhas sem candidato único (nenhum ou mais de um) ficam de fora e precisam de conciliação manual.">
+            {# Conciliar e criar (em lote) NÃO confirmam, de propósito: as duas
+               são reversíveis (a linha volta a "pendente" desfazendo a
+               conciliação, ou apagando o lançamento criado) e a versão
+               individual das duas já não confirmava -- confirmar só o lote
+               era a inconsistência, não a falta de confirmação na individual.
+               "Ignorar" continua confirmando: é a única das três sem desfazer. #}
+            <button type="submit" name="bulk_action" value="reconcile" class="btn-sm btn-primary">
                 Conciliar selecionadas
             </button>
-            <button type="submit" name="bulk_action" value="create" class="btn-sm btn-action-edit"
-                    data-confirm="Criar lançamentos para todas as linhas selecionadas? A categoria de cada uma é sugerida automaticamente (cai em &quot;Outros&quot; quando não reconhecida).">
+            <button type="submit" name="bulk_action" value="create" class="btn-sm btn-action-edit">
                 Criar selecionadas
             </button>
             <button type="submit" name="bulk_action" value="ignore" class="btn-sm btn-action-delete"
-                    data-confirm="Ignorar todas as linhas selecionadas?">
+                    data-sa-confirmar="Ignorar todas as linhas selecionadas?"
+                    data-sa-titulo="Ignorar linhas"
+                    data-sa-severidade="warning"
+                    data-sa-ok="Ignorar">
                 Ignorar selecionadas
             </button>
         </div>
@@ -89,7 +96,11 @@
                             <option value="{{ category.id }}" {% if category.id == line.suggested_category_id %}selected{% endif %}>{{ category.category_name }}</option>
                             {% endfor %}
                         </select>
-                        <button type="submit" class="btn-sm btn-action-edit" data-confirm="Criar um lançamento realizado a partir desta linha do extrato?">Criar</button>
+                        <button type="submit" class="btn-sm btn-action-edit"
+                                data-sa-confirmar="Criar um lançamento realizado a partir desta linha do extrato?"
+                                data-sa-titulo="Criar lançamento"
+                                data-sa-severidade="info"
+                                data-sa-ok="Criar">Criar</button>
                     </form>
                     {% else %}
                     <span class="empty-state">-</span>
@@ -103,7 +114,11 @@
                           hx-swap="innerHTML" class="u-d-inline">
                         {% csrf_token %}
                         <input type="hidden" name="line_id" value="{{ line.id }}">
-                        <button type="submit" class="btn-sm btn-action-delete" data-confirm="Ignorar esta linha do extrato?">Ignorar</button>
+                        <button type="submit" class="btn-sm btn-action-delete"
+                                data-sa-confirmar="Ignorar esta linha do extrato?"
+                                data-sa-titulo="Ignorar linha"
+                                data-sa-severidade="warning"
+                                data-sa-ok="Ignorar">Ignorar</button>
                     </form>
                     {% else %}
                     <span class="empty-state">Sem ação</span>
@@ -145,7 +160,11 @@
                           hx-swap="innerHTML" class="u-d-inline">
                         {% csrf_token %}
                         <input type="hidden" name="line_id" value="{{ line.id }}">
-                        <button type="submit" class="btn-sm btn-action-edit" data-confirm="Desfazer esta conciliação?">{% icon 'undo' %} Desfazer</button>
+                        <button type="submit" class="btn-sm btn-action-edit"
+                                data-sa-confirmar="Desfazer esta conciliação?"
+                                data-sa-titulo="Desfazer conciliação"
+                                data-sa-severidade="info"
+                                data-sa-ok="Desfazer">{% icon 'undo' %} Desfazer</button>
                     </form>
                 </td>
             </tr>

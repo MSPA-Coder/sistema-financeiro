@@ -9,9 +9,11 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231e40af'/><text y='.85em' font-size='68' x='16'>₿</text></svg>">
 
     <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    <link rel="stylesheet" href="{% static 'sharedauth/sharedauth-ui.css' %}">
 
     <script src="{% static 'vendor/htmx.min.js' %}"></script>
     <script src="{% static 'js/core/htmx-config.js' %}"></script>
+    <script src="{% static 'sharedauth/sharedauth-ui.js' %}" defer></script>
 
     {% block styles %}{% endblock %}
 </head>
@@ -35,16 +37,6 @@
     </div>
     <script src="{% static 'js/core/application.js' %}"></script>
     <script src="{% static 'vendor/chart.umd.min.js' %}"></script>
-    <div id="appConfirmModal" class="app-modal" role="dialog" aria-modal="true" aria-labelledby="appConfirmTitle">
-        <div class="modal-content">
-            <h3 id="appConfirmTitle">Confirmar operação</h3>
-            <p id="appConfirmMessage" class="modal-message">Confirme a operação para continuar.</p>
-            <div class="modal-actions">
-                <button type="button" id="appConfirmCancel" class="modal-btn modal-btn-cancel">Cancelar</button>
-                <button type="button" id="appConfirmSubmit" class="modal-btn modal-btn-danger">Confirmar</button>
-            </div>
-        </div>
-    </div>
     {% block scripts %}{% endblock %}
 </body>
 </html>

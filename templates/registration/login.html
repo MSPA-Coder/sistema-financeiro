@@ -1,10 +1,19 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="pt-BR">
+{# Pre-autenticacao `ui_theme` sempre resolve pra "light" (core/context_processors.py:
+   o tema fica no AppUser, e antes do login nao ha usuario) - mas declarar o
+   atributo aqui, do mesmo jeito que base.html faz, tira o login da posicao de
+   "nunca le tema nenhum" e deixa pronto pro dia em que exista alguma forma de
+   lembrar o tema antes do login (cookie, por exemplo). #}
+<html lang="pt-BR" data-theme="{{ ui_theme|default:'light' }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Entrar</title>
+    {# base.css primeiro: e' de onde login.css consome as tokens de tema
+       (--bg-page, --card, --text...). Ver o comentario no topo de login.css
+       sobre por que isto e' um <link> separado, e nao um @import dentro dele. #}
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
     <link rel="stylesheet" href="{% static 'css/pages/login.css' %}">
 </head>
 <body>

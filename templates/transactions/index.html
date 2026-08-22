@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static money_filters icons %}
+{% load static money_filters icons sharedauth_tags %}
 {% block title %}Lançamentos{% endblock %}
 
 {% block styles %}
@@ -83,10 +83,16 @@
 {% include "transactions/_summary_cards.html" %}
 
 {% if operation_id %}
-<div class="flash info" data-ui="mb-1">Exibindo lançamentos da operação selecionada. <a href="{% url 'transactions:operations_view' %}">Voltar para Operações</a> ou <a href="{% url 'transactions:transactions_view' %}">limpar filtro</a>.</div>
+<div class="flash info sa-info" data-ui="mb-1">
+    {% sharedauth_icon 'info' %}
+    <span data-ui="flex-1">Exibindo lançamentos da operação selecionada. <a href="{% url 'transactions:operations_view' %}">Voltar para Operações</a> ou <a href="{% url 'transactions:transactions_view' %}">limpar filtro</a>.</span>
+</div>
 {% endif %}
 {% if entry_id %}
-<div class="flash info" data-ui="mb-1">Exibindo lançamento selecionado #{{ entry_id }}. <a href="{% url 'transactions:transactions_view' %}">limpar filtro</a>.</div>
+<div class="flash info sa-info" data-ui="mb-1">
+    {% sharedauth_icon 'info' %}
+    <span data-ui="flex-1">Exibindo lançamento selecionado #{{ entry_id }}. <a href="{% url 'transactions:transactions_view' %}">limpar filtro</a>.</span>
+</div>
 {% endif %}
 
 {% include "transactions/_table_body.html" %}

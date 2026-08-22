@@ -99,7 +99,11 @@
                                     <input type="hidden" name="table" value="users">
                                     <input type="hidden" name="action" value="delete">
                                     <input type="hidden" name="id" value="{{ u.id }}">
-                                    <button type="submit" class="btn btn-danger btn-sm" data-confirm="Excluir usuário {{ u.username }}? Esta ação não poderá ser desfeita.">{% icon 'delete' %}<span>Excluir</span></button>
+                                    <button type="submit" class="btn btn-danger btn-sm"
+                                            data-sa-confirmar="Excluir usuário {{ u.username }}? Esta ação não poderá ser desfeita."
+                                            data-sa-titulo="Excluir usuário"
+                                            data-sa-severidade="error"
+                                            data-sa-ok="Excluir">{% icon 'delete' %}<span>Excluir</span></button>
                                 </form>
                             </td>
                         </tr>

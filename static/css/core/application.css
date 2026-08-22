@@ -533,14 +533,12 @@ a:hover { text-decoration: underline; }
 
 /* ============================================================
    FLASH MESSAGES
-   ============================================================ */
-.flash-messages {
-    flex: 0 0 auto;
-    width: 100%;
-    max-width: 1200px;
-    margin: 0.6rem auto 0;
-    padding: 0 1rem;
-}
+   ============================================================
+   Resultado de acao (django.contrib.messages) virou toast (ver
+   components/_flash_messages.html e sharedauth-ui.css/.sa-avisos) -- o que
+   sobrou como banner de pagina e so o contexto persistente (filtro ativo em
+   transactions/index.html e operations.html), que usa as mesmas classes
+   `.flash`/`.flash.<severidade>` abaixo. */
 .flash {
     display: flex;
     align-items: flex-start;

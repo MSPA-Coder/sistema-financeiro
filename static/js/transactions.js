@@ -157,15 +157,18 @@ function _initTransactionEditToggles(root) {
    contagem de comprovantes) vem pronto do servidor em
    `data-current-future-confirm`, no <select> de escopo.
 
-   Não dá pra usar o `[data-confirm]`/`openConfirmModal` genérico de
-   application.js como está: aquele mecanismo liga o clique UMA vez e depois
-   sempre confirma, olhando o atributo no momento do clique - mas aqui a
-   confirmação só deve valer quando o escopo selecionado NO MOMENTO do clique
-   for "current_future". Por isso o handler abaixo lê o <select> ao vivo a
-   cada clique, e só nesse caso invoca `window.openConfirmModal` (mesmo mecanismo
-   de modal, só que a decisão de abrir é dinâmica). Se `openConfirmModal`
-   não existir (JS não carregou / falhou), o clique NÃO é interceptado: o
-   botão continua sendo um <button type="submit"> normal e o form salva. */
+   Não dá pra usar `data-sa-confirmar` declarativo (o mecanismo genérico do
+   sharedauth-ui.js): aquele lê o atributo no momento do clique e o atributo
+   seria estático, mas aqui a confirmação só deve valer quando o escopo
+   selecionado NO MOMENTO do clique for "current_future". Por isso o handler
+   abaixo lê o <select> ao vivo a cada clique, e só nesse caso chama
+   `window.sharedauth.confirmar(...)` (mesmo componente comum, só que a
+   decisão de abrir é dinâmica, não declarativa). Severidade "error": este é
+   o caso do inventário em que o escopo apaga e recria o bloco, e os
+   comprovantes anexados vão junto pelo CASCADE -- perda real, não só
+   reversão de estado. Se `window.sharedauth` não existir (JS não carregou /
+   falhou), o clique NÃO é interceptado: o botão continua sendo um
+   <button type="submit"> normal e o form salva. */
 function _initEditScopeConfirm(root) {
     (root || document).querySelectorAll('.tx-form').forEach(function (form) {
         if (form._editScopeConfirmBound) return;
@@ -176,9 +179,14 @@ function _initEditScopeConfirm(root) {
         button.addEventListener('click', function (e) {
             if (select.value !== 'current_future') return;
             var msg = select.dataset.currentFutureConfirm;
-            if (!msg || typeof window.openConfirmModal !== 'function') return;
+            if (!msg || !window.sharedauth || typeof window.sharedauth.confirmar !== 'function') return;
             e.preventDefault();
-            window.openConfirmModal('Confirmar alteração', msg, function () {
+            window.sharedauth.confirmar({
+                mensagem: msg,
+                titulo: 'Confirmar alteração',
+                severidade: 'error'
+            }).then(function (ok) {
+                if (!ok) return;
                 if (typeof form.requestSubmit === 'function') form.requestSubmit(button);
                 else form.submit();
             });
