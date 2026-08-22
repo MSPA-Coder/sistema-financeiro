@@ -1,36 +1,52 @@
-:root {
-    color-scheme: light;
-    --bg: #0f172a;
-    --panel-2: #1f2937;
-    --border: #334155;
-    --text: #e5e7eb;
-    --muted: #94a3b8;
-    --accent: #60a5fa;
-    --accent-strong: #2563eb;
-    --danger: #f87171;
-}
-* { box-sizing: border-box; }
+/* O login usa as MESMAS tokens de tema do resto do app (`--bg-page`, `--card`,
+   `--text`, `--muted`, `--border`, `--primary`, `--danger`...), em vez de
+   redeclarar a própria paleta. Antes este arquivo tinha um `:root` próprio
+   fixo nos valores do tema escuro -- por isso o login ficava congelado nesse
+   tema sozinho enquanto trocar de tema no app (`html[data-theme]`) não
+   surtia efeito nenhum aqui: nada neste arquivo lia a variável trocada.
+
+   As tokens vêm de `css/base.css`, carregado num `<link>` PRÓPRIO antes deste
+   arquivo em `registration/login.html` -- não por `@import` daqui. Tentei
+   `@import url("../core/application.css")` primeiro (mesma ideia de
+   `css/base.css`, que importa de um nível abaixo com `./core/...`), mas o
+   `collectstatic` real quebra nesse `@import` de subida de diretório: o
+   `CompressedManifestStaticFilesStorage` do WhiteNoise resolve
+   `../core/application.css` a partir de `css/pages/` para
+   `css/pages/core/application.css` (a subida `..` não é aplicada) e o build
+   falha com "Missing staticfiles manifest entry". `css/base.css` nunca bateu
+   nisso porque o import dele é `./core/...`, sem `..` -- caso não teve
+   cobertura. Dois `<link>` sem `@import` evita o bug por inteiro; o efeito
+   final na cascata é o mesmo (application.css carrega, depois este arquivo
+   sobrescreve o que precisa). */
+
+/* application.css já reseta `box-sizing`/margem/padding em `*` -- não repete
+   aqui. Também estiliza <body> (altura de viewport fixa, overflow
+   escondido, flex em coluna) pensando no shell com sidebar - o login não tem
+   shell nenhum, então as propriedades abaixo pisam nas do link anterior onde
+   colidem (mesma especificidade, ganha quem vem depois na cascata). */
 body {
     margin: 0;
     min-height: 100vh;
+    height: auto;
+    overflow: visible;
     display: grid;
     place-items: center;
-    font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
-    background: radial-gradient(circle at top, #1e293b, var(--bg) 58%);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    background: radial-gradient(circle at top, var(--bg-header), var(--bg-page) 58%);
     color: var(--text);
 }
 .card {
     width: min(92vw, 420px);
-    background: rgba(17, 24, 39, 0.92);
-    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: var(--card);
+    border: 1px solid var(--border);
     border-radius: 20px;
     padding: 32px;
-    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.45);
-    backdrop-filter: blur(16px);
+    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.25);
 }
 h1 {
     margin: 0 0 8px;
     font-size: 1.8rem;
+    color: var(--text);
 }
 p {
     margin: 0 0 24px;
@@ -41,20 +57,24 @@ label {
     display: block;
     margin: 0 0 8px;
     font-weight: 600;
+    color: var(--text);
 }
+/* application.css já estiliza `input` (cor, fundo, borda) com `!important`,
+   pensando na densidade das telas internas - vence de qualquer jeito, então
+   repetir essas três propriedades aqui seria só dívida de duplicação sem
+   efeito nenhum. O que sobra é o ajuste de tamanho: o login pede campos
+   maiores e mais espaçados do que uma tabela. */
 input {
     width: 100%;
     padding: 14px 16px;
-    border: 1px solid var(--border);
     border-radius: 12px;
-    background: var(--panel-2);
-    color: var(--text);
     font-size: 1rem;
     outline: none;
 }
 input:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.2);
+    /* Anel de foco maior que o padrão do app (0 0 0 2.5px): o login tem um
+       único campo por vez em foco, então pode ser mais chamativo. */
+    box-shadow: 0 0 0 3px var(--primary-light);
 }
 .field + .field { margin-top: 18px; }
 .actions {
@@ -67,22 +87,22 @@ button {
     border-radius: 12px;
     padding: 14px 20px;
     font-weight: 700;
-    background: linear-gradient(135deg, var(--accent), var(--accent-strong));
-    color: white;
+    background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+    color: #fff;
     cursor: pointer;
 }
 .errorlist {
     margin: 0 0 18px;
     padding: 12px 14px;
     list-style: none;
-    border: 1px solid rgba(248, 113, 113, 0.35);
+    border: 1px solid var(--danger);
     border-radius: 12px;
-    background: rgba(127, 29, 29, 0.2);
-    color: #fecaca;
+    background: var(--semantic-negative-bg);
+    color: var(--danger);
 }
 .note {
     margin-top: 18px;
     font-size: 0.92rem;
     color: var(--muted);
 }
-a { color: var(--accent); }
+a { color: var(--primary); }

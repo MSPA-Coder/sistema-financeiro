@@ -8,6 +8,8 @@ subir, e `DEBUG` so liga quando pedido explicitamente.
 import os
 from pathlib import Path
 
+from sharedauth.ui import CAMINHO_ESTATICO as SHAREDAUTH_UI
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -157,7 +159,12 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_DIRS = [BASE_DIR / 'static'] if (BASE_DIR / 'static').exists() else []
+# O prefixo ("sharedauth", ...) serve o CSS/JS do pacote comum sob
+# static/sharedauth/ sem copia-los para dentro do repositorio -- o WhiteNoise
+# aplica hash e compressao neles do mesmo jeito que aplica no restante.
+STATICFILES_DIRS = ([BASE_DIR / 'static'] if (BASE_DIR / 'static').exists() else []) + [
+    ('sharedauth', SHAREDAUTH_UI),
+]
 
 # `STATICFILES_STORAGE` foi removido no Django 5.1: declarar o backend do
 # WhiteNoise ali era silenciosamente ignorado, e a aplicacao servia os assets

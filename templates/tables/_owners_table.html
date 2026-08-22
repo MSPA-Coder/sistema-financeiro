@@ -7,7 +7,11 @@
             <button type="button" class="btn btn-sm btn-icon btn-action-edit" title="Editar" data-toggle-edit="edit-owner-{{ owner.id }}">{% icon 'edit' %}</button>
             <form method="post" action="{% url 'accounts:delete_owner' owner.id %}" data-ui="inline">
                 {% csrf_token %}
-                <button type="submit" class="btn btn-sm btn-icon btn-action-delete" title="Excluir" data-confirm="Excluir o titular {{ owner.name }}? Esta ação não pode ser desfeita.">{% icon 'delete' %}</button>
+                <button type="submit" class="btn btn-sm btn-icon btn-action-delete" title="Excluir"
+                    data-sa-confirmar="Excluir o titular {{ owner.name }}? Esta ação não pode ser desfeita."
+                    data-sa-titulo="Excluir titular"
+                    data-sa-severidade="error"
+                    data-sa-ok="Excluir">{% icon 'delete' %}</button>
             </form>
         </td>
     </tr>

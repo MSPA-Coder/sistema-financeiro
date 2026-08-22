@@ -15,7 +15,11 @@
             <button type="button" class="btn btn-sm btn-icon btn-action-edit" title="Editar" data-toggle-edit="edit-institution-{{ institution.id }}">{% icon 'edit' %}</button>
             <form method="post" action="{% url 'banking:delete_institution' institution.id %}" data-ui="inline">
                 {% csrf_token %}
-                <button type="submit" class="btn btn-sm btn-icon btn-action-delete" title="Excluir" data-confirm="Excluir a instituição {{ institution.institution_name }}? Esta ação não pode ser desfeita.">{% icon 'delete' %}</button>
+                <button type="submit" class="btn btn-sm btn-icon btn-action-delete" title="Excluir"
+                    data-sa-confirmar="Excluir a instituição {{ institution.institution_name }}? Esta ação não pode ser desfeita."
+                    data-sa-titulo="Excluir instituição"
+                    data-sa-severidade="error"
+                    data-sa-ok="Excluir">{% icon 'delete' %}</button>
             </form>
         </td>
     </tr>

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static icons %}
+{% load static icons sharedauth_tags %}
 
 {% block title %}Operações{% endblock %}
 
@@ -47,7 +47,10 @@
 
 {% block content %}
 {% if operation_id %}
-<div class="flash info">Exibindo a operação relacionada ao lançamento selecionado. <a href="{% url 'transactions:operations_view' %}">Limpar seleção</a>.</div>
+<div class="flash info sa-info">
+    {% sharedauth_icon 'info' %}
+    <span data-ui="flex-1">Exibindo a operação relacionada ao lançamento selecionado. <a href="{% url 'transactions:operations_view' %}">Limpar seleção</a>.</span>
+</div>
 {% endif %}
 
 {% include "transactions/_operations_table.html" %}

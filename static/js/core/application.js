@@ -67,6 +67,30 @@
         }
         proxy.value = submitter.value;
     }
+
+    /* O espelhamento acima e um quirk geral do htmx (ver o comentario logo
+       acima), independente de confirmacao - mas so era acionado pelos dois
+       pontos que hoje sumiram (o modal de confirmacao antigo e o
+       `_initDynamicConfirmButtons`). Religar aqui, incondicional: fase de
+       CAPTURA no document, e ANTES do listener delegado de
+       `sharedauth-ui.js` (que carrega com `defer`, depois deste script
+       sincrono - dois listeners de captura no mesmo no disparam na ordem em
+       que foram registrados). Isso importa porque aquele listener chama
+       `stopPropagation()` e só submete depois de uma decisão assíncrona
+       (a Promise da confirmação); quando o clique original já não se
+       propaga, o rastreamento interno do htmx do "último botão clicado" não
+       tem chance de rodar, e o par name/value do botão se perderia mesmo
+       indo para `requestSubmit()`. Espelhar no clique, antes de qualquer
+       `stopPropagation()`, resolve para os dois casos: botão com
+       confirmação e botão sem. */
+    document.addEventListener('click', function (ev) {
+        var btn = ev.target.closest && ev.target.closest(
+            'button[type="submit"][name], input[type="submit"][name]'
+        );
+        if (!btn) return;
+        _mirrorSubmitterAsHiddenField(btn.form, btn);
+    }, true);
+
     window.submitWithMainPanelRestore = function (form) {
         if (!form) return;
         var method = (form.getAttribute('method') || 'get').toLowerCase();
@@ -358,15 +382,42 @@
         });
     }
 
+    /* sharedauth-ui.js só varre `[data-sa-avisos]` em dois gatilhos:
+       `DOMContentLoaded` (carga cheia) e `htmx:afterSwap` (troca via htmx de
+       verdade). A navegação AJAX própria deste app (`fetchAndSwapMain` /
+       `submitPostRedirectAjax`) não é nenhum dos dois - ela clona o bloco de
+       mensagens na hora, sem disparar evento algum. Sem isto, uma mensagem
+       gerada por essas rotas nunca vira toast: fica no DOM, escondida,
+       esperando um `htmx:afterSwap` que não vai vir.
+       Reemitir o mesmo evento que o componente já escuta é mais simples e
+       mais seguro que duplicar `lerAvisosDoServidor` aqui - e não exige tocar
+       no arquivo vendorizado. `ev.target` de um evento disparado direto no
+       `document` é o próprio `document`, e `lerAvisosDoServidor(document)`
+       varre a página inteira, o que cobre o bloco recém-inserido. */
+    function _announceServerAvisos() {
+        document.dispatchEvent(new CustomEvent('htmx:afterSwap'));
+    }
+
+    /* `#flashMessages` chega nas respostas htmx via `hx-swap-oob` (ver
+       core/htmx.py), e trocas fora de banda disparam `htmx:oobAfterSwap`,
+       não `htmx:afterSwap` - são eventos distintos, e o segundo (que
+       sharedauth-ui.js escuta) só cobre o alvo PRINCIPAL do swap, nunca o
+       bloco OOB. Sem esta ponte, mensagem gerada numa requisição htmx comum
+       (ex.: as ações de conciliação) nunca vira toast. */
+    document.addEventListener('htmx:oobAfterSwap', function (ev) {
+        if (ev.target && ev.target.id === 'flashMessages') _announceServerAvisos();
+    });
+
     function _syncFlashMessages(parsedDoc) {
         var appContent = document.querySelector('.app-content');
         if (!appContent) return;
-        var currentFlash = document.querySelector('.app-content > .flash-messages');
+        var currentFlash = document.getElementById('flashMessages');
         if (currentFlash) currentFlash.remove();
-        var newFlash = parsedDoc.querySelector('.app-content > .flash-messages');
+        var newFlash = parsedDoc.getElementById('flashMessages');
         if (!newFlash) return;
         var main = document.getElementById('appMain');
         appContent.insertBefore(newFlash.cloneNode(true), main || null);
+        _announceServerAvisos();
     }
 
     function _scheduleFilterCascade(form, currentUrl, cascadeDepth) {
@@ -462,7 +513,6 @@
 
                 /* re-init bindings e scripts no conteudo novo */
                 _initContentArea(curMain);
-                _initDynamicConfirmButtons(curMain);
                 _execScriptsIn(curMain);
 
                 document.dispatchEvent(new CustomEvent('app:contentLoaded', {
@@ -545,7 +595,6 @@
                 _syncSidebarLinks(doc);
                 _syncFlashMessages(doc);
                 _initContentArea(curMain);
-                _initDynamicConfirmButtons(curMain);
                 _execScriptsIn(curMain);
 
                 document.dispatchEvent(new CustomEvent('app:contentLoaded', {
@@ -757,24 +806,6 @@
         _applyValuesPrivacy(_readValuesPrivacyPreference(), root || document);
     }
 
-    function _initDynamicConfirmButtons(root) {
-        if (typeof window.openConfirmModal !== 'function') return;
-        (root || document).querySelectorAll('[data-confirm]').forEach(function (btn) {
-            if (btn._dynamicConfirmBound) return;
-            btn._dynamicConfirmBound = true;
-            btn.addEventListener('click', function (e) {
-                e.preventDefault();
-                var form = btn.closest('form') ||
-                           (btn.dataset.confirmForm ? document.getElementById(btn.dataset.confirmForm) : null);
-                window.openConfirmModal(
-                    btn.dataset.confirmTitle || 'Confirmar exclusão',
-                    btn.dataset.confirm,
-                    function () { _mirrorSubmitterAsHiddenField(form, btn); _submitSync(form, btn); }
-                );
-            });
-        });
-    }
-
     /* ============================================================
        DOM CONTENT LOADED
        ============================================================ */
@@ -856,45 +887,6 @@
         /* -- Horizontal overflow -- */
         _updateTableOverflow();
         window.addEventListener('resize', _updateTableOverflow);
-
-        /* -- Confirm modal global -- */
-        (function () {
-            var _cb = null;
-            function _open(title, msg, cb) {
-                document.getElementById('appConfirmTitle').textContent   = title || 'Confirmar';
-                document.getElementById('appConfirmMessage').textContent = msg   || '';
-                _cb = cb || null;
-                document.getElementById('appConfirmModal').style.display = 'flex';
-            }
-            function _close() {
-                document.getElementById('appConfirmModal').style.display = 'none';
-                _cb = null;
-            }
-            var sbmBtn = document.getElementById('appConfirmSubmit');
-            var cncBtn = document.getElementById('appConfirmCancel');
-            var modal  = document.getElementById('appConfirmModal');
-            if (sbmBtn) sbmBtn.addEventListener('click', function () { var c = _cb; _close(); if (c) c(); });
-            if (cncBtn) cncBtn.addEventListener('click', _close);
-            if (modal)  modal.addEventListener('click', function (e) { if (e.target === modal) _close(); });
-
-            /* [data-confirm="mensagem"] - delete de CRUDs */
-            document.querySelectorAll('[data-confirm]').forEach(function (btn) {
-                btn.addEventListener('click', function (e) {
-                    e.preventDefault();
-                    var form = btn.closest('form') ||
-                               (btn.dataset.confirmForm ? document.getElementById(btn.dataset.confirmForm) : null);
-                    _open(
-                        btn.dataset.confirmTitle || 'Confirmar exclusão',
-                        btn.dataset.confirm,
-                        function () { _mirrorSubmitterAsHiddenField(form, btn); _submitSync(form, btn); }
-                    );
-                });
-            });
-
-            window.openConfirmModal  = _open;
-            window.closeConfirmModal = _close;
-        })();
-
 
         /* -- Init da area de conteudo -- */
         _initContentArea(document);
