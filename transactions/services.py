@@ -23,7 +23,6 @@ from core.domain.finance import (
     OPERATION_SCOPE_CURRENT_FUTURE,
     OPERATION_SCOPE_SINGLE,
     OPERATION_SINGLE,
-    STATUS_CANCELED,
     STATUS_PENDING,
     STATUS_PROJECTED,
     STATUS_REALIZED,
@@ -161,9 +160,6 @@ def realize_transaction(
     if entry.status == STATUS_REALIZED:
         raise ValueError("Lançamento já está realizado")
 
-    if entry.status == STATUS_CANCELED:
-        raise ValueError("Não é possível realizar um lançamento cancelado")
-
     final_date = realized_date or date.today()
     # Os dois meses precisam estar abertos: o do vencimento e o da data de
     # realização informada agora. Fechar um mês tem de impedir tanto mexer no
@@ -172,7 +168,7 @@ def realize_transaction(
     validate_month_not_closed(entry.account, final_date)
 
     counterpart = transfer_counterparty(entry)
-    realize_counterpart = counterpart is not None and counterpart.status not in (STATUS_REALIZED, STATUS_CANCELED)
+    realize_counterpart = counterpart is not None and counterpart.status != STATUS_REALIZED
     if realize_counterpart:
         validate_month_not_closed(counterpart.account, counterpart.due_date)
         validate_month_not_closed(counterpart.account, final_date)
@@ -217,7 +213,7 @@ def unrealize_transaction(entry: CashFlowEntry) -> CashFlowEntry:
 
     assert_entry_period_open(entry, action_label="desfazer a realização de")
     counterpart = transfer_counterparty(entry)
-    revert_counterpart = counterpart is not None and counterpart.status != STATUS_CANCELED
+    revert_counterpart = counterpart is not None
     if revert_counterpart:
         assert_entry_period_open(counterpart, action_label="desfazer a realização de")
 
@@ -241,48 +237,6 @@ def unrealize_transaction(entry: CashFlowEntry) -> CashFlowEntry:
                 id=entry.bank_operation_id, status=STATUS_REALIZED,
             ).update(status=STATUS_PENDING)
 
-    return entry
-
-
-def cancel_transaction(entry: CashFlowEntry) -> CashFlowEntry:
-    """Cancela um lançamento.
-
-    SEM CHAMADOR desde 2026-08-22, e mantida de proposito. O unico chamador era
-    `transactions:cancel_entry`, uma rota POST que nenhum template acionava e
-    que saiu junto com as outras duas orfas (ver `transactions/urls.py`).
-
-    Mantida, e nao removida, porque cancelar nao e codigo morto solto: e uma
-    funcionalidade que o resto do sistema ja pressupoe. `STATUS_CANCELED` esta
-    nas escolhas do modelo e na restricao CHECK das migracoes, a tela de
-    lancamentos tem o filtro "Cancelado", `_projected_status` da projecao
-    recorrente trata o status, e o rollup de status da operacao (mais abaixo)
-    conta com ele. Apagar esta funcao deixaria o sistema modelando um estado em
-    que nao consegue entrar; o que falta e o botao, nao a regra.
-
-    Consequencia a registrar enquanto o botao nao existe: o filtro "Cancelado"
-    da tela de lancamentos nao tem como encontrar nada que o proprio sistema
-    tenha produzido. E a permissao `transactions.cancel` nao guarda nada hoje.
-    """
-    if entry.status == STATUS_CANCELED:
-        raise ValueError("Lançamento já está cancelado")
-    
-    if entry.status == STATUS_REALIZED:
-        raise ValueError("Não é possível cancelar um lançamento realizado")
-    
-    entry.status = STATUS_CANCELED
-    entry.save(update_fields=['status', 'updated_at'])
-    
-    # Verificar se todos os lançamentos da operação foram cancelados
-    if entry.bank_operation:
-        remaining = CashFlowEntry.objects.filter(
-            bank_operation=entry.bank_operation,
-            status__in=[STATUS_PROJECTED, STATUS_PENDING, STATUS_REALIZED],
-        ).count()
-        
-        if remaining == 0:
-            entry.bank_operation.status = STATUS_CANCELED
-            entry.bank_operation.save(update_fields=['status', 'updated_at'])
-    
     return entry
 
 
@@ -708,9 +662,10 @@ def _sync_bank_operation_status(bank_operation_id: int | None) -> None:
     )
     if not statuses:
         return
-    if statuses == {STATUS_CANCELED}:
-        new_status = STATUS_CANCELED
-    elif statuses <= {STATUS_REALIZED, STATUS_CANCELED} and STATUS_REALIZED in statuses:
+    # Era um encadeamento de quatro ramos, dois deles sobre `STATUS_CANCELED`.
+    # Sem esse status, `statuses <= {REALIZED, CANCELED} and REALIZED in
+    # statuses` reduz-se a `statuses == {REALIZED}`.
+    if statuses == {STATUS_REALIZED}:
         new_status = STATUS_REALIZED
     elif STATUS_PENDING in statuses:
         new_status = STATUS_PENDING

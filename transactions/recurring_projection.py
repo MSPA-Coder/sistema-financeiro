@@ -41,7 +41,6 @@ from django.db import connection, transaction
 from core.domain.finance import (
     OPERATION_INSTALLMENT,
     OPERATION_RECURRING,
-    STATUS_CANCELED,
     STATUS_PENDING,
     STATUS_PROJECTED,
     STATUS_REALIZED,
@@ -71,7 +70,7 @@ def recurring_projection_horizon_end(today: date | None = None, horizon_months: 
 
 
 def _projected_status(template: CashFlowEntry, due_date: date, today: date) -> str:
-    if template.status in {STATUS_REALIZED, STATUS_CANCELED}:
+    if template.status == STATUS_REALIZED:
         return STATUS_PROJECTED
     if template.status == STATUS_PENDING and due_date >= today:
         return STATUS_PROJECTED

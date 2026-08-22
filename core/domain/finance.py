@@ -13,20 +13,24 @@ VALID_ENTRY_TYPES: Final = (
 STATUS_PROJECTED: Final = "a_vencer"
 STATUS_PENDING: Final = "vencidos"
 STATUS_REALIZED: Final = "realizado"
-STATUS_CANCELED: Final = "cancelado"
+# `STATUS_CANCELED` saiu em 2026-08-22. Cancelar nunca chegou a existir para o
+# usuario: a unica rota que gravava esse status nao era acionada por tela
+# nenhuma, e producao tinha ZERO lancamentos cancelados em qualquer das duas
+# tabelas -- conferido antes de remover.
 VALID_STATUSES: Final = (
     STATUS_PROJECTED,
     STATUS_PENDING,
     STATUS_REALIZED,
-    STATUS_CANCELED,
 )
 STATUS_OPTIONS: Final = (
     (STATUS_PROJECTED, "A vencer"),
     (STATUS_PENDING, "Vencidos"),
     (STATUS_REALIZED, "Realizado"),
-    (STATUS_CANCELED, "Cancelado"),
 )
-STATUS_FILTER_OPTIONS: Final = STATUS_OPTIONS[:-1]
+# Era `STATUS_OPTIONS[:-1]`, e o que a fatia cortava era "Cancelado". Sem ele,
+# o corte passaria a comer "Realizado" -- filtro perdendo uma opcao sem erro
+# nenhum. Por isso vira igualdade explicita, e nao fatia ajustada.
+STATUS_FILTER_OPTIONS: Final = STATUS_OPTIONS
 
 OPERATION_SINGLE: Final = "single"
 OPERATION_INSTALLMENT: Final = "installment"
@@ -57,16 +61,16 @@ MAX_PROJECTION_RANGE_MONTHS: Final = 120
 VIEW_PROJECTED: Final = STATUS_PROJECTED
 VIEW_PENDING: Final = STATUS_PENDING
 VIEW_REALIZED: Final = STATUS_REALIZED
-VIEW_CANCELED: Final = STATUS_CANCELED
 VIEW_ALL: Final = "todos"
 VIEW_MODE_OPTIONS: Final = (
     (VIEW_ALL, "Todos os modos"),
     (VIEW_PROJECTED, "A vencer"),
     (VIEW_PENDING, "Vencidos"),
     (VIEW_REALIZED, "Realizado"),
-    (VIEW_CANCELED, "Cancelado"),
 )
-VIEW_FILTER_MODE_OPTIONS: Final = VIEW_MODE_OPTIONS[:-1]
+# Mesma armadilha da fatia acima: `[:-1]` cortava "Cancelado" e passaria a
+# cortar "Realizado".
+VIEW_FILTER_MODE_OPTIONS: Final = VIEW_MODE_OPTIONS
 VALID_VIEW_MODES: Final = {mode for mode, _label in VIEW_MODE_OPTIONS}
 
 

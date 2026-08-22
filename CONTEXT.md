@@ -112,7 +112,10 @@ operações compostas revertem o conjunto completo.
 - Conversão para `float` ocorre somente em apresentação, JSON ou gráficos.
 - Lançamentos armazenam valor positivo; `entry_type` (`receita` ou `despesa`)
   define o efeito no saldo.
-- Status oficiais: `a_vencer`, `vencidos`, `realizado` e `cancelado`.
+- Status oficiais: `a_vencer`, `vencidos` e `realizado`. `cancelado` existiu no
+  esquema até 2026-08-22 sem nunca ter sido gravado por nenhuma tela; saiu do
+  código e do `CHECK`. Um lançamento que não vai acontecer é excluído, não
+  cancelado.
 
 ### Saldos
 

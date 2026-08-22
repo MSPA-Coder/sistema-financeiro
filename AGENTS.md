@@ -90,7 +90,10 @@ seguem inteiramente próprios — Django, sem nada em comum com os apps Flask.
 
 - Valores financeiros usam `Decimal`; lançamentos armazenam valor positivo e o
   tipo define o efeito no saldo.
-- Status são `a_vencer`, `vencidos`, `realizado` e `cancelado`.
+- Status são `a_vencer`, `vencidos` e `realizado`. **`cancelado` foi removido**
+  em 2026-08-22, do código e do `CHECK` das duas tabelas: a única rota que
+  gravava esse status não era acionada por tela nenhuma, e produção tinha zero
+  linhas nele. Não é status "desativado" — não existe.
 - Transferências internas mantêm contrapartes e saldos consistentes, mas não
   entram como receita ou despesa gerencial.
 - Fechamento mensal bloqueia mutações e conciliações do período; reabertura é
