@@ -13,8 +13,8 @@ from django.conf import settings
 from core.security import CONTENT_SECURITY_POLICY, SECURITY_HEADERS
 
 # `/health/` responde sem sessao: e o alvo certo para medir cabecalho, que e
-# aplicado por middleware em toda resposta. Desde 2026-08-21 a rota consulta
-# o banco, entao os testes daqui pedem `banco_sondavel` -- sem isso mediriam
+# aplicado por middleware em toda resposta. Como a rota consulta o banco, os
+# testes daqui pedem `banco_sondavel` -- sem isso mediriam
 # o cabecalho de um 503, que passaria igual e esconderia a intencao.
 ROTA = "/health/"
 
@@ -57,9 +57,8 @@ def test_permissions_policy_restringe_dispositivos(client, banco_sondavel):
 
 def test_csp_libera_data_uri_so_para_imagem(client, banco_sondavel):
     # A folga existe por um motivo so: o favicon do base.html e um SVG
-    # embutido no proprio `<link rel="icon">`. O `font-src 'self' data:` que
-    # esta politica tinha era sobra -- o projeto nao tem `@font-face` nem
-    # arquivo de fonte -- e saiu.
+    # embutido no proprio `<link rel="icon">`. Fontes nao precisam de `data:`:
+    # o projeto nao tem `@font-face` nem arquivo de fonte.
     csp = client.get(ROTA).headers.get("Content-Security-Policy", "")
     assert "img-src 'self' data:" in csp
     assert "font-src 'self';" in csp

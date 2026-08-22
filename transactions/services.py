@@ -154,8 +154,7 @@ def realize_transaction(
     Transferências internas são realizadas em par: a contraparte (a outra
     ponta da mesma `BankOperation`) é realizada junto, com a mesma data e o
     mesmo valor. Sem isso, conciliar (ou realizar manualmente) apenas uma ponta
-    deixaria a outra pendente, violando o invariante documentado em CONTEXT.md
-    ("são realizadas e alteradas de forma coerente entre as duas pontas").
+    deixaria a outra pendente e violaria a coerencia entre as duas pontas.
     """
     if entry.status == STATUS_REALIZED:
         raise ValueError("Lançamento já está realizado")
@@ -433,9 +432,9 @@ def delete_category(category: CashFlowCategory) -> None:
 # com escopo de operação (parcelas, recorrência, transferência interna).
 #
 #
-# O agrupamento usa a FK `bank_operation`, nunca a coluna `operation_id`
-# (resquício do sistema anterior, que nenhum código escreve — ver
-# transactions/operations.py).
+# O agrupamento usa a FK `bank_operation`. A coluna legada `operation_id` nao
+# recebe escritas e nao deve participar das consultas (ver
+# `transactions/operations.py`).
 # ============================================================================
 
 MONEY_QUANT = Decimal("0.01")
@@ -662,9 +661,8 @@ def _sync_bank_operation_status(bank_operation_id: int | None) -> None:
     )
     if not statuses:
         return
-    # Era um encadeamento de quatro ramos, dois deles sobre `STATUS_CANCELED`.
-    # Sem esse status, `statuses <= {REALIZED, CANCELED} and REALIZED in
-    # statuses` reduz-se a `statuses == {REALIZED}`.
+    # Uma operacao so fica realizada quando todas as entradas estao realizadas.
+    # Qualquer pendencia prevalece; nos demais casos, permanece projetada.
     if statuses == {STATUS_REALIZED}:
         new_status = STATUS_REALIZED
     elif STATUS_PENDING in statuses:

@@ -1,15 +1,8 @@
 """A projecao pode ser reexecutada, e e por isso que nao pede confirmacao.
 
-Ate 2026-08-22 a view lia `confirm_current_month` do POST para avisar que a
-projecao ja tinha rodado no mes. O template mandava esse campo FIXO em
-`value="on"`, entao o aviso nunca podia aparecer -- protecao que existe no
-codigo e nao pode reprovar, que e o tema de
-`_manutencao/PLANO_SINAL_E_DEFEITOS.md`.
-
-A guarda foi REMOVIDA em vez de consertada, e estes testes sao a justificativa
-dessa escolha: reexecutar nao duplica nada e nao ressuscita nada. Se algum dia
-deixarem de valer, a decisao muda junto -- e e para isso que estao aqui, e nao
-so para cobrir linha.
+Estes testes protegem os invariantes da execucao manual: reexecutar nao duplica
+ocorrencias nem ressuscita lacunas apagadas. Uma mudanca nesses invariantes
+exige rever o contrato de repeticao sem confirmacao.
 
 Sem banco, como o resto desta suite (ver `conftest.py`). Da para exercitar as
 duas propriedades que importam porque `_extend_operation` decide pelas datas

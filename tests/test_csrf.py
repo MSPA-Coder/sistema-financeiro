@@ -66,8 +66,8 @@ def test_post_https_de_origem_confiavel_e_aceito():
 
 
 def test_origin_nulo_e_recusado():
-    # Documenta o mecanismo da falha: era este o `Origin` que o navegador
-    # mandava sob `Referrer-Policy: no-referrer`.
+    # `Origin: null`, enviado sob certas politicas de referencia, nao e uma
+    # origem confiavel.
     assert _decisao_do_csrf("null") is not None
 
 

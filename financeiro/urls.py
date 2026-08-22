@@ -15,20 +15,11 @@ from accounts.views import AppLoginView
 def health_check(_request):
     """Responde a pergunta "o serviço atende requisição que depende do banco?".
 
-    Ate 2026-08-21 esta view devolvia `"ok"` fixo, sem tocar no banco. E o
-    mesmo defeito que `sharedauth.health` documenta ter corrigido nos tres
-    apps Flask: o `healthcheck:` do Compose bate aqui, entao o Docker
-    considerava o conteiner saudavel com o PostgreSQL inteiramente fora --
-    exatamente a situacao que um health check existe para detectar.
-
-    A rodada que unificou o `/health` cobriu os tres Flask via SharedAuth e
-    deixou este de fora: o pacote entra aqui sem o extra `[flask]`, e
-    `registrar_health` depende de `flask.jsonify`. O contrato de resposta e
-    replicado a mao por isso. Extrair o nucleo do health para a parte de
-    Python puro do SharedAuth esta na Fase 8 do PLANO_SINAL_E_DEFEITOS.
-
-    Formato identico ao dos outros tres, de proposito: quem vigia os quatro
-    faz uma pergunta so e le uma resposta so.
+    O `healthcheck` do Compose usa esta rota, por isso a sonda executa uma
+    consulta simples e devolve 503 quando o PostgreSQL nao esta disponivel.
+    O formato da resposta segue o contrato comum aos aplicativos do
+    mantenedor. A implementacao permanece local porque este projeto instala
+    somente o nucleo, sem Flask, do SharedAuth.
     """
     try:
         with connection.cursor() as cursor:

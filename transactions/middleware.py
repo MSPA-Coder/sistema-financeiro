@@ -1,13 +1,10 @@
 """Dispara a projecao recorrente uma vez por mes, sem agendador.
 
-O sistema nao tem cron, celery nem comando de management -- e o campo "Dia de
-execucao automatica" da tela de Parametros era salvo, exibido e confirmado por
-mensagem sem que nada o lesse. Este middleware e o que faz aquela configuracao
-significar alguma coisa.
+O sistema nao tem cron, Celery nem comando de management. Este middleware le o
+"Dia de execucao automatica" configurado na tela de Parametros.
 
-Por que aqui e nao no `AppConfig.ready()`: ver a docstring de
-`executar_projecao_mensal_se_devido`. O resumo e que so no boot significa que
-um conteiner de pe ha 40 dias nunca executa.
+O ponto de execucao e deliberadamente uma requisicao autenticada, e nao o
+boot; ver os invariantes em `executar_projecao_mensal_se_devido`.
 
 O custo por requisicao e proximo de zero. Depois que o mes esta resolvido, a
 decisao sai de memoria e nao ha consulta nenhuma; antes disso, ha no maximo UMA

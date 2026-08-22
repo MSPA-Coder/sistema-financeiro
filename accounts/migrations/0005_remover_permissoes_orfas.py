@@ -1,24 +1,13 @@
 """Remove tres permissoes que nao guardavam mais nada.
 
 `transactions.cancel`, `transactions.close_month` e `transactions.reopen_month`
-eram exigidas apenas pelas tres rotas POST orfas removidas em 2026-08-22 (ver
-`transactions/urls.py`). Depois daquela remocao, ficaram no catalogo sem nada
-para autorizar -- e permissao que nao guarda nada e pior que inutil: aparece na
-tela de permissoes como se fosse um controle.
-
-O caso de `reopen_month` era o que incomodava. Reabrir mes continua possivel
-por `core:settings_reopen_month`, que exige `settings.monthly_close.manage`.
-Eram DUAS permissoes para a mesma operacao, e um administrador que revogasse
-`transactions.reopen_month` acreditando ter tirado a capacidade nao teria
-tirado nada.
-
-`transactions.cancel` cai por outro motivo: cancelar lancamento deixou de
-existir como funcionalidade (ver `transactions/migrations/0002`).
+nao correspondem a endpoints do modulo. Fechar e reabrir mes usam
+`settings.monthly_close.manage`; cancelamento de lancamento nao faz parte do
+contrato atual.
 
 As concessoes a usuarios somem junto, por `on_delete=CASCADE` em
-`UserPermission.permission`. Isso e desejado: manter a concessao de uma
-permissao inexistente so deixaria lixo referencial. O perfil "gestor", unico
-que as concedia, foi ajustado em `accounts/services.py`.
+`UserPermission.permission`. A reversao recria o catalogo, mas nao recupera
+essas concessoes, que nao sao registradas antes da exclusao.
 """
 
 from django.db import migrations
@@ -48,9 +37,8 @@ def restaurar(apps, _schema_editor):
 
     Quem tinha a permissao concedida nao a recupera: o `CASCADE` apagou os
     vinculos e esta migracao nao os registrou antes de apagar. Reverter aqui
-    devolve o catalogo ao estado anterior, e a concessao teria de ser refeita
-    a mao -- o que e aceitavel porque nenhuma das tres autorizava coisa alguma
-    quando foram removidas.
+    devolve apenas o catalogo; qualquer concessao precisa ser refeita
+    explicitamente.
     """
     permissao = apps.get_model("accounts", "AppPermission")
     for nome in PERMISSOES_REMOVIDAS:

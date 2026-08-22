@@ -2,11 +2,11 @@
 
 A suite nao toca o banco. Isso e desenho, nao limitacao: as coisas que ela
 protege -- cabecalhos, negacao por padrao, CSRF, autorizacao e integridade das
-migracoes -- sao decididas antes de qualquer consulta, e mante-la sem banco e o
-que faz caber no orcamento de 30 segundos sem infraestrutura de teste.
+migracoes -- sao decididas antes de qualquer consulta. Isso mantem a execucao
+rapida e sem infraestrutura de banco para teste.
 
 O bootstrap do schema em PostgreSQL vazio continua sendo verificacao manual
-obrigatoria para mudanca de schema, como a base e o TESTING.md registram.
+obrigatoria para mudanca de schema, conforme `docs/development.md`.
 """
 
 from __future__ import annotations
@@ -31,10 +31,8 @@ def client_com_csrf() -> Client:
 def banco_sondavel():
     """Faz a sonda de `/health` passar, sem banco de verdade.
 
-    Desde 2026-08-21 `/health` consulta o banco -- antes devolvia `"ok"` fixo
-    e reportava saude com o PostgreSQL fora. A suite continua sem banco (ver
-    a docstring deste modulo), entao quem usa essa rota como alvo precisa
-    dizer qual dos dois desfechos esta exercitando.
+    `/health` consulta o banco. Como esta suite nao abre uma conexao real,
+    cada teste da rota declara por fixture se exercita sucesso ou falha.
     """
     from unittest import mock
 

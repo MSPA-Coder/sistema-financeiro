@@ -1,10 +1,5 @@
 """A execucao automatica existe, roda uma vez por mes, e nao a cada requisicao.
 
-Ate 2026-08-22 o campo "Dia de execucao automatica" da tela de Parametros era
-salvo, exibido e confirmado por mensagem ("execucao no dia N") -- e nao havia
-execucao automatica alguma: nem agendador no codigo, nem comando de management,
-nem cron ou timer no servidor. A projecao so andava por clique.
-
 Estes testes cobrem as tres coisas que podem dar errado numa funcionalidade
 dessas, e que nao dao sintoma quando dao:
 

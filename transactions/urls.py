@@ -5,20 +5,11 @@ from . import views
 
 app_name = 'transactions'
 
-# Tres rotas POST sairam daqui em 2026-08-22: `cancel_entry`, `close_month` e
-# `reopen_month`. Mudavam estado e NENHUM template as acionava -- conferido por
-# `{% url %}`, por `reverse()`, por caminho literal e no JS, que so conhece as
-# acoes `delete` e `realize`. Eram superficie alcancavel por requisicao direta,
-# sem tela correspondente.
-#
-# Fechar e reabrir mes continuam existindo, em `core:settings_close_month` e
-# `core:settings_reopen_month`, que sao os caminhos que a tela de Fechamento
-# Mensal usa. A versao que saiu era a mais fraca das duas: recebia
-# `closing_balance` do proprio POST, enquanto a que ficou calcula o saldo do
-# razao (`decimal_balance_before`). Um cliente direto podia fechar o mes com
-# qualquer saldo.
-#
-# `tests/test_rotas_orfas_removidas.py` impede a volta.
+# Somente as rotas abaixo compoem o contrato deste modulo. Fechar e reabrir
+# mes pertencem a `core:settings_close_month` e
+# `core:settings_reopen_month`, que calculam o saldo a partir do razao. Nao ha
+# rota de cancelamento de lancamento. Os limites sao protegidos por
+# `tests/test_rotas_orfas_removidas.py`.
 
 urlpatterns = [
     # Lista de transações

@@ -9,8 +9,8 @@ django-htmx>=1.18,<2
 pdfplumber>=0.11,<1
 
 # Cabecalhos de seguranca e formatacao de numeros em pt-BR compartilhados com
-# os tres apps Flask do mantenedor -- ver PLANO_EQUALIZAR_BASE_COMPARTILHADA.md
-# no repositorio _manutencao. Tag fixada manualmente; nunca aponta para branch.
+# os outros aplicativos do mantenedor. A tag e fixada manualmente e nunca
+# aponta para branch.
 #
 # **Sem o extra `[flask]`**, de proposito: o nucleo do pacote e Python puro e
 # nao tem dependencia nenhuma. Pedir o extra traria Flask, Flask-WTF e

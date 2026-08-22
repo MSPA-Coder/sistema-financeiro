@@ -169,9 +169,8 @@ STATICFILES_DIRS = ([BASE_DIR / 'static'] if (BASE_DIR / 'static').exists() else
     ('sharedauth', SHAREDAUTH_UI),
 ]
 
-# `STATICFILES_STORAGE` foi removido no Django 5.1: declarar o backend do
-# WhiteNoise ali era silenciosamente ignorado, e a aplicacao servia os assets
-# sem hash nem compressao. `STORAGES` e a chave que o Django le hoje.
+# `STORAGES` e a configuracao suportada pelo Django atual para declarar o
+# backend do WhiteNoise com hash e compressao.
 #
 # O backend com manifesto exige `collectstatic` previo (a etapa `migrate` do
 # Compose faz isso). Em desenvolvimento os arquivos sao servidos

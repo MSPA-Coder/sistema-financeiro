@@ -1,16 +1,11 @@
 """Filtros de apresentação monetária compartilhados entre templates.
 
-A conta de milhar e decimal em pt-BR mora em `sharedauth.formatting`. Ela era
-idêntica, caractere por caractere, à do ControleRendaVariavel — as duas foram
-escritas separadamente e coincidiram até no truque de usar `\\x00` como
-marcador para trocar os separadores sem passar duas vezes pelo mesmo
-caractere. Este projeto é Django e instala só o núcleo do pacote, que é
-Python puro e não arrasta Flask.
+A formatação de milhar e decimal em pt-BR mora em `sharedauth.formatting`.
+Este projeto Django instala somente o núcleo Python do pacote, sem Flask.
 
-`ocultar_zero` continua sendo escolha desta aplicação, agora explícita no
-ponto da chamada: uma tabela de lançamentos larga cheia de "R$ 0,00" só gasta
-largura. As classes por sinal ficam aqui — são nomes de CSS deste projeto,
-não formatação.
+`ocultar_zero` é uma escolha desta aplicação: omitir "R$ 0,00" preserva
+espaço nas tabelas largas. As classes por sinal ficam aqui porque são nomes
+de CSS locais, não formatação compartilhada.
 """
 
 from __future__ import annotations

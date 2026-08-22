@@ -4,7 +4,7 @@ O domínio tem duas matrizes de filtro distintas, e confundi-las é a origem
 mais provável de um relatório que "quase" fecha:
 
 - "balance mode" (`_balance_*`): usada para calcular saldos (abertura,
-  fechamento, série diária). Segue a matriz oficial descrita em CONTEXT.md:
+  fechamento, série diária). Segue a matriz de domínio:
   realizado = só realizado; vencidos = realizado + vencidos/a_vencer vencidos;
   a_vencer = realizado + a_vencer futuro.
 - "listing mode" (estratégias de projeção): usada para listar lançamentos que
@@ -259,7 +259,7 @@ def context_options(user, ctx: FinancialContext, *, hidden_scope: str | None = N
 # ---------------------------------------------------------------------------
 
 def _balance_status_q(view_mode: str, today: date) -> Q:
-    """Filtro de status usado para cálculo de saldo (ver CONTEXT.md)."""
+    """Aplica a matriz de status do domínio ao cálculo de saldo."""
     projected_future = Q(status=STATUS_PROJECTED, due_date__gte=today)
     projected_overdue = Q(status=STATUS_PROJECTED, due_date__lt=today)
     pending_overdue = Q(status=STATUS_PENDING, due_date__lt=today)

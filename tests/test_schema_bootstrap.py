@@ -1,10 +1,8 @@
 """O grafo de migracoes esta integro e cada app tem uma folha so.
 
 Nao aplica migracoes: isso e verificacao manual obrigatoria contra PostgreSQL
-vazio, como a base e o TESTING.md registram. O que este arquivo protege e a
-classe de erro que a consolidacao de baselines introduz e que o bootstrap
-manual so revela tarde -- duas folhas no mesmo app, dependencia apontando para
-migracao inexistente -- e que aqui custa milissegundos.
+vazio, conforme `docs/development.md`. Este arquivo detecta rapidamente duas
+folhas no mesmo app e dependencias que apontam para migracoes inexistentes.
 
 `MigrationLoader(None)` le os arquivos sem abrir conexao, entao a suite
 continua sem banco.

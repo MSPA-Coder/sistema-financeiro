@@ -13,10 +13,7 @@ VALID_ENTRY_TYPES: Final = (
 STATUS_PROJECTED: Final = "a_vencer"
 STATUS_PENDING: Final = "vencidos"
 STATUS_REALIZED: Final = "realizado"
-# `STATUS_CANCELED` saiu em 2026-08-22. Cancelar nunca chegou a existir para o
-# usuario: a unica rota que gravava esse status nao era acionada por tela
-# nenhuma, e producao tinha ZERO lancamentos cancelados em qualquer das duas
-# tabelas -- conferido antes de remover.
+# Este conjunto explicito e compartilhado por modelos, views e filtros.
 VALID_STATUSES: Final = (
     STATUS_PROJECTED,
     STATUS_PENDING,
@@ -27,9 +24,8 @@ STATUS_OPTIONS: Final = (
     (STATUS_PENDING, "Vencidos"),
     (STATUS_REALIZED, "Realizado"),
 )
-# Era `STATUS_OPTIONS[:-1]`, e o que a fatia cortava era "Cancelado". Sem ele,
-# o corte passaria a comer "Realizado" -- filtro perdendo uma opcao sem erro
-# nenhum. Por isso vira igualdade explicita, e nao fatia ajustada.
+# Os filtros oferecem explicitamente todas as opcoes validas. Evite fatias:
+# uma nova ordenacao poderia retirar silenciosamente um status valido.
 STATUS_FILTER_OPTIONS: Final = STATUS_OPTIONS
 
 OPERATION_SINGLE: Final = "single"
@@ -68,8 +64,7 @@ VIEW_MODE_OPTIONS: Final = (
     (VIEW_PENDING, "Vencidos"),
     (VIEW_REALIZED, "Realizado"),
 )
-# Mesma armadilha da fatia acima: `[:-1]` cortava "Cancelado" e passaria a
-# cortar "Realizado".
+# O seletor de modo segue integralmente o vocabulario valido acima.
 VIEW_FILTER_MODE_OPTIONS: Final = VIEW_MODE_OPTIONS
 VALID_VIEW_MODES: Final = {mode for mode, _label in VIEW_MODE_OPTIONS}
 

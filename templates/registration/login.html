@@ -1,10 +1,7 @@
 {% load static %}
 <!DOCTYPE html>
-{# Pre-autenticacao `ui_theme` sempre resolve pra "light" (core/context_processors.py:
-   o tema fica no AppUser, e antes do login nao ha usuario) - mas declarar o
-   atributo aqui, do mesmo jeito que base.html faz, tira o login da posicao de
-   "nunca le tema nenhum" e deixa pronto pro dia em que exista alguma forma de
-   lembrar o tema antes do login (cookie, por exemplo). #}
+{# Pre-autenticacao `ui_theme` resolve para "light": o tema fica no AppUser e
+   ainda nao ha usuario. O atributo segue o mesmo contrato de base.html. #}
 <html lang="pt-BR" data-theme="{{ ui_theme|default:'light' }}">
 <head>
     <meta charset="UTF-8">

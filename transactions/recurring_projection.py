@@ -3,8 +3,7 @@
 Estende, até um horizonte configurável, as ocorrências futuras de cada
 lançamento recorrente. O agrupamento é por `bank_operation_id`.
 
-A execução é idempotente, e **não há** guarda de "já rodou este mês" -- as
-duas coisas juntas, porque a segunda existia e foi removida em 2026-08-22.
+A execução manual é idempotente e não tem guarda de "já rodou este mês".
 
 Idempotente porque `_extend_operation` só olha para frente: parte da MAIOR
 data existente do grupo e preenche até o horizonte, pulando data que já
@@ -18,17 +17,10 @@ existe. Três consequências, todas testadas em
 - num mês novo o horizonte avança, e aí reexecutar gera o que falta -- que é
   o objetivo.
 
-A guarda removida lia `confirm_current_month` do POST, e o template mandava
-esse campo FIXO em `value="on"`: nunca podia reprovar. Não foi "consertada"
-porque consertá-la seria pior. Ela obstruiria o caminho legítimo: depois de
-aumentar o horizonte na mesma tela, reexecutar é exatamente o que se quer, e
-o usuário levaria um "já executada no mês atual" no lugar do resultado. Numa
-operação que não duplica nada, pedir confirmação treina a clicar "sim" sem
-ler -- ver a regra da Fase 9 em `_manutencao/PLANO_SINAL_E_DEFEITOS.md`.
-
-O disparo é manual, pela tela de Parâmetros. O `generated_count` da mensagem
-diz ao usuário quanto foi criado; num clique redundante ele lê "0", que é a
-informação certa.
+O disparo manual fica na tela de Parâmetros. Depois de aumentar o horizonte,
+ele pode ser repetido imediatamente; `generated_count` informa quantas
+ocorrências foram criadas e retorna zero quando não há trabalho. A execução
+automática usa uma guarda mensal separada para limitar a frequência.
 """
 
 from __future__ import annotations
@@ -81,18 +73,10 @@ def recurring_projection_horizon_end(
 
 
 def was_projection_run_in_month(raw_value: str | None, month_date: date | None = None) -> bool:
-    """A projecao ja rodou no mes de `month_date`?
+    """Indica se a execucao automatica ja foi registrada no mes informado.
 
-    Esta funcao ja existiu, guardando o botao manual, e foi removida em
-    2026-08-22 por nao proteger nada: reexecutar a mao e idempotente, e o
-    aviso ainda por cima era inalcancavel (o template mandava o campo de
-    confirmacao fixo). Volta agora para o uso em que faz sentido -- segurar a
-    execucao AUTOMATICA, que ninguem pediu e que portanto ninguem espera ver
-    acontecendo duas vezes.
-
-    A diferenca nao e de implementacao, e de proposito: como confirmacao ela
-    obstruia o usuario; como limite de frequencia ela e a razao de a execucao
-    automatica ser previsivel.
+    Esta guarda limita apenas a frequencia automatica. A execucao manual
+    continua repetivel porque a extensao do horizonte e idempotente.
     """
     if not raw_value:
         return False
@@ -138,21 +122,12 @@ class DecisaoProjecaoMensal:
 def executar_projecao_mensal_se_devido(hoje: date | None = None) -> DecisaoProjecaoMensal:
     """Executa a projecao no maximo uma vez por mes, a partir do dia marcado.
 
-    Ate 2026-08-22 o campo "Dia de execucao automatica" era salvo, exibido e
-    confirmado por mensagem, e **nao existia execucao automatica alguma** --
-    nem agendador no codigo, nem comando de management, nem cron ou timer no
-    servidor. A projecao so andava quando alguem clicava no botao.
+    O middleware (ver `transactions/middleware.py`) faz a chamada. Esse ponto
+    de execucao preserva tres invariantes:
 
-    Quem chama e o middleware (ver `transactions/middleware.py`), e nao o
-    `AppConfig.ready()`. Tres razoes, nesta ordem:
-
-    1. `ready()` roda tambem em `migrate` e `collectstatic`, onde gravar esta
-       errado -- inclusive antes de as migracoes existirem no banco;
-    2. com varios workers do gunicorn, dispara uma vez por worker no boot;
-    3. e sobretudo: so no boot significa que um conteiner de pe ha 40 dias
-       nunca executa. Depender de reinicio e a forma silenciosa de a
-       funcionalidade parar de existir sem ninguem notar -- exatamente o
-       defeito que este projeto passou o mes caçando.
+    1. `migrate` e `collectstatic` nao gravam projecoes;
+    2. o boot de cada worker nao dispara uma execucao independente;
+    3. conteineres longevos continuam verificando a data configurada.
 
     Concorrencia entre workers e segura sem trava propria: dois que decidam
     executar ao mesmo tempo serializam no `pg_advisory_xact_lock` de

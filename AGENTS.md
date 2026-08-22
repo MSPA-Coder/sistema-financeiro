@@ -2,204 +2,138 @@
 
 ## Escopo e fontes de verdade
 
-Este é um controle bancário multiusuário em Django, HTMX e PostgreSQL. Docker
-Compose é a interface operacional: não instale Python, PostgreSQL, linters ou
-test runners no host para contornar uma falha.
+Este é um controle bancário em Django, HTMX e PostgreSQL. Docker Compose é a
+interface operacional; não instale no host ferramentas ou dependências do
+projeto para contornar uma falha.
 
-Antes de alterar, leia a fonte pertinente e confirme o comportamento no código:
+Antes de alterar, leia a fonte pertinente:
 
-- `CONTEXT.md`: arquitetura, domínio, segurança e decisões de produto.
-- `README.md`: instalação, operação e variáveis de ambiente.
-- `TESTING.md`: comandos e validação proporcional.
-- `compose.yaml`, `compose.dev.yaml` e `Dockerfile`: serviços e imagem
-  efetivamente executados.
-- Migrations e testes: fonte de verdade para schema e controles automatizados.
+- `README.md`: entrada e preparação do ambiente;
+- `docs/architecture.md`: componentes e responsabilidades;
+- `docs/domain.md`: invariantes financeiras;
+- `docs/development.md`: comandos e critérios de validação;
+- `docs/operations.md`: configuração, volumes, backup e VPS;
+- `compose.yaml`, `compose.dev.yaml` e `Dockerfile`: execução efetiva;
+- models, migrations e testes: schema e controles automatizados.
 
-Não crie uma camada de repositories: consultas vivem nos services e, quando
-triviais, na view. O fluxo usual é `urls -> views -> services -> models`.
-Preserve alterações locais não relacionadas.
+Preserve alterações locais não relacionadas. O fluxo usual é
+`urls -> views -> services -> models`; não introduza uma camada de repositories.
+Consultas vivem nos services e, quando triviais, na view.
 
-## Operação e comandos válidos
+## Comandos válidos
 
-Copie `.env.docker.example` para `.env.docker`, mantenha-o fora do Git e nunca
-imprima seus valores. Em seguida execute
-`.\scripts\provision_compose_secrets.ps1`: ele cria os arquivos ignorados em
-`.secrets/` a partir do ambiente, sem mostrar conteúdo e sem sobrescrever sem
-`-Force`. O Compose operacional exige esses arquivos para `DJANGO_SECRET_KEY` e
-`POSTGRES_PASSWORD`, montados em `/run/secrets`; ausência, vazio ou erro de
-leitura falham ao subir. `POSTGRES_USER` e `POSTGRES_DB` têm defaults no
-Compose. Execução Django fora do Compose pode fornecer segredos diretamente de
-forma explícita, mas não é o caminho operacional.
+Prepare `.env.docker` e os arquivos ignorados de `.secrets/` conforme o README.
+Nunca imprima seus valores.
 
 ```powershell
-# Caminho padrão: imagem construída, imutável e mais próximo da operação.
+# Imagem operacional.
 docker compose --env-file .env.docker -f compose.yaml up --build -d
 
-# Desenvolvimento explícito: monta o código e usa runserver.
+# Desenvolvimento com bind mount e runserver.
 docker compose --env-file .env.docker -f compose.yaml -f compose.dev.yaml up --build -d
 
-# Verificação Django e geração de migration no runtime construído.
+# Verificação Django.
 docker compose --env-file .env.docker -f compose.yaml run --rm web python manage.py check
-docker compose --env-file .env.docker -f compose.yaml -f compose.dev.yaml run --rm web python manage.py makemigrations
 
-# Ruff e suíte mínima; o serviço quality é explícito e não depende do override.
+# Ruff e pytest.
 docker compose --env-file .env.docker -f compose.yaml --profile quality run --rm quality
 ```
 
-`web` é o único serviço de aplicação; `migrate` aplica migrations e
-`collectstatic` antes de o `web` aceitar tráfego; `quality` executa Ruff e
-pytest. Não há serviço `app`.
+`web` é o único serviço de aplicação. `migrate` aplica migrations e executa
+`collectstatic` antes de `web`; `quality` executa as verificações. Não há
+serviço `app`.
 
-## Dados, segurança e riscos destrutivos
+## Dados e ações destrutivas
 
-PostgreSQL é a fonte de verdade. Bancos novos nascem por `manage.py migrate`;
-não use `create_all`, SQLite ou dump como bootstrap. Cada alteração de schema
-exige migration Django revisada. Antes de mudança destrutiva, conversão de
-dados, adoção de schema ou manutenção que possa afetar dados reais, faça backup
-validado e obtenha autorização explícita, pelo BackupRestore (projeto irmão):
+PostgreSQL é a fonte de verdade relacional. Bancos novos nascem por
+`manage.py migrate`, e toda alteração de schema exige migration Django revisada.
+
+Antes de mudança destrutiva, conversão de dados ou manutenção de dados reais,
+faça backup validado pelo BackupRestore:
 
 ```powershell
 python cli.py backup --projeto controle_bancario --tipos banco
 ```
 
-O BackupRestore produz dump customizado e confere `pg_restore --list` antes de
-catalogar; isso não prova uma restauração completa — para isso existe
-`cli.py ensaio`. Restauração é administrativa, com a aplicação parada e
-procedimento testado. Não execute `docker compose down -v`, não mova volumes
-ou anexos reais e não apague backups sem autorização inequívoca.
+Esse backup não cobre `media_volume`. Se a operação puder afetar comprovantes,
+preserve também a mídia por um procedimento separado e ensaiado; a lacuna está
+descrita em `docs/operations.md`.
 
-Autenticação é obrigatória; autorização fica no servidor; escritas exigem CSRF.
-Preserve CSP sem código inline, validação de uploads, logs sem dados sensíveis,
-cookies `HttpOnly`/`SameSite=Lax` e `Secure` quando `USE_HTTPS=True`. Exposição
-pública requer proxy TLS e configuração deliberada de `USE_HTTPS` e hosts. O
-piso de senha (mínimo 8 caracteres, duplicado em
-`accounts/password_validators.py` e `core/services.py` — os dois precisam
-mudar juntos) segue a mesma política dos três apps Flask do mantenedor.
-
-Este projeto **compartilha código** com eles em dois pontos, desde a v0.2.0 do
-[SharedAuth](https://github.com/MSPA-Coder/SharedAuth): os valores dos
-cabeçalhos defensivos e da CSP (`core/security.py`) e a formatação de números
-em pt-BR (`core/templatetags/money_filters.py`). Instala **só o núcleo** do
-pacote, sem o extra `[flask]` — o núcleo é Python puro e não arrasta um
-framework web que este projeto não usa; pedir o extra aqui seria erro. A
-biblioteca não aplica nada: quem aplica os cabeçalhos continua sendo o
-middleware deste projeto. Autenticação, permissões e o modelo de usuário
-seguem inteiramente próprios — Django, sem nada em comum com os apps Flask.
+Restauração é administrativa, com a aplicação parada e destino conferido. Não
+execute `docker compose down -v`, não mova volumes ou anexos reais e não apague
+backups sem autorização inequívoca.
 
 ## Invariantes essenciais
 
-- Valores financeiros usam `Decimal`; lançamentos armazenam valor positivo e o
-  tipo define o efeito no saldo.
-- Status são `a_vencer`, `vencidos` e `realizado`. **`cancelado` foi removido**
-  em 2026-08-22, do código e do `CHECK` das duas tabelas: a única rota que
-  gravava esse status não era acionada por tela nenhuma, e produção tinha zero
-  linhas nele. Não é status "desativado" — não existe.
-- Transferências internas mantêm contrapartes e saldos consistentes, mas não
-  entram como receita ou despesa gerencial.
-- Fechamento mensal bloqueia mutações e conciliações do período; reabertura é
-  explícita e auditável.
-- Operações compostas são atômicas; services delimitam transações.
-- Toda data/hora persistida é timezone-aware (`timestamptz`).
-- Acesso por titular e permissões são controles de servidor; preferências de
-  visibilidade não são permissões.
-- A projeção de recorrências roda **sozinha, uma vez por mês**, a partir do
-  dia configurado em Parâmetros. Quem dispara é
-  `transactions.middleware.ProjecaoRecorrenteMensalMiddleware`, e não um cron
-  ou o `AppConfig.ready()` — o projeto não tem agendador, e depender de
-  reinício faria a execução parar sem sintoma. O botão "Executar Projeção
-  Agora" continua existindo para antecipar; reexecutar é idempotente.
+- valores financeiros usam `Decimal`;
+- lançamentos armazenam valores positivos, e o tipo define o efeito no saldo;
+- status são `a_vencer`, `vencidos` e `realizado`;
+- transferências internas mantêm contrapartes e saldos consistentes, mas não
+  entram como receita ou despesa gerencial;
+- fechamento mensal bloqueia mutações e conciliações do período; reabertura é
+  explícita e auditável;
+- operações compostas são atômicas e services delimitam transações;
+- datas/horas persistidas usam timezone;
+- autorização por titular e permissões são controles de servidor;
+- preferências de visibilidade não são permissões;
+- a projeção recorrente automática é disparada pelo middleware em requisições
+  autenticadas, uma vez no mês a partir do dia configurado; o botão manual
+  permanece disponível e a rotina é idempotente.
 
-Os detalhes de domínio, inclusive extratos, projeções e peculiaridades de
-interface, permanecem em `CONTEXT.md`.
+Consulte `docs/domain.md` antes de alterar saldos, recorrências, transferências,
+fechamentos, importação ou conciliação.
+
+## Segurança
+
+Autenticação é obrigatória; autorização permanece no servidor; escritas usam
+CSRF. Preserve CSP sem código inline, validação de uploads, logs sem conteúdo
+sensível, cookies `HttpOnly`/`SameSite=Lax` e `Secure` quando `USE_HTTPS=True`.
+Exposição pública exige proxy TLS, hosts permitidos e origens CSRF configurados.
+
+O piso de senha de oito caracteres aparece em
+`accounts/password_validators.py` e `core/services.py`; alterações nessa regra
+precisam manter os dois pontos coerentes.
+
+SharedAuth fornece constantes de segurança e formatação numérica. Ele não
+aplica middleware, não autentica usuários e não define permissões neste
+projeto. O token de leitura usado no build é secret do BuildKit e nunca deve
+entrar em imagem, log ou commit.
 
 ## Validação proporcional
 
-Mudança documental dispensa testes salvo se afetar automação. Para template,
-HTMX ou JavaScript, percorra a tela afetada. Para regra, rota ou serviço,
-percorra o fluxo completo com dados representativos. Para autenticação,
-autorização, sessão ou CSRF, execute integralmente `quality`. Para schema,
-backup validado, revisão da migration e bootstrap em PostgreSQL vazio são
-obrigatórios. Para dependências, Dockerfile ou Compose, reconstrua a imagem e
-suba a pilha completa.
+Mudança documental exige `git diff --check`, verificação de links/caminhos e
+busca por referências obsoletas. Para template, HTMX ou JavaScript, percorra a
+tela afetada. Para regra, rota ou service, execute testes focados e o fluxo
+completo. Para autenticação, autorização, sessão ou CSRF, execute `quality`.
+Para schema, valide backup, migration e bootstrap em PostgreSQL vazio. Para
+dependências, Dockerfile ou Compose, reconstrua a imagem, valide o Compose e
+faça smoke test da pilha.
 
-A suíte focada em `tests/` cobre cabeçalhos/CSP, autenticação, CSRF,
-autorização e grafo de migrations. A CI mínima executa essa mesma sequência
-em pushes/PRs para `main` e semanalmente; o Dependabot acompanha `pip`, Docker
-e GitHub Actions em atualizações minor/patch agrupadas. Isso não substitui o
-bootstrap real ou a verificação manual, nem constitui cobertura ampla, análise
-de tipos ou auditoria total. Ao concluir, informe comandos executados,
-resultado e controles omitidos com o motivo.
+A CI valida Compose, Ruff, pytest, dependências Python, imagem operacional e
+fronteira de escrita do runtime. O Dependabot acompanha `pip`, Docker e GitHub
+Actions. Não enfraqueça verificações de vulnerabilidade para fazer uma falha
+passar; corrija a dependência/base ou registre uma exceção específica e
+justificada quando não houver correção.
 
-## Implantação em produção
+O scanner da imagem roda como contêiner com `docker save` e `--input`. Não
+monte o socket Docker em contêineres e não troque esse desenho por uma action
+incompatível com a política do repositório.
 
-O sistema roda em um VPS Oracle atrás de Nginx com TLS, em
-`https://bancario-mspa.duckdns.org`, a partir de
-`/home/ubuntu/apps/controle-bancario`.
+## Produção e versões
 
-O código do servidor é espelho do `main`, em sentido único: desenvolvimento na
-máquina local, commit, push ao GitHub, e só então implantação. **Não edite
-código, não commite e não faça merge no VPS** — `~/deploy.sh bancario` aborta ao
-encontrar árvore suja, e a *deploy key* do servidor é somente leitura, então um
-push de lá falharia de qualquer forma.
+O VPS e seus volumes são independentes do ambiente local. O código no servidor
+é espelho do `main`; desenvolvimento, commit e push ocorrem localmente. Não
+edite, faça commit ou merge no VPS. Consulte `docs/operations.md` antes de
+qualquer operação de produção.
 
-`.secrets/` (`postgres_password`, `django_secret_key`) e `.certs/` não são
-versionados e vivem apenas no servidor; um reclone precisa restaurá-los, ou o
-build falha e o banco fica inacessível. Os dados ficam nos volumes
-`controle-bancario_postgres_data` e `controle-bancario_media_volume`, fora da
-pasta do código: substituir o diretório do projeto não os afeta. A base do VPS é
-independente da local. Consulte `docs/deployment-vps.md` antes de qualquer
-operação no VPS.
+As versões suportadas são Python 3.14, PostgreSQL 17 e Django 5.2; faixas
+completas ficam em `requirements*.txt`. Não há lock de dependências nem patch
+de imagem fixado, portanto um build pode resolver patches mais novos.
 
-## Política de versões
+Ao atualizar dependências, alargue o teto e preserve o piso compatível já
+verificado. Só eleve o piso quando uma incompatibilidade for comprovada e a
+nova base mínima tiver sido validada. Reconstrua do zero, execute `quality` e
+valide o fluxo afetado.
 
-**Faixas de dependência: alargue o teto, mantenha o piso.** O Dependabot roda
-com `versioning-strategy: widen`. Quando ele propuser elevar o mínimo, aproveite
-apenas a parte que alarga o teto e recuse a que sobe o piso. O piso registra a
-compatibilidade mínima efetivamente verificada, não a versão mais nova
-disponível: elevá-lo declara uma incompatibilidade que ninguém comprovou e não
-muda nada do que é instalado, porque o pip já resolve para a versão mais nova
-permitida pela faixa.
-
-
-Compatibilidade mínima suportada: Python 3.14, PostgreSQL 17 e Django 5.2;
-as faixas completas de bibliotecas estão em `requirements*.txt`. Atualmente
-testa-se a família das imagens `python:3.14-slim` e `postgres:17-alpine` com as
-versões resolvidas dentro dessas faixas. Não há lock de dependências nem patch
-de imagem registrado: uma reconstrução pode resolver patches mais novos.
-
-Evolua versões deliberadamente: avalie compatibilidade e notas de migração,
-atualize imagem/faixas e documentação como uma única mudança, reconstrua do
-zero, rode `quality` e valide o fluxo afetado. Não trate uma versão observada
-num contêiner local como nova mínima suportada sem registrá-la e testá-la.
-
-## Barreiras de segurança no CI (desde 2026-08-21)
-
-Duas verificações novas reprovam o PR, e as duas respondem perguntas
-diferentes:
-
-- **`pip-audit`** roda dentro da imagem `quality` e pergunta se alguma
-  dependência Python *instalada* tem CVE conhecido. Auditar o ambiente
-  instalado, e não o arquivo de requisitos, é o que responde sobre o que está
-  rodando em vez do que está escrito.
-- **Trivy** varre a imagem *servida* e cobre o que o `pip-audit` não vê: os
-  pacotes do sistema operacional da imagem base.
-
-Se uma delas reprovar, o conserto é atualizar a dependência ou a base — não
-afrouxar a verificação. Vulnerabilidade sem correção publicada já é filtrada
-(`--ignore-unfixed` no Trivy); no `pip-audit`, a saída é `--ignore-vuln <ID>`
-com um comentário dizendo por quê, para cada exceção ser uma decisão explícita
-e datada em vez de um vermelho permanente que se aprende a ignorar.
-
-Três coisas que parecem detalhe e não são:
-
-1. **O Trivy roda como contêiner, não como action de marketplace.** A política
-   destes repositórios é `allowed_actions: selected` com apenas
-   `github_owned_allowed` — action de terceiro é barrada antes de o workflow
-   rodar, e o sintoma é `startup_failure` sem log nenhum. Não troque por uma
-   action "porque é mais limpo".
-2. **A varredura usa `docker save` + `--input`, sem montar
-   `/var/run/docker.sock`.** Montar o socket é dar root na prática. Foi o
-   motivo de o `autoheal` ter sido recusado no VPS, e vale igual aqui.
-3. **O serviço servido declara `image:` com nome fixo no `compose.yaml`.** Sem
-   isso o Compose batiza a imagem pelo nome do diretório, que muda conforme
-   onde o repositório foi clonado — e a varredura fica sem alvo estável.
+Ao concluir uma tarefa, informe comandos executados no host e nos contêineres,
+resultados e validações omitidas com o motivo.

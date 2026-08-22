@@ -5,9 +5,8 @@ O agrupamento é feito por `bank_operation_id`: `BankOperation` é uma entidade
 real, criada por `create_installment_entries`/`create_internal_transfer`, e o
 identificador exibido e filtrável é `BankOperation.operation_key`.
 
-O identificador do sistema anterior sobrevive em
-`BankOperation.legacy_operation_id`, apenas como rastro histórico: não é chave
-de agrupamento nem deve ser usado em consultas.
+`BankOperation.legacy_operation_id` é apenas um campo legado: não é chave de
+agrupamento nem deve ser usado em consultas.
 
 Só entram aqui os tipos listados em COMPOSITE_OPERATION_TYPES.
 """

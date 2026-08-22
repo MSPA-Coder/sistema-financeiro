@@ -57,9 +57,8 @@ def test_health_sem_barra_tambem_responde(client, banco_sondavel):
 
 
 def test_health_reporta_503_com_banco_fora(client, banco_fora):
-    # O teste que faltava. Ate 2026-08-21 esta rota devolvia `"ok"` fixo: o
-    # Docker marcava o conteiner saudavel com o banco inteiramente fora, que e
-    # justamente a situacao que o health check existe para detectar.
+    # A sonda precisa refletir a dependencia do PostgreSQL para que o Compose
+    # nao marque o conteiner como saudavel quando o banco esta indisponivel.
     resposta = client.get("/health/")
     assert resposta.status_code == 503
     assert resposta.json()["status"] == "erro"

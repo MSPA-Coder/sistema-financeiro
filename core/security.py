@@ -27,15 +27,14 @@ __all__ = ["CONTENT_SECURITY_POLICY", "SECURITY_HEADERS", "ContentSecurityPolicy
 # `imagens_data_uri=True` porque o favicon do `base.html` e um SVG embutido no
 # proprio `<link rel="icon">`. E a unica folga, e ela e pedida por nome.
 #
-# O `font-src 'self' data:` que esta constante tinha era sobra: o projeto nao
-# tem `@font-face` nem nenhum arquivo de fonte. Saiu.
+# Nao e necessario abrir `font-src` para `data:`: o projeto nao usa
+# `@font-face` nem arquivos de fonte.
 CONTENT_SECURITY_POLICY = montar_csp(imagens_data_uri=True)
 
-# Ao contrario da versao anterior, o dicionario agora traz tambem os tres
-# cabecalhos que o Django ja emite por configuracao (`SECURE_CONTENT_TYPE_
-# NOSNIFF`, `X_FRAME_OPTIONS`, `SECURE_REFERRER_POLICY`). Nao ha conflito --
-# os valores sao os mesmos e os dois lados usam `setdefault` --, e o ganho e
-# que os valores passam a ter um dono so nos quatro projetos.
+# O dicionario inclui os cabecalhos que o Django tambem emite por configuracao
+# (`SECURE_CONTENT_TYPE_NOSNIFF`, `X_FRAME_OPTIONS`,
+# `SECURE_REFERRER_POLICY`). Nao ha conflito: os valores coincidem e os dois
+# lados usam `setdefault`.
 # `tests/test_security_headers.py` afirma que as settings do Django e o
 # dicionario nao podem discordar.
 

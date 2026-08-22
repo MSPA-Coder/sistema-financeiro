@@ -1,23 +1,15 @@
 /* O login usa as MESMAS tokens de tema do resto do app (`--bg-page`, `--card`,
-   `--text`, `--muted`, `--border`, `--primary`, `--danger`...), em vez de
-   redeclarar a própria paleta. Antes este arquivo tinha um `:root` próprio
-   fixo nos valores do tema escuro -- por isso o login ficava congelado nesse
-   tema sozinho enquanto trocar de tema no app (`html[data-theme]`) não
-   surtia efeito nenhum aqui: nada neste arquivo lia a variável trocada.
+   `--text`, `--muted`, `--border`, `--primary`, `--danger`...) e não declara
+   uma paleta própria.
 
    As tokens vêm de `css/base.css`, carregado num `<link>` PRÓPRIO antes deste
-   arquivo em `registration/login.html` -- não por `@import` daqui. Tentei
-   `@import url("../core/application.css")` primeiro (mesma ideia de
-   `css/base.css`, que importa de um nível abaixo com `./core/...`), mas o
-   `collectstatic` real quebra nesse `@import` de subida de diretório: o
+   arquivo em `registration/login.html` -- não por `@import` daqui. O
    `CompressedManifestStaticFilesStorage` do WhiteNoise resolve
    `../core/application.css` a partir de `css/pages/` para
-   `css/pages/core/application.css` (a subida `..` não é aplicada) e o build
-   falha com "Missing staticfiles manifest entry". `css/base.css` nunca bateu
-   nisso porque o import dele é `./core/...`, sem `..` -- caso não teve
-   cobertura. Dois `<link>` sem `@import` evita o bug por inteiro; o efeito
-   final na cascata é o mesmo (application.css carrega, depois este arquivo
-   sobrescreve o que precisa). */
+   `css/pages/core/application.css`, sem aplicar a subida `..`, e falha com
+   "Missing staticfiles manifest entry". Dois `<link>` evitam essa resolucao;
+   na cascata, `application.css` carrega primeiro e este arquivo sobrescreve
+   apenas o necessario. */
 
 /* application.css já reseta `box-sizing`/margem/padding em `*` -- não repete
    aqui. Também estiliza <body> (altura de viewport fixa, overflow

@@ -68,11 +68,9 @@
         proxy.value = submitter.value;
     }
 
-    /* O espelhamento acima e um quirk geral do htmx (ver o comentario logo
-       acima), independente de confirmacao - mas so era acionado pelos dois
-       pontos que hoje sumiram (o modal de confirmacao antigo e o
-       `_initDynamicConfirmButtons`). Religar aqui, incondicional: fase de
-       CAPTURA no document, e ANTES do listener delegado de
+    /* O espelhamento acima e um quirk geral do htmx e precisa acontecer
+       incondicionalmente no listener de captura do document, antes do
+       listener delegado de
        `sharedauth-ui.js` (que carrega com `defer`, depois deste script
        sincrono - dois listeners de captura no mesmo no disparam na ordem em
        que foram registrados). Isso importa porque aquele listener chama

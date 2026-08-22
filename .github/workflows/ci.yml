@@ -52,9 +52,8 @@ jobs:
       - name: Executar quality
         run: docker compose --profile quality run --rm quality
 
-      # O Dependabot abre PR quando sai versao nova. Nao e a mesma pergunta que
-      # "a versao que esta instalada AGORA tem CVE conhecido?" -- e essa segunda
-      # ninguem fazia em nenhum dos seis repositorios.
+      # O Dependabot cobre atualizacoes; o pip-audit responde separadamente se
+      # a versao instalada tem uma vulnerabilidade conhecida.
       #
       # Roda dentro da propria imagem `quality`, que ja instala exatamente o que
       # a imagem servida instala, mais as ferramentas de teste. Auditar o
@@ -115,10 +114,8 @@ jobs:
           # apos `build` ele pode devolver um ID antigo ou inexistente. A
           # configuracao e a fonte do nome da imagem que acabou de ser criada.
           #
-          # O nome e fixo (`image:` no compose) desde 2026-08-21. Antes era o
-          # derivado do diretorio (`controle-bancario-web`), que muda conforme
-          # onde o repositorio foi clonado -- e por isso nao servia de alvo
-          # para a varredura de vulnerabilidade.
+          # O nome e fixo por `image:` no Compose e portanto nao varia com o
+          # diretorio em que o repositorio foi clonado.
           runtime_image="$(docker compose config --images | grep -x 'controle-bancario:local' | head -1)"
           test -n "$runtime_image"
 
@@ -154,10 +151,9 @@ jobs:
             require_absent curl
             require_absent pg_dump
             require_absent gcc
-            # `python -m pip check` saiu daqui: a imagem servida nao tem
-            # mais pip (ver o Dockerfile). A verificacao passou para o
-            # BUILD, no estagio runtime, logo antes de o pip ser removido
-            # -- mesmo conjunto de dependencias, so que no lugar certo.
+            # A imagem servida nao contem pip (ver o Dockerfile). O BUILD do
+            # estagio runtime executa `python -m pip check` imediatamente antes
+            # de remove-lo, sobre o mesmo conjunto de dependencias.
           '
 
           runtime_container="$(docker create "$runtime_image")"

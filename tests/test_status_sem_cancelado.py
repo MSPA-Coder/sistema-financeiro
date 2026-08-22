@@ -1,23 +1,12 @@
-"""As listas de status nao perderam opcao quando `cancelado` saiu.
+"""O dominio e os filtros oferecem exatamente os status validos.
 
-Cancelar lancamento foi removido em 2026-08-22: nunca chegou a existir para o
-usuario (a unica rota que gravava o status nao era acionada por tela nenhuma) e
-producao tinha zero linhas cancceladas nas duas tabelas.
-
-A remocao tinha uma armadilha, e e ela que este arquivo guarda. Duas listas
-eram definidas por FATIA:
+As listas de filtro nao podem ser definidas por fatia:
 
     STATUS_FILTER_OPTIONS = STATUS_OPTIONS[:-1]
     VIEW_FILTER_MODE_OPTIONS = VIEW_MODE_OPTIONS[:-1]
 
-O que a fatia cortava era "Cancelado", por ele ser o ultimo. Tirando "Cancelado"
-da lista de origem sem tocar na fatia, o corte passaria a comer **"Realizado"** —
-dois filtros perdendo uma opcao valida, sem erro, sem excecao, sem nada na tela
-alem de uma opcao que sumiu. Ninguem olha uma lista suspensa e conta os itens.
-
-Por isso as duas viraram igualdade explicita, e por isso o teste afirma o
-CONTEUDO em vez de o comprimento: um teste de tamanho passaria com a lista
-errada.
+Uma mudanca na ordem retiraria silenciosamente uma opcao valida. Por isso os
+testes afirmam o conteudo, e nao apenas o comprimento das listas.
 """
 
 from __future__ import annotations
