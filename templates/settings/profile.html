@@ -27,7 +27,7 @@
             <label class="theme-option {% if current_theme == theme_value %}active{% endif %}">
                 <input type="radio" name="theme" value="{{ theme_value }}" aria-label="Tema {{ theme_label }}" {% if current_theme == theme_value %}checked{% endif %}>
                 <div class="theme-preview preview-{{ theme_value }}"></div>
-                <span class="theme-name">{{ theme_icons|get_item:theme_value }} {{ theme_label }}</span>
+                <span class="theme-name">{{ theme_label }}</span>
                 <span class="theme-desc">{{ theme_descriptions|get_item:theme_value }}</span>
             </label>
             {% endfor %}

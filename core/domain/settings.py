@@ -57,20 +57,6 @@ UI_THEME_LABELS: Final = {
     UI_THEME_CORPORATE_BLUE: "Corporate Blue",
     UI_THEME_EMERALD: "Emerald",
 }
-UI_THEME_ICONS: Final = {
-    UI_THEME_LIGHT: "☀️",
-    UI_THEME_DARK: "🌑",
-    UI_THEME_SOLARIZED_LIGHT: "🌤️",
-    UI_THEME_SOLARIZED_DARK: "🌘",
-    UI_THEME_DRACULA: "🧛",
-    UI_THEME_NORD: "❄️",
-    UI_THEME_MONOKAI: "💻",
-    UI_THEME_GRAY: "⚪",
-    UI_THEME_SOFT_LIGHT: "🌥️",
-    UI_THEME_SOFT_DARK: "🌌",
-    UI_THEME_CORPORATE_BLUE: "🔵",
-    UI_THEME_EMERALD: "🟢",
-}
 UI_THEME_DESCRIPTIONS: Final = {
     UI_THEME_LIGHT: "Claro e neutro",
     UI_THEME_DARK: "Escuro e focado",
