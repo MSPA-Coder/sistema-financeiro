@@ -35,7 +35,6 @@ from accounts.services import (
 from core.domain.identity import USER_TYPE_LABELS
 from core.domain.settings import (
     APP_SETTING_LAST_OPTIMIZE_INFO,
-    UI_THEME_DESCRIPTIONS,
     UI_THEME_LABELS,
 )
 from core.permissions import permission_required
@@ -238,7 +237,7 @@ def permissions_view(request):
 @login_required
 @permission_required('settings.view')
 def settings_profile_view(request):
-    from core.domain.settings import UI_THEME_LABELS, UI_THEME_DESCRIPTIONS
+    from core.domain.settings import UI_THEME_DESCRIPTIONS
     return render(request, "settings/profile.html", {
         "theme_options": UI_THEME_LABELS,
         "theme_descriptions": UI_THEME_DESCRIPTIONS,
