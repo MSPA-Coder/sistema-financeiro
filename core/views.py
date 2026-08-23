@@ -36,7 +36,6 @@ from core.domain.identity import USER_TYPE_LABELS
 from core.domain.settings import (
     APP_SETTING_LAST_OPTIMIZE_INFO,
     UI_THEME_DESCRIPTIONS,
-    UI_THEME_ICONS,
     UI_THEME_LABELS,
 )
 from core.permissions import permission_required
