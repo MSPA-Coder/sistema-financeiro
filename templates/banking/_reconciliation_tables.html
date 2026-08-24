@@ -51,7 +51,7 @@
                 <td>{{ line.statement_date|date:"d/m/Y" }}</td>
                 <td>{{ line.account.owner.name }} / {{ line.account.institution.institution_name }} / {{ line.account.account_name }}</td>
                 <td>{{ line.description }}</td>
-                <td>{{ line.amount }}</td>
+                <td class="amount">{{ line.amount }}</td>
                 <td>
                     {% if line.status == "novo" %}
                         {% if line.reconcile_candidates %}
@@ -67,7 +67,7 @@
                                 <option value="">Selecione…</option>
                                 {% endif %}
                                 {% for entry in line.reconcile_candidates %}
-                                <option value="{{ entry.id }}" {% if line.reconcile_candidates|length == 1 %}selected{% endif %}>#{{ entry.id }} - {{ entry.due_date|date:"d/m/Y" }} - {{ entry.description|default:"-" }} - {{ entry.entry_amount }}</option>
+                                <option value="{{ entry.id }}" data-sensitive-value="true" {% if line.reconcile_candidates|length == 1 %}selected{% endif %}>#{{ entry.id }} - {{ entry.due_date|date:"d/m/Y" }} - {{ entry.description|default:"-" }} - {{ entry.entry_amount }}</option>
                                 {% endfor %}
                             </select>
                             <button type="submit" class="btn-sm btn-primary">Conciliar</button>
@@ -149,7 +149,7 @@
                 <td>{{ line.statement_date|date:"d/m/Y" }}</td>
                 <td>{{ line.account.owner.name }} / {{ line.account.institution.institution_name }} / {{ line.account.account_name }}</td>
                 <td>{{ line.description }}</td>
-                <td>{{ line.amount }}</td>
+                <td class="amount">{{ line.amount }}</td>
                 <td>{% if line.matched_entry %}#{{ line.matched_entry.id }} - {{ line.matched_entry.description|default:"-" }}{% else %}Movimento não encontrado{% endif %}</td>
                 <td class="actions">
                     <form method="post" action="{% url 'bank_statements:undo_reconciliation' %}"

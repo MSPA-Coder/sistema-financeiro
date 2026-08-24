@@ -10,20 +10,20 @@
     </div>
     <div class="decision-card">
         <strong>Saldo inicial</strong>
-        <div class="decision-value {{ report.summary.start_balance|amount_class }}">{{ report.summary.start_balance|money_signed }}</div>
+        <div class="decision-value card-value {{ report.summary.start_balance|amount_class }}">{{ report.summary.start_balance|money_signed }}</div>
     </div>
     <div class="decision-card">
         <strong>Movimento líquido</strong>
-        <div class="decision-value {{ report.summary.net_movement|amount_class }}">{{ report.summary.net_movement|money_signed }}</div>
+        <div class="decision-value card-value {{ report.summary.net_movement|amount_class }}">{{ report.summary.net_movement|money_signed }}</div>
     </div>
     <div class="decision-card">
         <strong>Menor saldo</strong>
-        <div class="decision-value {{ report.summary.minimum_balance|amount_class }}">{{ report.summary.minimum_balance|money_signed }}</div>
+        <div class="decision-value card-value {{ report.summary.minimum_balance|amount_class }}">{{ report.summary.minimum_balance|money_signed }}</div>
         <div class="decision-note">{{ report.summary.minimum_balance_date|date:'d/m/Y' }}</div>
     </div>
     <div class="decision-card">
         <strong>Saldo final</strong>
-        <div class="decision-value {{ report.summary.end_balance|amount_class }}">{{ report.summary.end_balance|money_signed }}</div>
+        <div class="decision-value card-value {{ report.summary.end_balance|amount_class }}">{{ report.summary.end_balance|money_signed }}</div>
     </div>
 </section>
 

@@ -103,9 +103,9 @@
             <tr>
                 <td>{{ row.budget.owner.name }}</td>
                 <td>{{ row.budget.category.category_name }}</td>
-                <td class="amount-neutral">{{ row.budget.planned_amount|money }}</td>
-                <td class="amount-negative">{{ row.actual_amount|money }}</td>
-                <td class="{{ row.difference|amount_class }}">{{ row.difference|money_signed }}</td>
+                <td class="amount amount-neutral">{{ row.budget.planned_amount|money }}</td>
+                <td class="amount amount-negative">{{ row.actual_amount|money }}</td>
+                <td class="amount {{ row.difference|amount_class }}">{{ row.difference|money_signed }}</td>
             </tr>
             {% empty %}
             <tr><td colspan="5" data-ui="empty-2">Nenhum orçamento cadastrado para o filtro atual.</td></tr>
@@ -125,7 +125,7 @@
                 <td>{{ entry.due_date|date:'d/m/Y' }}</td>
                 <td>{{ entry.account.owner.name }} / {{ entry.account.account_name }}</td>
                 <td>{{ entry.description|default:'-' }}</td>
-                <td class="{{ entry.entry_amount|amount_class }}">{{ entry.entry_amount|money_signed }}</td>
+                <td class="amount {{ entry.entry_amount|amount_class }}">{{ entry.entry_amount|money_signed }}</td>
                 <td>{% if entry.linked_project %}{{ entry.linked_project.project_name }}{% else %}-{% endif %}</td>
                 <td>
                     {% for tag in entry.linked_tags %}<span class="badge">{{ tag.tag_name }}</span>{% empty %}-{% endfor %}

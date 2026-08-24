@@ -814,6 +814,11 @@ html[data-values-hidden="true"] .card-value {
     text-shadow: none !important;
 }
 
+html[data-values-hidden="true"] .health-metric-value {
+    color: transparent !important;
+    text-shadow: none !important;
+}
+
 html[data-values-hidden="true"] .sensitive-value {
     color: transparent !important;
     text-shadow: none !important;
@@ -870,6 +875,7 @@ html[data-values-hidden="true"] .chart-card canvas,
 html[data-values-hidden="true"] .health-chart-row canvas {
     filter: blur(6px);
     opacity: 0.38;
+    pointer-events: none;
 }
 
 html[data-values-hidden="true"] .chart-card:has(canvas)::after,

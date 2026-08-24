@@ -106,6 +106,11 @@
     var _moneyMatchRe = /[+-]?\s*R\$\s*(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}/;
     var _moneyReplaceRe = /[+-]?\s*R\$\s*(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}/g;
     var _sensitiveInputNameRe = /(^|_)(amount|balance|value|valor|saldo)(_|$)/;
+    var _sensitiveElementSelector = [
+        '[data-sensitive-value]',
+        'td.amount', 'th.amount', '.value-col', '.card-value',
+        '.health-metric-value'
+    ].join(', ');
 
     function _readValuesPrivacyPreference() {
         try { return localStorage.getItem(_valuesPrivacyKey) === 'true'; } catch (_) { return false; }
@@ -179,19 +184,33 @@
         });
     }
 
+    function _markSensitiveElements(root) {
+        (root || document).querySelectorAll(_sensitiveElementSelector).forEach(function (el) {
+            el.dataset.sensitiveValue = 'true';
+        });
+    }
+
     function _syncSensitiveOptions(root, hidden) {
         (root || document).querySelectorAll('option').forEach(function (option) {
             var original = option.dataset.sensitiveOriginalText || option.textContent || '';
-            if (!_moneyMatchRe.test(original)) return;
+            var explicitlySensitive = option.dataset.sensitiveValue === 'true';
+            if (!explicitlySensitive && !_moneyMatchRe.test(original)) return;
             option.dataset.sensitiveOriginalText = original;
-            option.textContent = hidden ? _maskMoneyText(original) : original;
+            option.textContent = hidden
+                ? (explicitlySensitive ? '****' : _maskMoneyText(original))
+                : original;
         });
     }
 
     function _syncSensitiveLabels(root, hidden) {
-        (root || document).querySelectorAll('[data-sensitive-value]').forEach(function (el) {
-            if (hidden) el.setAttribute('aria-label', 'Valor oculto');
-            else el.removeAttribute('aria-label');
+        (root || document).querySelectorAll('[data-sensitive-value="true"]').forEach(function (el) {
+            if (hidden) {
+                el.setAttribute('aria-label', 'Valor oculto');
+                el.dataset.privacyAriaManaged = 'true';
+            } else if (el.dataset.privacyAriaManaged === 'true') {
+                el.removeAttribute('aria-label');
+                delete el.dataset.privacyAriaManaged;
+            }
         });
     }
 
@@ -211,6 +230,7 @@
         if (document.body) document.body.setAttribute('data-values-hidden', hidden ? 'true' : 'false');
 
         var scope = root || document;
+        _markSensitiveElements(scope);
         _markSensitiveText(scope);
         _markSensitiveInputs(scope);
         _syncSensitiveOptions(scope, hidden);
@@ -392,7 +412,25 @@
        no arquivo vendorizado. `ev.target` de um evento disparado direto no
        `document` é o próprio `document`, e `lerAvisosDoServidor(document)`
        varre a página inteira, o que cobre o bloco recém-inserido. */
+    function _maskServerAvisos(root) {
+        if (!_readValuesPrivacyPreference()) return;
+        (root || document).querySelectorAll('[data-sa-avisos]').forEach(function (el) {
+            var raw = el.getAttribute('data-sa-avisos');
+            if (!raw) return;
+            try {
+                var avisos = JSON.parse(raw);
+                avisos.forEach(function (aviso) {
+                    if (aviso && typeof aviso.mensagem === 'string') {
+                        aviso.mensagem = _maskMoneyText(aviso.mensagem);
+                    }
+                });
+                el.setAttribute('data-sa-avisos', JSON.stringify(avisos));
+            } catch (_) {}
+        });
+    }
+
     function _announceServerAvisos() {
+        _maskServerAvisos(document);
         document.dispatchEvent(new CustomEvent('htmx:afterSwap'));
     }
 
@@ -404,7 +442,35 @@
        (ex.: as ações de conciliação) nunca vira toast. */
     document.addEventListener('htmx:oobAfterSwap', function (ev) {
         if (ev.target && ev.target.id === 'flashMessages') _announceServerAvisos();
+        _applyValuesPrivacy(_readValuesPrivacyPreference(), ev.target || document);
     });
+
+    document.addEventListener('htmx:afterSwap', function (ev) {
+        var root = ev.detail && ev.detail.elt ? ev.detail.elt : (ev.target || document);
+        _initPrivacyToggles(root);
+        _applyValuesPrivacy(_readValuesPrivacyPreference(), root);
+    });
+
+    document.addEventListener('htmx:load', function (ev) {
+        var root = ev.detail && ev.detail.elt ? ev.detail.elt : (ev.target || document);
+        _initPrivacyToggles(root);
+        _applyValuesPrivacy(_readValuesPrivacyPreference(), root);
+    });
+
+    function _observeDynamicPrivacyContent() {
+        if (!window.MutationObserver || !document.body) return;
+        var observer = new MutationObserver(function (records) {
+            if (!_readValuesPrivacyPreference()) return;
+            records.forEach(function (record) {
+                record.addedNodes.forEach(function (node) {
+                    if (node.nodeType === Node.ELEMENT_NODE) {
+                        _applyValuesPrivacy(true, node);
+                    }
+                });
+            });
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
 
     function _syncFlashMessages(parsedDoc) {
         var appContent = document.querySelector('.app-content');
@@ -887,7 +953,9 @@
         window.addEventListener('resize', _updateTableOverflow);
 
         /* -- Init da area de conteudo -- */
+        _maskServerAvisos(document);
         _initContentArea(document);
+        _observeDynamicPrivacyContent();
     });
 
 })();
