@@ -86,7 +86,11 @@
             <label>Ano</label>
             <input type="number" name="year" class="form-control" min="2000" max="2100" value="{{ monthly_close_default_year }}" placeholder="Ano" required>
         </div>
-        <button type="submit" class="btn btn-primary">{% icon 'close-month' %}<span>Fechar Mês</span></button>
+        <button type="submit" class="btn btn-primary"
+                data-sa-confirmar="Fechar este mês para a conta selecionada? As alterações no período ficarão bloqueadas até uma reabertura explícita."
+                data-sa-titulo="Confirmar fechamento mensal"
+                data-sa-severidade="warning"
+                data-sa-ok="Fechar mês">{% icon 'close-month' %}<span>Fechar Mês</span></button>
     </form>
 </div>
 
@@ -116,8 +120,12 @@
                             <input type="hidden" name="account_id" value="{{ close.account_id }}">
                             <input type="hidden" name="year" value="{{ close.year }}">
                             <input type="hidden" name="month" value="{{ close.month }}">
-                            <input type="text" name="reason" class="form-control" placeholder="Motivo">
-                            <button type="submit" class="btn btn-warning btn-sm">{% icon 'reopen' %}<span>Reabrir</span></button>
+                            <input type="text" name="reason" class="form-control" placeholder="Motivo" maxlength="255" required>
+                            <button type="submit" class="btn btn-warning btn-sm"
+                                    data-sa-confirmar="Reabrir este mês? Informe um motivo auditável para liberar novas alterações no período."
+                                    data-sa-titulo="Confirmar reabertura mensal"
+                                    data-sa-severidade="warning"
+                                    data-sa-ok="Reabrir">{% icon 'reopen' %}<span>Reabrir</span></button>
                         </form>
                         {% else %}
                         <div class="monthly-close-reopen-info">

@@ -9,6 +9,7 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.http import urlencode
+from django.views.decorators.http import require_POST
 
 from accounts.models import AccountOwner, AppUser
 from accounts.services import (
@@ -248,6 +249,7 @@ def settings_profile_view(request):
 
 @login_required
 @permission_required('settings.theme.update')
+@require_POST
 def settings_update_theme_view(request):
     if request.method == 'POST':
         new_theme = update_user_ui_theme(request.user, request.POST.get('theme', ''))
@@ -257,6 +259,7 @@ def settings_update_theme_view(request):
 
 @login_required
 @permission_required('settings.theme.update')
+@require_POST
 def settings_update_table_scroll_view(request):
     if request.method == 'POST':
         try:
@@ -341,9 +344,12 @@ def _monthly_close_redirect(request):
 @login_required
 @permission_required('settings.monthly_close.manage')
 def settings_monthly_close_view(request):
-    from banking.services import list_accounts_for_user
+    from banking.models import FinancialAccount
+    from banking.services import accessible_account_ids
 
-    close_accounts = list_accounts_for_user(request.user)
+    close_accounts = FinancialAccount.objects.select_related("owner", "institution").filter(
+        id__in=accessible_account_ids(request.user, "update")
+    )
     account_ids = [account.id for account in close_accounts]
     filters = _monthly_close_filters(request, account_ids)
     recent_closes = AccountMonthClose.objects.select_related(
@@ -375,41 +381,47 @@ def settings_monthly_close_view(request):
 
 @login_required
 @permission_required('settings.monthly_close.manage')
+@require_POST
 def settings_close_month_view(request):
     from banking.models import FinancialAccount
+    from banking.services import can_access_account
     from core.domain.finance import VIEW_REALIZED
     from reports.services import decimal_balance_before, month_bounds
 
-    if request.method == 'POST':
-        try:
-            account_id = int(request.POST.get('account_id'))
-            year = int(request.POST.get('year'))
-            month = int(request.POST.get('month'))
-            account = FinancialAccount.objects.get(id=account_id)
-            _start, end_exclusive = month_bounds(year, month)
-            closing_balance = decimal_balance_before([account.id], end_exclusive, VIEW_REALIZED)
-            closed = close_month(account, year, month, closing_balance, request.user)
-            messages.success(request, f"Mês {closed.month:02d}/{closed.year} fechado para a conta #{closed.account_id}.")
-        except (ValueError, TypeError, FinancialAccount.DoesNotExist) as exc:
-            messages.error(request, str(exc) or "Dados inválidos para fechamento mensal.")
+    try:
+        account_id = int(request.POST.get('account_id'))
+        year = int(request.POST.get('year'))
+        month = int(request.POST.get('month'))
+        account = FinancialAccount.objects.get(id=account_id)
+        if not can_access_account(request.user, account.id, "update"):
+            raise ValueError("Acesso negado: usuário sem permissão para fechar este mês.")
+        _start, end_exclusive = month_bounds(year, month)
+        closing_balance = decimal_balance_before([account.id], end_exclusive, VIEW_REALIZED)
+        closed = close_month(account, year, month, closing_balance, request.user)
+        messages.success(request, f"Mês {closed.month:02d}/{closed.year} fechado para a conta #{closed.account_id}.")
+    except (ValueError, TypeError, FinancialAccount.DoesNotExist) as exc:
+        messages.error(request, str(exc) or "Dados inválidos para fechamento mensal.")
     return _monthly_close_redirect(request)
 
 
 @login_required
 @permission_required('settings.monthly_close.manage')
+@require_POST
 def settings_reopen_month_view(request):
     from banking.models import FinancialAccount
+    from banking.services import can_access_account
 
-    if request.method == 'POST':
-        try:
-            account_id = int(request.POST.get('account_id'))
-            year = int(request.POST.get('year'))
-            month = int(request.POST.get('month'))
-            account = FinancialAccount.objects.get(id=account_id)
-            reopened = reopen_month(account, year, month, request.POST.get('reason', ''), request.user)
-            messages.success(request, f"Mês {reopened.month:02d}/{reopened.year} reaberto para a conta #{reopened.account_id}.")
-        except (ValueError, TypeError, FinancialAccount.DoesNotExist) as exc:
-            messages.error(request, str(exc) or "Fechamento mensal inválido.")
+    try:
+        account_id = int(request.POST.get('account_id'))
+        year = int(request.POST.get('year'))
+        month = int(request.POST.get('month'))
+        account = FinancialAccount.objects.get(id=account_id)
+        if not can_access_account(request.user, account.id, "update"):
+            raise ValueError("Acesso negado: usuário sem permissão para reabrir este mês.")
+        reopened = reopen_month(account, year, month, request.POST.get('reason', ''), request.user)
+        messages.success(request, f"Mês {reopened.month:02d}/{reopened.year} reaberto para a conta #{reopened.account_id}.")
+    except (ValueError, TypeError, FinancialAccount.DoesNotExist) as exc:
+        messages.error(request, str(exc) or "Fechamento mensal inválido.")
     return _monthly_close_redirect(request)
 
 
@@ -431,6 +443,7 @@ def settings_database_view(request):
 
 @login_required
 @permission_required('settings.database.optimize')
+@require_POST
 def settings_health_check_view(request):
     if request.method == 'POST':
         result = run_database_health_check()
@@ -446,6 +459,7 @@ def settings_health_check_view(request):
 
 @login_required
 @permission_required('settings.database.optimize')
+@require_POST
 def settings_optimize_view(request):
     if request.method == 'POST':
         summary = optimize_database()
@@ -489,6 +503,7 @@ def settings_home_view(request):
 
 @login_required
 @permission_required('settings.password_policy.manage')
+@require_POST
 def settings_update_password_policy_view(request):
     if request.method == 'POST':
         try:
@@ -511,6 +526,7 @@ def settings_update_password_policy_view(request):
 
 @login_required
 @permission_required('settings.password_policy.manage')
+@require_POST
 def settings_update_login_lockout_view(request):
     if request.method == 'POST':
         try:
@@ -530,6 +546,7 @@ def settings_update_login_lockout_view(request):
 
 @login_required
 @permission_required('settings.projection.manage')
+@require_POST
 def settings_update_recurring_projection_view(request):
     if request.method == 'POST':
         try:
@@ -550,6 +567,7 @@ def settings_update_recurring_projection_view(request):
 
 @login_required
 @permission_required('settings.projection.manage')
+@require_POST
 def settings_run_recurring_projection_view(request):
     # Nao ha guarda de "ja executou este mes", e isso e deliberado -- ver
     # `transactions/recurring_projection.py`. A projecao preenche ate o

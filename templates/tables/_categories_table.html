@@ -30,7 +30,11 @@
                 <label data-ui="checkbox-label-inline">
                     <input type="checkbox" name="is_internal" aria-label="Categoria interna" {% if category.is_internal %}checked{% endif %} data-ui="checkbox-reset"> Interna
                 </label>
-                <button type="submit" class="btn btn-primary btn-sm">{% icon 'save' %}<span>Salvar</span></button>
+                <button type="submit" class="btn btn-primary btn-sm"
+                        data-sa-confirmar="Salvar as alterações desta categoria?"
+                        data-sa-titulo="Confirmar alteração"
+                        data-sa-severidade="info"
+                        data-sa-ok="Salvar">{% icon 'save' %}<span>Salvar</span></button>
             </form>
         </td>
     </tr>

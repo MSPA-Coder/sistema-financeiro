@@ -3,6 +3,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from accounts.services import accessible_owner_ids
@@ -169,7 +170,7 @@ def delete_account_view(request, account_id):
 
 def _respond(request, redirect_name):
     if request.headers.get('HX-Request'):
-        response = HttpResponse(status=204)
-        response.headers['HX-Trigger'] = 'tableRefresh'
+        response = HttpResponse(status=200)
+        response.headers['HX-Redirect'] = reverse(redirect_name)
         return response
     return redirect(redirect_name)

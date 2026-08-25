@@ -23,11 +23,11 @@
     <div class="btn-group">
         <form method="post" action="{% url 'core:settings_health_check' %}" class="inline-form">
             {% csrf_token %}
-            <button type="submit" class="btn btn-primary">{% icon 'database' %}<span>Health Check</span></button>
+                <button type="submit" class="btn btn-primary" data-sa-confirmar="Executar o health check do banco?" data-sa-titulo="Confirmar verificação" data-sa-severidade="info" data-sa-ok="Executar">{% icon 'database' %}<span>Health Check</span></button>
         </form>
         <form method="post" action="{% url 'core:settings_optimize' %}" class="inline-form">
             {% csrf_token %}
-            <button type="submit" class="btn btn-success">{% icon 'refresh' %}<span>Otimizar (VACUUM ANALYZE)</span></button>
+                <button type="submit" class="btn btn-success" data-sa-confirmar="Executar VACUUM ANALYZE no banco?" data-sa-titulo="Confirmar otimização" data-sa-severidade="warning" data-sa-ok="Otimizar">{% icon 'refresh' %}<span>Otimizar (VACUUM ANALYZE)</span></button>
         </form>
     </div>
 </div>

@@ -8,14 +8,18 @@
         {% csrf_token %}
         <div class="u-d-flex u-items-center u-gap-05 u-mb-075">
             <h3 class="u-mb-0">Linhas de extrato pendentes de conciliação</h3>
-            {% comment %}Conciliar e criar (em lote) não confirmam porque são reversíveis:
-               a linha volta a "pendente" ao desfazer a conciliação ou apagar o
-               lançamento criado. "Ignorar" confirma porque não pode ser desfeito.
-            {% endcomment %}
-            <button type="submit" name="bulk_action" value="reconcile" class="btn-sm btn-primary">
+            <button type="submit" name="bulk_action" value="reconcile" class="btn-sm btn-primary"
+                    data-sa-confirmar="Conciliar todas as linhas selecionadas? Cada lançamento será marcado como realizado."
+                    data-sa-titulo="Confirmar conciliação em lote"
+                    data-sa-severidade="warning"
+                    data-sa-ok="Conciliar">
                 Conciliar selecionadas
             </button>
-            <button type="submit" name="bulk_action" value="create" class="btn-sm btn-action-edit">
+            <button type="submit" name="bulk_action" value="create" class="btn-sm btn-action-edit"
+                    data-sa-confirmar="Criar lançamentos realizados para todas as linhas selecionadas?"
+                    data-sa-titulo="Confirmar criação em lote"
+                    data-sa-severidade="warning"
+                    data-sa-ok="Criar">
                 Criar selecionadas
             </button>
             <button type="submit" name="bulk_action" value="ignore" class="btn-sm btn-action-delete"
@@ -70,7 +74,11 @@
                                 <option value="{{ entry.id }}" data-sensitive-value="true" {% if line.reconcile_candidates|length == 1 %}selected{% endif %}>#{{ entry.id }} - {{ entry.due_date|date:"d/m/Y" }} - {{ entry.description|default:"-" }} - {{ entry.entry_amount }}</option>
                                 {% endfor %}
                             </select>
-                            <button type="submit" class="btn-sm btn-primary">Conciliar</button>
+                            <button type="submit" class="btn-sm btn-primary"
+                                    data-sa-confirmar="Conciliar esta linha do extrato e marcar o movimento como realizado?"
+                                    data-sa-titulo="Confirmar conciliação"
+                                    data-sa-severidade="warning"
+                                    data-sa-ok="Conciliar">Conciliar</button>
                         </form>
                         {% else %}
                         <span class="empty-state">Sem candidato - use "Criar"</span>

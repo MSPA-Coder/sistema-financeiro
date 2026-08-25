@@ -66,12 +66,13 @@ function closeRealizeModal() {
     if (m) m.style.display = 'none';
 }
 
-function openDeleteModal(actionUrl, supportsScope) {
+function openDeleteModal(actionUrl, supportsScope, currentFutureToken) {
     var modal        = document.getElementById('confirmDeleteModal');
     var form         = document.getElementById('deleteForm');
     var scopeOptions = document.getElementById('deleteScopeOptions');
     var scopeInput   = document.getElementById('deleteOperationScope');
     var scopeSelect  = document.getElementById('deleteScopeSelect');
+    var confirmationToken = document.getElementById('deleteCurrentFutureConfirmationToken');
     if (!modal) return;
     form.action           = actionUrl;
     form.setAttribute('hx-post', actionUrl);
@@ -81,6 +82,8 @@ function openDeleteModal(actionUrl, supportsScope) {
     scopeOptions.style.display = supportsScope ? 'block' : 'none';
     if (scopeSelect) scopeSelect.value = 'all';
     if (scopeInput)  scopeInput.value  = 'all';
+    if (confirmationToken) confirmationToken.value = '';
+    if (scopeSelect) scopeSelect.dataset.currentFutureToken = currentFutureToken || '';
     modal.style.display = 'flex';
     setTimeout(function () {
         var btn = document.getElementById('cancelDeleteButton');
@@ -113,6 +116,8 @@ function _initTransactionModals() {
         ss.addEventListener('change', function () {
             var inp = document.getElementById('deleteOperationScope');
             if (inp) inp.value = this.value;
+            var token = document.getElementById('deleteCurrentFutureConfirmationToken');
+            if (token) token.value = this.value === 'current_future' ? (this.dataset.currentFutureToken || '') : '';
         });
     }
 }
@@ -127,7 +132,11 @@ function _initTransactionActions(root) {
             if (action === 'close-realize') closeRealizeModal();
             if (action === 'close-delete') closeDeleteModal();
             if (action === 'delete') {
-                openDeleteModal(button.dataset.deleteUrl, button.dataset.deleteSupportsScope === 'true');
+                openDeleteModal(
+                    button.dataset.deleteUrl,
+                    button.dataset.deleteSupportsScope === 'true',
+                    button.dataset.deleteCurrentFutureToken
+                );
             }
             if (action === 'realize') {
                 openRealizeModal(button.dataset.transactionId, button.dataset.dueDate, button.dataset.plannedValue);
@@ -167,29 +176,55 @@ function _initTransactionEditToggles(root) {
    o caso do inventário em que o escopo apaga e recria o bloco, e os
    comprovantes anexados vão junto pelo CASCADE -- perda real, não só
    reversão de estado. Se `window.sharedauth` não existir (JS não carregou /
-   falhou), o clique NÃO é interceptado: o botão continua sendo um
-   <button type="submit"> normal e o form salva. */
+   falhou), o envio é bloqueado com uma mensagem visível. A guarda fica no
+   evento submit para cobrir também Enter e outros submitters. */
 function _initEditScopeConfirm(root) {
     (root || document).querySelectorAll('.tx-form').forEach(function (form) {
         if (form._editScopeConfirmBound) return;
         var select = form.querySelector('select[name="operation_scope"]');
         var button = form.querySelector('button[type="submit"]');
+        var token = form.querySelector('input[name="current_future_confirmation_token"]');
+        var error = form.querySelector('[data-current-future-confirmation-error]');
         if (!select || !button) return;
         form._editScopeConfirmBound = true;
-        button.addEventListener('click', function (e) {
-            if (select.value !== 'current_future') return;
-            var msg = select.dataset.currentFutureConfirm;
-            if (!msg || !window.sharedauth || typeof window.sharedauth.confirmar !== 'function') return;
+        form.addEventListener('submit', function (e) {
+            if (form.dataset.confirmationBypassed === '1') {
+                delete form.dataset.confirmationBypassed;
+                return;
+            }
+            if (typeof form.checkValidity === 'function' && !form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+            var currentFuture = select.value === 'current_future';
+            var normalMessage = button.dataset.transactionEditConfirm;
+            var tokenValue = select.dataset.currentFutureToken;
+            var msg = currentFuture
+                ? (select.dataset.currentFutureConfirm || 'Este registro e os próximos serão recriados. Deseja continuar?')
+                : normalMessage;
+            if (!msg || !window.sharedauth || typeof window.sharedauth.confirmar !== 'function' ||
+                (currentFuture && (!tokenValue || !token))) {
+                e.preventDefault();
+                if (error) error.hidden = false;
+                return;
+            }
             e.preventDefault();
             window.sharedauth.confirmar({
                 mensagem: msg,
-                titulo: 'Confirmar alteração',
-                severidade: 'error'
+                titulo: currentFuture ? 'Confirmar alteração' : (button.dataset.saTitulo || 'Confirmar alteração'),
+                severidade: currentFuture ? 'error' : (button.dataset.saSeveridade || 'info')
             }).then(function (ok) {
                 if (!ok) return;
+                if (currentFuture) token.value = tokenValue;
+                if (error) error.hidden = true;
+                form.dataset.confirmationBypassed = '1';
                 if (typeof form.requestSubmit === 'function') form.requestSubmit(button);
                 else form.submit();
             });
+        });
+        select.addEventListener('change', function () {
+            if (token) token.value = '';
+            if (error) error.hidden = true;
         });
     });
 }

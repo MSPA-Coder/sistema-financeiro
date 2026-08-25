@@ -20,7 +20,11 @@
             <form method="post" action="{% url 'accounts:update_owner' owner.id %}" class="edit-form">
                 {% csrf_token %}
                 <input type="text" name="name" value="{{ owner.name }}" aria-label="Nome do titular" required maxlength="100" data-ui="flex-1">
-                <button type="submit" class="btn btn-primary btn-sm">{% icon 'save' %}<span>Salvar</span></button>
+                <button type="submit" class="btn btn-primary btn-sm"
+                        data-sa-confirmar="Salvar as alterações deste titular?"
+                        data-sa-titulo="Confirmar alteração"
+                        data-sa-severidade="info"
+                        data-sa-ok="Salvar">{% icon 'save' %}<span>Salvar</span></button>
             </form>
         </td>
     </tr>
