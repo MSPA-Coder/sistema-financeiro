@@ -57,7 +57,7 @@ def test_realized_amount_zero_or_negative_is_rejected(amount):
         patch("transactions.services.transfer_counterparty", return_value=None),
         pytest.raises(ValueError, match="positivo"),
     ):
-        services.realize_transaction(entry, realized_amount=amount)
+        services.realize_transaction.__wrapped__(entry, realized_amount=amount)
 
     entry.save.assert_not_called()
 
@@ -76,7 +76,7 @@ def test_realized_amount_none_uses_planned_amount_without_truthiness_fallback():
         patch("transactions.services.validate_month_not_closed"),
         patch("transactions.services.transfer_counterparty", return_value=None),
     ):
-        services.realize_transaction(entry, realized_amount=None)
+        services.realize_transaction.__wrapped__(entry, realized_amount=None)
 
     assert entry.realized_amount == Decimal("10.00")
     entry.save.assert_called_once()
