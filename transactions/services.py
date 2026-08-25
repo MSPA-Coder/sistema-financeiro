@@ -4,11 +4,13 @@ from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from uuid import uuid4
 
+from django.core.signing import BadSignature, SignatureExpired, dumps, loads
 from django.db import transaction as db_transaction
 from django.db.models import Count
 from django.utils import timezone
 
 from banking.models import FinancialAccount
+from banking.services import can_access_account
 from core.domain.finance import (
     CALC_DIVIDE,
     CALC_REPEAT,
@@ -144,6 +146,7 @@ def create_installment_entries(
     return entries
 
 
+@db_transaction.atomic
 def realize_transaction(
     entry: CashFlowEntry,
     realized_date: date | None = None,
@@ -172,7 +175,9 @@ def realize_transaction(
         validate_month_not_closed(counterpart.account, counterpart.due_date)
         validate_month_not_closed(counterpart.account, final_date)
 
-    final_amount = realized_amount or entry.entry_amount
+    final_amount = entry.entry_amount if realized_amount is None else realized_amount
+    if final_amount <= 0:
+        raise ValueError("O valor realizado deve ser positivo.")
 
     entry.status = STATUS_REALIZED
     entry.realized_date = final_date
@@ -239,6 +244,7 @@ def unrealize_transaction(entry: CashFlowEntry) -> CashFlowEntry:
     return entry
 
 
+@db_transaction.atomic
 def close_month(
     account: FinancialAccount,
     year: int,
@@ -247,6 +253,8 @@ def close_month(
     user,
 ) -> AccountMonthClose:
     """Fecha um mês para uma conta específica."""
+    if not can_access_account(user, account.id, "update"):
+        raise ValueError("Acesso negado: usuário sem permissão para fechar este mês.")
     if is_month_closed(account, year, month):
         raise ValueError(f"Mês {month}/{year} já está fechado para esta conta")
 
@@ -267,6 +275,7 @@ def close_month(
     return month_close
 
 
+@db_transaction.atomic
 def reopen_month(
     account: FinancialAccount,
     year: int,
@@ -275,8 +284,13 @@ def reopen_month(
     user,
 ) -> AccountMonthClose:
     """Reabre um mês fechado."""
+    if not can_access_account(user, account.id, "update"):
+        raise ValueError("Acesso negado: usuário sem permissão para reabrir este mês.")
+    reason = (reason or "").strip()
+    if not reason:
+        raise ValueError("O motivo da reabertura é obrigatório.")
     try:
-        month_close = AccountMonthClose.objects.get(
+        month_close = AccountMonthClose.objects.select_for_update().get(
             account=account,
             year=year,
             month=month,
@@ -705,6 +719,8 @@ def _apply_fields(
 def _validate_common_payload(req: TransactionRequest, monthly_amount: Decimal, installments: int) -> None:
     if monthly_amount <= 0:
         raise ValueError("O valor do lançamento deve ser positivo.")
+    if req.realized_amount is not None and req.realized_amount <= 0:
+        raise ValueError("O valor realizado deve ser positivo.")
     if not 1 <= installments <= MAX_TRANSACTION_INSTALLMENTS:
         raise ValueError(f"Número de parcelas deve estar entre 1 e {MAX_TRANSACTION_INSTALLMENTS}.")
     if len(req.description or "") > MAX_TRANSACTION_DESCRIPTION_LENGTH:
@@ -1100,6 +1116,42 @@ def _replace_current_future_block(
     return rebuilt
 
 
+_CURRENT_FUTURE_CONFIRMATION_SALT = "transactions.current-future-confirmation"
+_CURRENT_FUTURE_CONFIRMATION_MAX_AGE = 10 * 60
+
+
+def current_future_confirmation_token(entry_id: int) -> str:
+    """Gera um token curto, assinado e vinculado ao lançamento exibido.
+
+    A confirmação visual continua sendo responsabilidade do navegador, mas a
+    gravação não pode depender apenas de JavaScript. O token faz com que um
+    POST direto sem a confirmação concluída seja rejeitado pelo service e
+    impede reutilizar o token para outro lançamento ou escopo.
+    """
+    return dumps(
+        {"entry_id": entry_id, "scope": OPERATION_SCOPE_CURRENT_FUTURE},
+        salt=_CURRENT_FUTURE_CONFIRMATION_SALT,
+        compress=True,
+    )
+
+
+def _assert_current_future_confirmation(entry_id: int, token: str | None) -> None:
+    if not token:
+        raise ValueError(
+            "Confirme explicitamente a alteração deste registro e dos próximos."
+        )
+    try:
+        payload = loads(
+            token,
+            salt=_CURRENT_FUTURE_CONFIRMATION_SALT,
+            max_age=_CURRENT_FUTURE_CONFIRMATION_MAX_AGE,
+        )
+    except (BadSignature, SignatureExpired) as exc:
+        raise ValueError("A confirmação da alteração expirou. Reabra o formulário e confirme novamente.") from exc
+    if payload.get("entry_id") != entry_id or payload.get("scope") != OPERATION_SCOPE_CURRENT_FUTURE:
+        raise ValueError("A confirmação não corresponde ao lançamento selecionado.")
+
+
 def _update_installment_or_recurring(
     tx: CashFlowEntry, req: TransactionRequest, entries: list[CashFlowEntry], scope: str,
 ) -> list[CashFlowEntry]:
@@ -1209,12 +1261,15 @@ def _update_internal_transfer(
 @db_transaction.atomic
 def update_transaction_operation(
     tx: CashFlowEntry, req: TransactionRequest, operation_scope: str = OPERATION_SCOPE_ALL,
+    current_future_confirmation_token: str | None = None,
 ) -> list[CashFlowEntry]:
     """Atualiza um lançamento (ou o grupo ao qual pertence) respeitando o
     escopo escolhido: `all`, `single` ou `current_future`."""
     from core.services import log_audit_event
 
     entries = operation_entries(tx)
+    if operation_scope == OPERATION_SCOPE_CURRENT_FUTURE:
+        _assert_current_future_confirmation(tx.id, current_future_confirmation_token)
     for entry in scoped_entries(tx, entries, operation_scope):
         assert_entry_period_open(entry)
     old_snapshots = {entry.id: _snapshot_entry(entry) for entry in entries}
@@ -1245,10 +1300,16 @@ def update_transaction_operation(
 
 
 @db_transaction.atomic
-def delete_transaction_or_operation(tx: CashFlowEntry, operation_scope: str = OPERATION_SCOPE_ALL) -> int:
+def delete_transaction_or_operation(
+    tx: CashFlowEntry,
+    operation_scope: str = OPERATION_SCOPE_ALL,
+    current_future_confirmation_token: str | None = None,
+) -> int:
     """Exclui um lançamento (ou o grupo/bloco escolhido pelo escopo)."""
     from core.services import log_audit_event
 
+    if operation_scope == OPERATION_SCOPE_CURRENT_FUTURE:
+        _assert_current_future_confirmation(tx.id, current_future_confirmation_token)
     all_entries = operation_entries(tx) if tx.bank_operation_id else [tx]
     scoped = scoped_entries(tx, all_entries, operation_scope)
     operation_type = tx.operation_type or OPERATION_SINGLE
@@ -1521,6 +1582,7 @@ def build_transactions_view_context(user, get_params, session) -> dict:
         tx.counterparty_account_id = counterparty_map.get(tx.id)
         tx.supports_scope = supports_operation_scope(tx)
         tx.current_future_attachment_count = attachment_loss_map.get(tx.id, 0)
+        tx.current_future_confirmation_token = current_future_confirmation_token(tx.id)
 
     end_exclusive = end_selected + timedelta(days=1)
     saldo_inicial = report_services.decimal_period_start_balance(account_ids, start_selected, end_exclusive, view_mode)

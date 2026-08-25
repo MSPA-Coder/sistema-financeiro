@@ -86,8 +86,8 @@ def delete_owner_view(request, owner_id):
 
 def _respond(request):
     if request.headers.get('HX-Request'):
-        response = HttpResponse(status=204)
-        response.headers['HX-Trigger'] = 'tableRefresh'
+        response = HttpResponse(status=200)
+        response.headers['HX-Redirect'] = reverse('accounts:owners_view')
         return response
     return redirect('accounts:owners_view')
 

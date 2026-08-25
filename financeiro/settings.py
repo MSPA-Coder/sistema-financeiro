@@ -89,6 +89,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'django_htmx.middleware.HtmxMiddleware',
+    'core.htmx.HtmxAuthenticationMiddleware',
     'core.htmx.HtmxFlashMessagesMiddleware',
     'core.security.ContentSecurityPolicyMiddleware',
     # Por ultimo de proposito: precisa de `request.user`, que vem do

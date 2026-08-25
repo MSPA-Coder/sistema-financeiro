@@ -6,6 +6,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from core.domain.finance import (
@@ -184,48 +185,52 @@ def mark_realized(request, tx_id):
 @login_required
 @permission_required("transactions.create", fallback="transactions:transactions_view")
 def transaction_new(request):
-    """Cria um lançamento novo (único, parcelado, recorrente ou transferência interna)."""
+    """Renderiza o formulário; a gravação delega a uma função POST-only."""
     if request.method == "POST":
-        try:
-            req = _transaction_request_from_post(request.POST)
-        except ValueError as exc:
-            messages.error(request, str(exc))
-            return _redirect_to_transactions(request)
+        return _transaction_new_post(request)
+    return _redirect_to_transactions(request, {"new_entry_open": "1"})
 
-        if not access.can_access_account(request.user, req.account_id, "create"):
-            messages.warning(request, "Acesso negado: usuário sem permissão para criar lançamentos nesta conta.")
-            return _redirect_to_transactions(request)
 
-        try:
-            entries = create_transaction_batch(req)
-            messages.success(request, "Lançamento(s) criado(s) com sucesso.")
-            duplicates = possible_duplicates_for_created_entries(req, entries)
-            if duplicates:
-                ids = ", ".join(f"#{entry.id}" for entry in duplicates[:5])
-                messages.warning(
-                    request,
-                    f"Atenção: existem movimentos semelhantes na mesma conta, data e valor: {ids}.",
-                )
-        except ValueError as e:
-            messages.error(request, str(e))
-            return _redirect_to_transactions(request)
-
-        if request.POST.get("keep_entry_form_open") == "1":
-            return _redirect_to_transactions(request, {
-                "new_entry_open": "1",
-                "new_account_id": str(req.account_id),
-                "new_entry_type": req.entry_type,
-                "new_status": req.status,
-                "new_due_date": req.due_date.isoformat(),
-            })
-
-        if request.headers.get("HX-Request"):
-            response = HttpResponse(status=204)
-            response.headers["HX-Trigger"] = "tableRefresh"
-            return response
+@require_POST
+def _transaction_new_post(request):
+    try:
+        req = _transaction_request_from_post(request.POST)
+    except ValueError as exc:
+        messages.error(request, str(exc))
         return _redirect_to_transactions(request)
 
-    return _redirect_to_transactions(request, {"new_entry_open": "1"})
+    if not access.can_access_account(request.user, req.account_id, "create"):
+        messages.warning(request, "Acesso negado: usuário sem permissão para criar lançamentos nesta conta.")
+        return _redirect_to_transactions(request)
+
+    try:
+        entries = create_transaction_batch(req)
+        messages.success(request, "Lançamento(s) criado(s) com sucesso.")
+        duplicates = possible_duplicates_for_created_entries(req, entries)
+        if duplicates:
+            ids = ", ".join(f"#{entry.id}" for entry in duplicates[:5])
+            messages.warning(
+                request,
+                f"Atenção: existem movimentos semelhantes na mesma conta, data e valor: {ids}.",
+            )
+    except ValueError as e:
+        messages.error(request, str(e))
+        return _redirect_to_transactions(request)
+
+    if request.POST.get("keep_entry_form_open") == "1":
+        return _redirect_to_transactions(request, {
+            "new_entry_open": "1",
+            "new_account_id": str(req.account_id),
+            "new_entry_type": req.entry_type,
+            "new_status": req.status,
+            "new_due_date": req.due_date.isoformat(),
+        })
+
+    if request.headers.get("HX-Request"):
+        response = HttpResponse(status=204)
+        response.headers["HX-Trigger"] = "tableRefresh"
+        return response
+    return _redirect_to_transactions(request)
 
 
 @login_required
@@ -241,30 +246,39 @@ def transaction_edit(request, tx_id):
         return _redirect_to_transactions(request)
 
     if request.method == "POST":
-        try:
-            req = _transaction_request_from_post(request.POST)
-        except ValueError as exc:
-            messages.error(request, str(exc))
-            return _redirect_to_transactions(request)
+        return _transaction_edit_post(request, tx)
+    return _redirect_to_transactions(request)
 
-        if not access.can_access_account(request.user, req.account_id, "update"):
-            messages.warning(request, "Acesso negado: usuário sem permissão para editar lançamentos nesta conta.")
-            return _redirect_to_transactions(request)
 
-        scope = _normalize_operation_scope(request.POST.get("operation_scope"))
-        try:
-            update_transaction_operation(tx, req, scope)
-            messages.success(request, "Lançamento(s) atualizado(s) com sucesso.")
-        except ValueError as e:
-            messages.error(request, str(e))
-            return _redirect_to_transactions(request)
-
-        if request.headers.get("HX-Request"):
-            response = HttpResponse(status=204)
-            response.headers["HX-Trigger"] = "tableRefresh"
-            return response
+@require_POST
+def _transaction_edit_post(request, tx):
+    try:
+        req = _transaction_request_from_post(request.POST)
+    except ValueError as exc:
+        messages.error(request, str(exc))
         return _redirect_to_transactions(request)
 
+    if not access.can_access_account(request.user, req.account_id, "update"):
+        messages.warning(request, "Acesso negado: usuário sem permissão para editar lançamentos nesta conta.")
+        return _redirect_to_transactions(request)
+
+    scope = _normalize_operation_scope(request.POST.get("operation_scope"))
+    try:
+        update_transaction_operation(
+            tx,
+            req,
+            scope,
+            request.POST.get("current_future_confirmation_token"),
+        )
+        messages.success(request, "Lançamento(s) atualizado(s) com sucesso.")
+    except ValueError as e:
+        messages.error(request, str(e))
+        return _redirect_to_transactions(request)
+
+    if request.headers.get("HX-Request"):
+        response = HttpResponse(status=204)
+        response.headers["HX-Trigger"] = "tableRefresh"
+        return response
     return _redirect_to_transactions(request)
 
 
@@ -283,7 +297,11 @@ def transaction_delete(request, tx_id):
 
     scope = _normalize_operation_scope(request.POST.get("operation_scope"))
     try:
-        delete_transaction_or_operation(tx, scope)
+        delete_transaction_or_operation(
+            tx,
+            scope,
+            request.POST.get("current_future_confirmation_token"),
+        )
         messages.success(request, "Lançamento excluído com sucesso.")
     except ValueError as e:
         messages.error(request, str(e))
@@ -355,8 +373,8 @@ def delete_category_view(request, category_id):
 
 def _respond_categories(request):
     if request.headers.get('HX-Request'):
-        response = HttpResponse(status=204)
-        response.headers['HX-Trigger'] = 'tableRefresh'
+        response = HttpResponse(status=200)
+        response.headers['HX-Redirect'] = reverse('transactions:categories_view')
         return response
     return redirect('transactions:categories_view')
 
