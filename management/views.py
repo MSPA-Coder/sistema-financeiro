@@ -6,6 +6,7 @@ from datetime import date
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
+from django.views.decorators.http import require_POST
 
 from core.permissions import permission_required
 from core.services import system_start_date
@@ -62,6 +63,7 @@ def management_view(request):
 
 @login_required
 @permission_required("management.manage", fallback="management:management_view")
+@require_POST
 def create_tag_view(request):
     if request.method == "POST":
         try:
@@ -74,6 +76,7 @@ def create_tag_view(request):
 
 @login_required
 @permission_required("management.manage", fallback="management:management_view")
+@require_POST
 def create_project_view(request):
     if request.method == "POST":
         try:
@@ -86,6 +89,7 @@ def create_project_view(request):
 
 @login_required
 @permission_required("management.manage", fallback="management:management_view")
+@require_POST
 def save_budget_view(request):
     if request.method == "POST":
         try:
@@ -111,6 +115,7 @@ def save_budget_view(request):
 
 @login_required
 @permission_required("management.manage", fallback="management:management_view")
+@require_POST
 def assign_tag_view(request):
     if request.method == "POST":
         try:
@@ -123,6 +128,7 @@ def assign_tag_view(request):
 
 @login_required
 @permission_required("management.manage", fallback="management:management_view")
+@require_POST
 def assign_project_view(request):
     if request.method == "POST":
         try:

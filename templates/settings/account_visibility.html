@@ -52,7 +52,11 @@
             </tbody>
         </table>
         <div data-ui="mt-09">
-            <button type="submit" class="btn btn-primary">{% icon 'save' %}<span>Salvar</span></button>
+            <button type="submit" class="btn btn-primary"
+                    data-sa-confirmar="Salvar as preferências de visibilidade das contas?"
+                    data-sa-titulo="Confirmar preferências"
+                    data-sa-severidade="info"
+                    data-sa-ok="Salvar">{% icon 'save' %}<span>Salvar</span></button>
         </div>
     </form>
     {% else %}

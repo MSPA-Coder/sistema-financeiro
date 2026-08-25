@@ -32,7 +32,11 @@
                     <option value="Corretora" {% if institution.institution_type == "Corretora" %}selected{% endif %}>Corretora</option>
                 </select>
                 <input type="text" name="institution_name" value="{{ institution.institution_name }}" aria-label="Nome da instituição" maxlength="100" required data-ui="flex-1">
-                <button type="submit" class="btn btn-primary btn-sm">{% icon 'save' %}<span>Salvar</span></button>
+                <button type="submit" class="btn btn-primary btn-sm"
+                        data-sa-confirmar="Salvar as alterações desta instituição?"
+                        data-sa-titulo="Confirmar alteração"
+                        data-sa-severidade="info"
+                        data-sa-ok="Salvar">{% icon 'save' %}<span>Salvar</span></button>
             </form>
         </td>
     </tr>

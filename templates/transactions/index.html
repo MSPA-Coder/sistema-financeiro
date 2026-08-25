@@ -73,7 +73,11 @@
         {% include "transactions/_fields.html" with t=None form_id="new" %}
         <div class="span-4 form-actions">
             <a href="{% url 'transactions:transactions_view' %}" class="btn btn-ghost">{% icon 'back' %}<span>Voltar</span></a>
-            <button type="submit" class="btn btn-primary">{% icon 'save' %}<span>Salvar</span></button>
+            <button type="submit" class="btn btn-primary"
+                    data-sa-confirmar="Criar este lançamento financeiro?"
+                    data-sa-titulo="Confirmar lançamento"
+                    data-sa-severidade="info"
+                    data-sa-ok="Salvar">{% icon 'save' %}<span>Salvar</span></button>
         </div>
     </form>
 </div>
@@ -112,7 +116,11 @@
             </div>
             <div class="modal-actions">
                 <button type="button" data-transaction-action="close-realize" class="modal-btn modal-btn-cancel">Cancelar</button>
-                <button type="submit" class="modal-btn modal-btn-primary">Confirmar</button>
+                <button type="submit" class="modal-btn modal-btn-primary"
+                        data-sa-confirmar="Marcar este lançamento como realizado?"
+                        data-sa-titulo="Confirmar realização"
+                        data-sa-severidade="warning"
+                        data-sa-ok="Realizar">Confirmar</button>
             </div>
         </form>
     </div>
@@ -125,6 +133,7 @@
         <form id="deleteForm" method="POST" action="">
             {% csrf_token %}
             <input type="hidden" name="operation_scope" id="deleteOperationScope" value="all">
+            <input type="hidden" name="current_future_confirmation_token" id="deleteCurrentFutureConfirmationToken" value="">
             <div id="deleteScopeOptions" data-ui="delete-scope-hidden">
                 <label data-ui="delete-scope-label">Excluir</label>
                 <select id="deleteScopeSelect" class="form-control" aria-label="Escopo de exclusao">

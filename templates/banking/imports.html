@@ -49,7 +49,11 @@
             <input type="file" name="statement_file" accept=".csv,.ofx,.ofc,.qfx,.pdf,text/csv,application/x-ofx,application/ofx,text/x-ofx,application/pdf" required>
         </label>
         <div class="top-filter-actions">
-            <button type="submit" class="btn btn-primary">
+            <button type="submit" class="btn btn-primary"
+                    data-sa-confirmar="Importar este extrato e gravar suas linhas no banco?"
+                    data-sa-titulo="Confirmar importação"
+                    data-sa-severidade="warning"
+                    data-sa-ok="Importar">
                 {% icon 'upload' %}<span>Importar</span>
             </button>
             <span class="htmx-indicator">{% icon 'loading' %}<span>Importando...</span></span>

@@ -28,7 +28,11 @@
             <option value="Corretora">Corretora</option>
         </select>
         <input type="text" name="institution_name" aria-label="Nome da instituição" placeholder="Nome da instituição..." maxlength="100" required autofocus data-ui="flex-1">
-        <button type="submit" class="btn btn-primary btn-sm">{% icon 'plus' %}<span>Incluir</span></button>
+        <button type="submit" class="btn btn-primary btn-sm"
+                data-sa-confirmar="Cadastrar esta instituição financeira?"
+                data-sa-titulo="Confirmar cadastro"
+                data-sa-severidade="info"
+                data-sa-ok="Cadastrar">{% icon 'plus' %}<span>Incluir</span></button>
     </form>
 
     <div class="table-container" data-ui="table-plain-flex">

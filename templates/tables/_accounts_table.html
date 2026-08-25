@@ -5,7 +5,7 @@
         <td>{{ account.owner.name }}</td>
         <td>{{ account.institution.institution_name }}</td>
         <td>{{ account.account_name }}</td>
-        <td>{{ account.initial_balance }}</td>
+        <td class="amount">{{ account.initial_balance }}</td>
         <td class="actions">
             <button type="button" class="btn btn-sm btn-icon btn-action-edit" title="Editar" data-toggle-edit="edit-account-{{ account.id }}">{% icon 'edit' %}</button>
             <form method="post" action="{% url 'banking:delete_account' account.id %}" data-ui="inline">
@@ -34,7 +34,11 @@
                 </select>
                 <input type="text" name="account_name" value="{{ account.account_name }}" aria-label="Nome da conta" maxlength="100" required data-ui="flex-1">
                 <input type="text" name="initial_balance" value="{{ account.initial_balance }}" aria-label="Saldo inicial" data-ui="w-120">
-                <button type="submit" class="btn btn-primary btn-sm">{% icon 'save' %}<span>Salvar</span></button>
+                <button type="submit" class="btn btn-primary btn-sm"
+                        data-sa-confirmar="Salvar as alterações desta conta?"
+                        data-sa-titulo="Confirmar alteração"
+                        data-sa-severidade="info"
+                        data-sa-ok="Salvar">{% icon 'save' %}<span>Salvar</span></button>
             </form>
         </td>
     </tr>

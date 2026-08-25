@@ -44,7 +44,7 @@
             <label>Registros antes do scroll</label>
             <input type="number" name="table_scroll_rows" class="form-control" min="5" max="200" value="{{ current_table_scroll_rows }}" required>
         </div>
-        <button type="submit" class="btn btn-primary">{% icon 'save' %}<span>Salvar</span></button>
+        <button type="submit" class="btn btn-primary" data-sa-confirmar="Salvar a quantidade de registros da grade?" data-sa-titulo="Confirmar preferência" data-sa-severidade="info" data-sa-ok="Salvar">{% icon 'save' %}<span>Salvar</span></button>
     </form>
 </div>
 {% endblock %}

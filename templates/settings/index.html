@@ -40,7 +40,7 @@
                 <input type="number" name="min_special" class="form-control" min="0" max="128" value="{{ password_policy_settings.min_special }}" required>
             </div>
             <div class="btn-group" data-ui="settings-actions">
-                <button type="submit" class="btn btn-primary">{% icon 'save' %}<span>Salvar</span></button>
+                <button type="submit" class="btn btn-primary" data-sa-confirmar="Salvar a política de senhas?" data-sa-titulo="Confirmar política" data-sa-severidade="warning" data-sa-ok="Salvar">{% icon 'save' %}<span>Salvar</span></button>
             </div>
         </form>
     </div>
@@ -58,7 +58,7 @@
                 <input type="number" name="lock_minutes" class="form-control" min="1" max="525600" value="{{ login_lockout_policy_settings.lock_minutes }}" required>
             </div>
             <div class="btn-group" data-ui="settings-actions">
-                <button type="submit" class="btn btn-primary">{% icon 'save' %}<span>Salvar</span></button>
+                <button type="submit" class="btn btn-primary" data-sa-confirmar="Salvar a política de bloqueio de login?" data-sa-titulo="Confirmar política" data-sa-severidade="warning" data-sa-ok="Salvar">{% icon 'save' %}<span>Salvar</span></button>
             </div>
         </form>
     </div>
@@ -76,7 +76,7 @@
                 <input type="number" name="run_day" class="form-control" min="1" max="31" value="{{ projection_settings.run_day }}" required>
             </div>
             <input type="hidden" name="system_start_date" value="{{ current_system_start_date|date:'Y-m-d' }}">
-            <button type="submit" class="btn btn-primary">{% icon 'save' %}<span>Salvar</span></button>
+            <button type="submit" class="btn btn-primary" data-sa-confirmar="Salvar as configurações de projeção?" data-sa-titulo="Confirmar projeção" data-sa-severidade="info" data-sa-ok="Salvar">{% icon 'save' %}<span>Salvar</span></button>
         </form>
         <div class="form-group" data-ui="mt-1">
             <label>Última execução</label>
@@ -88,7 +88,7 @@
                aumentar o horizonte. A guarda mensal se aplica somente ao
                disparo automatico; ver `transactions/recurring_projection.py`.
             {% endcomment %}
-            <button type="submit" class="btn btn-success">{% icon 'refresh' %}<span>Executar Projeção Agora</span></button>
+            <button type="submit" class="btn btn-success" data-sa-confirmar="Executar a projeção recorrente agora? A operação é idempotente e pode gerar lançamentos projetados.">{% icon 'refresh' %}<span>Executar Projeção Agora</span></button>
         </form>
     </div>
 
@@ -102,7 +102,7 @@
                 <label>Data inicial do sistema</label>
                 <input type="date" name="system_start_date" class="form-control" value="{{ current_system_start_date|date:'Y-m-d' }}">
             </div>
-            <button type="submit" class="btn btn-primary">{% icon 'save' %}<span>Salvar</span></button>
+            <button type="submit" class="btn btn-primary" data-sa-confirmar="Salvar a data inicial do sistema?" data-sa-titulo="Confirmar configuração" data-sa-severidade="warning" data-sa-ok="Salvar">{% icon 'save' %}<span>Salvar</span></button>
         </form>
     </div>
 </div>

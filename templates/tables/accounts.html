@@ -37,7 +37,11 @@
         </select>
         <input type="text" name="account_name" aria-label="Nome da conta" placeholder="Nome da conta..." maxlength="100" required autofocus data-ui="flex-1">
         <input type="text" name="initial_balance" aria-label="Saldo inicial" placeholder="Saldo inicial" data-ui="w-120">
-        <button type="submit" class="btn btn-primary btn-sm">{% icon 'plus' %}<span>Incluir</span></button>
+        <button type="submit" class="btn btn-primary btn-sm"
+                data-sa-confirmar="Cadastrar esta conta financeira?"
+                data-sa-titulo="Confirmar cadastro"
+                data-sa-severidade="info"
+                data-sa-ok="Cadastrar">{% icon 'plus' %}<span>Incluir</span></button>
     </form>
 
     {% if not owners %}

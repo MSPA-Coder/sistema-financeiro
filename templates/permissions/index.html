@@ -60,7 +60,7 @@
                 <input type="hidden" name="profile_key" value="{{ profile_key }}">
                 <h5>{{ profile.label }}</h5>
                 <p>{{ profile.description }}</p>
-                <button type="submit" class="btn btn-primary btn-sm">Aplicar perfil {{ profile.label }}</button>
+                <button type="submit" class="btn btn-primary btn-sm" data-sa-confirmar="Aplicar o perfil {{ profile.label }} a este usuário?" data-sa-titulo="Confirmar perfil" data-sa-severidade="warning" data-sa-ok="Aplicar">Aplicar perfil {{ profile.label }}</button>
             </form>
             {% endfor %}
         </div>
@@ -82,7 +82,7 @@
                 </select>
                 <input type="password" name="password" aria-label="Senha inicial" placeholder="Senha inicial..." maxlength="256" required data-ui="flex-1">
                 <input type="password" name="password_confirm" aria-label="Confirmar senha inicial" placeholder="Confirmar senha..." maxlength="256" required data-ui="flex-1">
-                <button type="submit" class="btn btn-primary btn-sm">{% icon 'plus' %}<span>Incluir</span></button>
+                <button type="submit" class="btn btn-primary btn-sm" data-sa-confirmar="Cadastrar este usuário?" data-sa-titulo="Confirmar usuário" data-sa-severidade="info" data-sa-ok="Cadastrar">{% icon 'plus' %}<span>Incluir</span></button>
             </form>
             <div class="table-container" data-ui="table-plain-flex">
                 <table>
@@ -125,7 +125,7 @@
                                     <input type="checkbox" name="must_change_password" {% if u.must_change_password %}checked{% endif %}>
                                     Trocar no próximo login
                                 </label>
-                                <button type="submit" class="btn btn-primary btn-sm">{% icon 'save' %}<span>Salvar</span></button>
+                                <button type="submit" class="btn btn-primary btn-sm" data-sa-confirmar="Salvar as alterações deste usuário?" data-sa-titulo="Confirmar usuário" data-sa-severidade="info" data-sa-ok="Salvar">{% icon 'save' %}<span>Salvar</span></button>
                             </form>
                         </td></tr>
                         {% empty %}
@@ -179,7 +179,7 @@
                     </table>
                 </div>
                 <div class="form-footer">
-                    <button type="submit" class="btn btn-primary">Salvar acessos por titular</button>
+                    <button type="submit" class="btn btn-primary" data-sa-confirmar="Salvar os acessos por titular?" data-sa-titulo="Confirmar permissões" data-sa-severidade="warning" data-sa-ok="Salvar">Salvar acessos por titular</button>
                 </div>
             </form>
         </div>
@@ -262,7 +262,7 @@
                 {% endfor %}
             </div>
             <div class="form-footer">
-                <button type="submit" class="btn btn-primary">Salvar permissões funcionais</button>
+                <button type="submit" class="btn btn-primary" data-sa-confirmar="Salvar as permissões funcionais?" data-sa-titulo="Confirmar permissões" data-sa-severidade="warning" data-sa-ok="Salvar">Salvar permissões funcionais</button>
             </div>
         </form>
     </div>
