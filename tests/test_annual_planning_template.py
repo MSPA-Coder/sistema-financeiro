@@ -1,5 +1,6 @@
 """Contratos pequenos da apresentação do planejamento anual."""
 
+import re
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -85,7 +86,20 @@ def test_annual_planning_partial_uses_summary_headers_without_transfer_card():
         },
     )
 
-    assert rendered.count("Ana") == 1 and rendered.count("Bia") == 1
+    # Cada titular recebe UMA coluna no relatorio -- e o que "summary headers"
+    # significa aqui: o resumo usa cabecalho por titular em vez de repetir um
+    # cartao por titular.
+    #
+    # A assercao olha os `<th scope="col">` da tabela, e nao o texto inteiro
+    # renderizado. Contar "Ana" no documento todo era verdade quando este
+    # partial nao tinha o painel de filtros; depois que ele chegou, o mesmo
+    # nome passou a aparecer tambem no `<option>` de Titulares e no de Contas
+    # (`{{ account.owner.name }} - {{ account.account_name }}`), e a contagem
+    # virou 3 sem que nada estivesse errado.
+    cabecalhos_de_titular = re.findall(
+        r'annual-owner-column"[^>]*scope="col">([^<]+)</th>', rendered
+    )
+    assert cabecalhos_de_titular == ["Ana", "Bia"]
     assert "Custos fixos" in rendered
     assert "Transferências internas" not in rendered
     assert "Mês de referência · mar/2026" in rendered
