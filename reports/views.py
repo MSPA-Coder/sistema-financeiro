@@ -9,11 +9,13 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
 from core.domain.finance import (
+    VIEW_ALL,
     VIEW_MODE_OPTIONS,
     VIEW_PROJECTED,
     VIEW_REALIZED,
     normalize_view_mode,
 )
+from core.permissions import permission_required
 from core.services import system_start_date
 
 from . import services
@@ -147,3 +149,70 @@ def account_position_view(request):
     if request.headers.get("HX-Request"):
         return render(request, "reports/partials/account_position_content.html", context)
     return render(request, "reports/account_position.html", context)
+
+
+@login_required
+@permission_required("reports.annual_planning.view")
+def annual_planning_view(request):
+    """Planejamento por categoria: mês-base individual e meses consolidados."""
+    today = date.today()
+    reference_month = services.parse_month_input(request.GET.get("reference_month")) or date(
+        today.year, today.month, 1
+    )
+    layout_value = request.GET.get("layout", "calendar")
+    layout = (
+        services.ANNUAL_PLANNING_ROLLING_13
+        if layout_value == "rolling"
+        else services.ANNUAL_PLANNING_CALENDAR
+    )
+    view_mode = normalize_view_mode(request.GET.get("mode"), default=VIEW_ALL)
+    owner_ids = services._planning_id_filter(request.GET.getlist("owner_ids"))
+    account_ids = services._planning_id_filter(request.GET.getlist("account_ids"))
+    allowed_owner_ids = set(services.accessible_owner_ids(request.user, "view"))
+    selected_owner_ids = (
+        sorted(allowed_owner_ids)
+        if owner_ids is None
+        else sorted(allowed_owner_ids.intersection(owner_ids))
+    )
+    owners = list(
+        services.AccountOwner.objects.filter(id__in=allowed_owner_ids).order_by("name", "id")
+    )
+    accounts = list(
+        services.FinancialAccount.objects.select_related("owner", "institution")
+        .filter(owner_id__in=selected_owner_ids)
+        .order_by("owner__name", "institution__institution_name", "account_name", "id")
+    )
+    allowed_account_ids = {account.id for account in accounts}
+    selected_account_ids = (
+        sorted(allowed_account_ids)
+        if account_ids is None
+        else sorted(allowed_account_ids.intersection(account_ids))
+    )
+    show_descriptions = request.GET.get("show_descriptions") == "1"
+    report = services.annual_planning_presentation(
+        request.user,
+        reference_month,
+        owner_ids=owner_ids,
+        account_ids=account_ids,
+        layout=layout,
+        view_mode=view_mode,
+        show_descriptions=show_descriptions,
+    )
+    context = {
+        "report": report,
+        "reference_month": services.month_input_value(reference_month),
+        "default_reference_month": services.month_input_value(date(today.year, today.month, 1)),
+        "layout": layout_value if layout_value in {"calendar", "rolling"} else "calendar",
+        "view_mode": view_mode,
+        "status_options": VIEW_MODE_OPTIONS,
+        "owners": owners,
+        "accounts": accounts,
+        "selected_owner_ids": selected_owner_ids,
+        "selected_account_ids": selected_account_ids,
+        "filter_panel_open": request.GET.get("filters_open") == "1",
+        "show_descriptions": show_descriptions,
+        "system_start_date": system_start_date(),
+    }
+    if request.headers.get("HX-Request"):
+        return render(request, "reports/partials/annual_planning_content.html", context)
+    return render(request, "reports/annual_planning.html", context)

@@ -29,6 +29,7 @@ from accounts.services import accessible_owner_ids, hidden_account_ids
 from banking.models import FinancialAccount, FinancialInstitution
 from core.domain.finance import (
     ENTRY_TYPE_INCOME,
+    OPERATION_INTERNAL_TRANSFER,
     STATUS_PENDING,
     STATUS_PROJECTED,
     STATUS_REALIZED,
@@ -252,6 +253,594 @@ def context_options(user, ctx: FinancialContext, *, hidden_scope: str | None = N
     accounts = list(base_qs.order_by("owner__name", "institution__institution_name", "account_name"))
 
     return ContextOptions(owners=owners, institutions=institutions, accounts=accounts, account_ids=account_ids)
+
+
+# ---------------------------------------------------------------------------
+# Planejamento anual por titular
+# ---------------------------------------------------------------------------
+
+# O relatório é deliberadamente uma visão de planejamento: movimentos
+# realizados não entram em nenhuma das suas colunas.  Manter os valores aqui,
+# em vez de reaproveitar VIEW_PROJECTED, é importante porque VIEW_PROJECTED
+# inclui somente o futuro e não os lançamentos vencidos.
+ANNUAL_PLANNING_CALENDAR = "calendar_year"
+ANNUAL_PLANNING_ROLLING_13 = "rolling_13"
+ANNUAL_PLANNING_LAYOUTS = {
+    ANNUAL_PLANNING_CALENDAR,
+    ANNUAL_PLANNING_ROLLING_13,
+}
+_PLANNING_OPEN_STATUSES = (STATUS_PENDING, STATUS_PROJECTED)
+
+
+@dataclass(frozen=True)
+class PlanningCategoryTotals:
+    """Totais gerenciais separados pela regra de recorrência do lançamento."""
+
+    recurring: Decimal = Decimal("0.00")
+    non_recurring: Decimal = Decimal("0.00")
+
+    @property
+    def total(self) -> Decimal:
+        return (self.recurring + self.non_recurring).quantize(MONEY_QUANT)
+
+
+@dataclass(frozen=True)
+class PlanningTransferTotals:
+    """Resumo de transferências; nunca é misturado a receita ou despesa."""
+
+    incoming: Decimal = Decimal("0.00")
+    outgoing: Decimal = Decimal("0.00")
+    entries: int = 0
+
+    @property
+    def net(self) -> Decimal:
+        return (self.incoming - self.outgoing).quantize(MONEY_QUANT)
+
+    @property
+    def total(self) -> Decimal:
+        """Volume bruto das pontas de transferência selecionadas."""
+        return (self.incoming + self.outgoing).quantize(MONEY_QUANT)
+
+
+@dataclass(frozen=True)
+class AnnualPlanningMonth:
+    month: date
+    expenses: PlanningCategoryTotals
+    income: PlanningCategoryTotals
+    transfers: PlanningTransferTotals
+
+
+@dataclass(frozen=True)
+class AnnualPlanningOwnerColumn:
+    """Coluna do titular no mês de referência (somente movimentos abertos)."""
+
+    owner_id: int
+    owner_name: str
+    expenses: PlanningCategoryTotals
+    income: PlanningCategoryTotals
+    transfers: PlanningTransferTotals
+
+
+@dataclass(frozen=True)
+class AnnualPlanningReport:
+    reference_month: date
+    layout: str
+    months: list[AnnualPlanningMonth]
+    owner_columns: list[AnnualPlanningOwnerColumn]
+    transfer_summary: PlanningTransferTotals
+    account_ids: list[int]
+
+    @property
+    def monthly_rows(self) -> list[AnnualPlanningMonth]:
+        """Nome semântico útil para views e consumidores do relatório."""
+        return self.months
+
+
+def _planning_months(reference_month: date, layout: str) -> list[date]:
+    """Retorna meses inclusivos de um dos dois layouts suportados."""
+    reference_month = date(reference_month.year, reference_month.month, 1)
+    if layout == ANNUAL_PLANNING_ROLLING_13:
+        first_month = add_months(reference_month, -6)
+        count = 13
+    else:
+        first_month = date(reference_month.year, 1, 1)
+        count = 12
+    return [add_months(first_month, offset) for offset in range(count)]
+
+
+def _planning_id_filter(values: Iterable[int] | None) -> list[int] | None:
+    """Normaliza IDs de filtros sem aceitar valores nulos, negativos ou bool."""
+    if values is None:
+        return None
+    if isinstance(values, int) and not isinstance(values, bool):
+        values = [values]
+    if isinstance(values, (str, bytes)):
+        values = [values]  # type: ignore[list-item]
+    result: list[int] = []
+    for value in values:
+        if isinstance(value, bool):
+            continue
+        try:
+            normalized = int(value)
+        except (TypeError, ValueError):
+            continue
+        if normalized > 0 and normalized not in result:
+            result.append(normalized)
+    return result
+
+
+def _authorized_planning_accounts(
+    user,
+    owner_ids: Iterable[int] | None,
+    account_ids: Iterable[int] | None,
+) -> tuple[list[FinancialAccount], list[int]]:
+    """Resolve o filtro no servidor e devolve apenas contas autorizadas.
+
+    A função não transforma um ID inválido em "todas as contas": filtros
+    explícitos são sempre uma interseção com o escopo de titulares do usuário.
+    Isso evita que uma conta de outro titular seja incluída por adulteração da
+    query string.  Usuários anônimos falham fechado, antes de qualquer
+    consulta de lançamentos.
+    """
+    if user is None or not getattr(user, "is_authenticated", False):
+        return [], []
+
+    allowed_owner_ids = set(accessible_owner_ids(user, "view"))
+    requested_owner_ids = _planning_id_filter(owner_ids)
+    if requested_owner_ids is None:
+        selected_owner_ids = allowed_owner_ids
+    else:
+        selected_owner_ids = allowed_owner_ids.intersection(requested_owner_ids)
+    if not selected_owner_ids:
+        return [], []
+
+    requested_account_ids = _planning_id_filter(account_ids)
+    queryset = FinancialAccount.objects.select_related("owner").filter(
+        owner_id__in=selected_owner_ids,
+    )
+    if requested_account_ids is not None:
+        queryset = queryset.filter(id__in=requested_account_ids)
+    accounts = list(queryset.order_by("owner__name", "account_name", "id"))
+    return accounts, [account.id for account in accounts]
+
+
+def _planning_add_category(bucket: dict, entry: CashFlowEntry, amount: Decimal) -> None:
+    # A parcela só é não recorrente por ser parcelada. A regra de negócio é
+    # explicitamente o booleano is_recurring, não operation_type/installments.
+    key = "recurring" if entry.is_recurring else "non_recurring"
+    bucket[key] += amount
+
+
+def _planning_add_transfer(bucket: dict, entry: CashFlowEntry, amount: Decimal) -> None:
+    if entry.entry_type == ENTRY_TYPE_INCOME:
+        bucket["incoming"] += amount
+    else:
+        bucket["outgoing"] += amount
+    bucket["entries"] += 1
+
+
+def _planning_category_totals(bucket: dict) -> PlanningCategoryTotals:
+    return PlanningCategoryTotals(
+        recurring=bucket["recurring"].quantize(MONEY_QUANT),
+        non_recurring=bucket["non_recurring"].quantize(MONEY_QUANT),
+    )
+
+
+def _planning_transfer_totals(bucket: dict) -> PlanningTransferTotals:
+    return PlanningTransferTotals(
+        incoming=bucket["incoming"].quantize(MONEY_QUANT),
+        outgoing=bucket["outgoing"].quantize(MONEY_QUANT),
+        entries=bucket["entries"],
+    )
+
+
+def annual_planning_report(
+    user,
+    reference_month: date | str | None = None,
+    *,
+    owner_ids: Iterable[int] | None = None,
+    account_ids: Iterable[int] | None = None,
+    layout: str = ANNUAL_PLANNING_CALENDAR,
+) -> AnnualPlanningReport:
+    """Agrega planejamento aberto por titular e por mês.
+
+    ``calendar_year`` produz janeiro--dezembro do ano de referência;
+    ``rolling_13`` produz seis meses anteriores, o mês de referência e seis
+    meses seguintes. Em
+    ambos os layouts a consolidação mensal cobre todos os titulares/contas
+    selecionados, enquanto ``owner_columns`` cobre exclusivamente o mês de
+    referência. Status realizado é excluído, inclusive quando há
+    ``realized_amount`` preenchido.
+
+    ``owner_ids`` e ``account_ids`` são filtros opcionais. A conta final é
+    sempre limitada pelos titulares com ``can_view`` do usuário; preferências
+    de ocultação analítica não são autorização e, portanto, não são aplicadas.
+    """
+    if reference_month is None:
+        today = date.today()
+        reference = date(today.year, today.month, 1)
+    elif isinstance(reference_month, str):
+        reference = parse_month_input(reference_month)
+        if reference is None:
+            raise ValueError("Mês de referência inválido.")
+    elif isinstance(reference_month, date):
+        reference = date(reference_month.year, reference_month.month, 1)
+    else:
+        raise ValueError("Mês de referência inválido.")
+
+    selected_layout = layout if layout in ANNUAL_PLANNING_LAYOUTS else ANNUAL_PLANNING_CALENDAR
+    months = _planning_months(reference, selected_layout)
+    first_month = months[0]
+    end_exclusive = add_months(months[-1], 1)
+    accounts, selected_account_ids = _authorized_planning_accounts(user, owner_ids, account_ids)
+
+    empty_category = {"recurring": Decimal("0.00"), "non_recurring": Decimal("0.00")}
+    empty_transfer = {"incoming": Decimal("0.00"), "outgoing": Decimal("0.00"), "entries": 0}
+    monthly_buckets = {
+        month: {"expenses": empty_category.copy(), "income": empty_category.copy(), "transfers": empty_transfer.copy()}
+        for month in months
+    }
+    owner_buckets: dict[int, dict] = {
+        account.owner_id: {
+            "expenses": empty_category.copy(),
+            "income": empty_category.copy(),
+            "transfers": empty_transfer.copy(),
+        }
+        for account in accounts
+        if account.owner_id
+    }
+
+    entries = (
+        CashFlowEntry.objects.select_related("account", "account__owner", "category")
+        .filter(
+            account_id__in=selected_account_ids,
+            due_date__gte=first_month,
+            due_date__lt=end_exclusive,
+            status__in=_PLANNING_OPEN_STATUSES,
+        )
+        .order_by("due_date", "id")
+    )
+    for entry in entries:
+        month = date(entry.due_date.year, entry.due_date.month, 1)
+        month_bucket = monthly_buckets.get(month)
+        if month_bucket is None:
+            continue
+        amount = to_decimal(entry.entry_amount).quantize(MONEY_QUANT)
+        is_internal = bool(
+            (entry.category and entry.category.is_internal)
+            or entry.operation_type == OPERATION_INTERNAL_TRANSFER
+        )
+        if is_internal:
+            _planning_add_transfer(month_bucket["transfers"], entry, amount)
+        else:
+            target = "income" if entry.entry_type == ENTRY_TYPE_INCOME else "expenses"
+            _planning_add_category(month_bucket[target], entry, amount)
+
+        if month == reference:
+            owner_bucket = owner_buckets.get(entry.account.owner_id)
+            if owner_bucket is None:
+                continue
+            if is_internal:
+                _planning_add_transfer(owner_bucket["transfers"], entry, amount)
+            else:
+                target = "income" if entry.entry_type == ENTRY_TYPE_INCOME else "expenses"
+                _planning_add_category(owner_bucket[target], entry, amount)
+
+    owner_names = {
+        owner.id: owner.name
+        for owner in AccountOwner.objects.filter(id__in=owner_buckets).order_by("name")
+    }
+    owner_columns = [
+        AnnualPlanningOwnerColumn(
+            owner_id=owner_id,
+            owner_name=owner_names.get(owner_id, "-"),
+            expenses=_planning_category_totals(bucket["expenses"]),
+            income=_planning_category_totals(bucket["income"]),
+            transfers=_planning_transfer_totals(bucket["transfers"]),
+        )
+        for owner_id, bucket in sorted(
+            owner_buckets.items(), key=lambda item: (owner_names.get(item[0], ""), item[0])
+        )
+    ]
+    month_rows = [
+        AnnualPlanningMonth(
+            month=month,
+            expenses=_planning_category_totals(monthly_buckets[month]["expenses"]),
+            income=_planning_category_totals(monthly_buckets[month]["income"]),
+            transfers=_planning_transfer_totals(monthly_buckets[month]["transfers"]),
+        )
+        for month in months
+    ]
+    transfer_summary_bucket = empty_transfer.copy()
+    for row in month_rows:
+        transfer_summary_bucket["incoming"] += row.transfers.incoming
+        transfer_summary_bucket["outgoing"] += row.transfers.outgoing
+        transfer_summary_bucket["entries"] += row.transfers.entries
+
+    return AnnualPlanningReport(
+        reference_month=reference,
+        layout=selected_layout,
+        months=month_rows,
+        owner_columns=owner_columns,
+        transfer_summary=_planning_transfer_totals(transfer_summary_bucket),
+        account_ids=selected_account_ids,
+    )
+
+
+# Nome explícito para consumidores que preferem o termo usado na interface.
+local_annual_planning_report = annual_planning_report
+
+
+def annual_planning_presentation(
+    user,
+    reference_month: date,
+    *,
+    owner_ids: Iterable[int] | None = None,
+    account_ids: Iterable[int] | None = None,
+    layout: str = ANNUAL_PLANNING_CALENDAR,
+    view_mode: str = VIEW_ALL,
+    show_descriptions: bool = False,
+) -> dict:
+    """Monta o contrato de apresentação da grade anual por titular.
+
+    O mês de referência mostra, por titular, somente lançamentos abertos
+    (``vencidos`` e ``a_vencer``) cuja data de vencimento pertence ao mês.
+    Os meses consolidados mostram o histórico realizado pela data de
+    realização e os demais lançamentos pela data de vencimento, mantendo a
+    mesma semântica da visão ``Todos os modos`` dos relatórios existentes.
+    """
+    reference_month = date(reference_month.year, reference_month.month, 1)
+    selected_layout = layout if layout in ANNUAL_PLANNING_LAYOUTS else ANNUAL_PLANNING_CALENDAR
+    selected_view_mode = view_mode if view_mode in {VIEW_ALL, VIEW_PROJECTED, VIEW_PENDING, VIEW_REALIZED} else VIEW_ALL
+    months = _planning_months(reference_month, selected_layout)
+    first_month, end_exclusive = months[0], add_months(months[-1], 1)
+    if user is None or not getattr(user, "is_authenticated", False):
+        return {
+            "reference_month_label": reference_month.strftime("%m/%Y"),
+            "owner_columns": [],
+            "months": [
+                {
+                    "key": month.strftime("%Y-%m"),
+                    "label": month.strftime("%b/%y").capitalize(),
+                    "is_current": month == reference_month,
+                }
+                for month in months
+            ],
+            "rows": [],
+            "summary_rows": [],
+            "totals": None,
+            "account_ids": [],
+        }
+    accounts, selected_account_ids = _authorized_planning_accounts(user, owner_ids, account_ids)
+
+    allowed_owner_ids = set(accessible_owner_ids(user, "view"))
+    requested_owner_ids = _planning_id_filter(owner_ids)
+    selected_owner_ids = (
+        allowed_owner_ids if requested_owner_ids is None else allowed_owner_ids.intersection(requested_owner_ids)
+    )
+    selected_owners = list(AccountOwner.objects.filter(id__in=selected_owner_ids).order_by("name", "id"))
+    owner_positions = {owner.id: index for index, owner in enumerate(selected_owners)}
+
+    section_specs = (
+        ("expense_recurring", "Despesas recorrentes", "despesa", True, -1),
+        ("expense_non_recurring", "Despesas não recorrentes", "despesa", False, -1),
+        ("income_recurring", "Receitas recorrentes", ENTRY_TYPE_INCOME, True, 1),
+        ("income_non_recurring", "Receitas não recorrentes", ENTRY_TYPE_INCOME, False, 1),
+    )
+    spec_by_key = {spec[0]: spec for spec in section_specs}
+    month_positions = {month: index for index, month in enumerate(months)}
+    def zeroes() -> list[Decimal]:
+        return [Decimal("0.00") for _ in months]
+
+    def owner_zeroes() -> list[Decimal]:
+        return [Decimal("0.00") for _ in selected_owners]
+    buckets: dict[tuple, dict] = {}
+    section_totals = {
+        spec[0]: {"owner_values": owner_zeroes(), "months": zeroes()} for spec in section_specs
+    }
+    transfer_owner_values, transfer_months = owner_zeroes(), zeroes()
+    transfer_volume_operations: set[tuple[int, int]] = set()
+
+    if selected_view_mode == VIEW_ALL:
+        in_months = Q(status=STATUS_REALIZED, realized_date__gte=first_month, realized_date__lt=end_exclusive) | Q(
+            status__in=_PLANNING_OPEN_STATUSES, due_date__gte=first_month, due_date__lt=end_exclusive
+        )
+    elif selected_view_mode == VIEW_REALIZED:
+        in_months = Q(status=STATUS_REALIZED, realized_date__gte=first_month, realized_date__lt=end_exclusive)
+    else:
+        in_months = Q(
+            status=selected_view_mode,
+            due_date__gte=first_month,
+            due_date__lt=end_exclusive,
+        )
+    entries = CashFlowEntry.objects.select_related("account__owner", "category").filter(
+        account_id__in=selected_account_ids
+    ).filter(in_months).order_by("category__category_name", "description", "id")
+    for entry in entries:
+        amount = to_decimal(entry.realized_amount if entry.status == STATUS_REALIZED else entry.entry_amount).quantize(
+            MONEY_QUANT
+        )
+        period_date = entry.realized_date if entry.status == STATUS_REALIZED else entry.due_date
+        if period_date is None:
+            continue
+        month_index = month_positions.get(date(period_date.year, period_date.month, 1))
+        if month_index is None:
+            continue
+        is_internal = bool(
+            (entry.category and entry.category.is_internal)
+            or entry.operation_type == OPERATION_INTERNAL_TRANSFER
+        )
+        if is_internal:
+            signed_transfer = amount if entry.entry_type == ENTRY_TYPE_INCOME else -amount
+            # Cada transferência possui duas pontas. O resumo mensal mostra
+            # seu volume uma única vez, sem cancelar as pontas nem dobrar o
+            # valor por somar crédito e débito do mesmo agrupamento.
+            operation_id = entry.bank_operation_id or entry.id
+            volume_key = (month_index, operation_id)
+            if volume_key not in transfer_volume_operations:
+                transfer_volume_operations.add(volume_key)
+                transfer_months[month_index] += amount
+            # Transferências já realizadas também precisam aparecer na coluna
+            # do mês-base: elas afetam o saldo, mesmo não compondo a geração
+            # de caixa. Para as demais categorias, a coluna permanece uma
+            # projeção de lançamentos em aberto.
+            if date(period_date.year, period_date.month, 1) == reference_month:
+                owner_index = owner_positions.get(entry.account.owner_id)
+                if owner_index is not None:
+                    transfer_owner_values[owner_index] += signed_transfer
+            continue
+
+        section_key = (
+            "income" if entry.entry_type == ENTRY_TYPE_INCOME else "expense"
+        ) + ("_recurring" if entry.is_recurring else "_non_recurring")
+        spec = spec_by_key[section_key]
+        signed_amount = amount * spec[4]
+        category_id = entry.category_id
+        category_name = entry.category.category_name if entry.category else "Sem categoria"
+        category_key = (section_key, category_id, category_name)
+        category_bucket = buckets.setdefault(
+            category_key,
+            {"owner_values": owner_zeroes(), "months": zeroes(), "descriptions": {}},
+        )
+        category_bucket["months"][month_index] += signed_amount
+        section_totals[section_key]["months"][month_index] += signed_amount
+        if entry.status in _PLANNING_OPEN_STATUSES and date(entry.due_date.year, entry.due_date.month, 1) == reference_month:
+            owner_index = owner_positions.get(entry.account.owner_id)
+            if owner_index is not None:
+                category_bucket["owner_values"][owner_index] += signed_amount
+                section_totals[section_key]["owner_values"][owner_index] += signed_amount
+
+        if show_descriptions:
+            description = entry.description.strip() or "Sem descrição"
+            description_bucket = category_bucket["descriptions"].setdefault(
+                description, {"owner_values": owner_zeroes(), "months": zeroes()}
+            )
+            description_bucket["months"][month_index] += signed_amount
+            if entry.status in _PLANNING_OPEN_STATUSES and date(entry.due_date.year, entry.due_date.month, 1) == reference_month:
+                owner_index = owner_positions.get(entry.account.owner_id)
+                if owner_index is not None:
+                    description_bucket["owner_values"][owner_index] += signed_amount
+
+    def _month_values(values: list[Decimal]) -> list[dict]:
+        return [
+            {"value": value.quantize(MONEY_QUANT), "is_current": month == reference_month}
+            for month, value in zip(months, values, strict=True)
+        ]
+
+    rows = []
+    grand_owner_values, grand_months = owner_zeroes(), zeroes()
+    for section_key, section_label, _entry_type, _recurring, _sign in section_specs:
+        section = section_totals[section_key]
+        if not any(section["owner_values"]) and not any(section["months"]):
+            continue
+        rows.append(
+            {
+                "kind": "total",
+                "label": section_label,
+                "level": 0,
+                "owner_values": section["owner_values"],
+                "months": _month_values(section["months"]),
+            }
+        )
+        for key, bucket in sorted(
+            (item for item in buckets.items() if item[0][0] == section_key), key=lambda item: item[0][2].lower()
+        ):
+            rows.append(
+                {
+                    "kind": "category",
+                    "label": key[2],
+                    "category_path": section_label,
+                    "level": 1,
+                    "owner_values": bucket["owner_values"],
+                    "months": _month_values(bucket["months"]),
+                }
+            )
+            for description, description_bucket in sorted(bucket["descriptions"].items()):
+                rows.append(
+                    {
+                        "kind": "description",
+                        "label": key[2],
+                        "description": description,
+                        "category_path": section_label,
+                        "level": 2,
+                        "owner_values": description_bucket["owner_values"],
+                        "months": _month_values(description_bucket["months"]),
+                    }
+                )
+        for index, value in enumerate(section["owner_values"]):
+            grand_owner_values[index] += value
+        for index, value in enumerate(section["months"]):
+            grand_months[index] += value
+
+    def _combined_values(*section_keys: str, field: str) -> list[Decimal]:
+        result = owner_zeroes() if field == "owner_values" else zeroes()
+        for section_key in section_keys:
+            for index, value in enumerate(section_totals[section_key][field]):
+                result[index] += value
+        return [value.quantize(MONEY_QUANT) for value in result]
+
+    income_owner = _combined_values("income_recurring", "income_non_recurring", field="owner_values")
+    income_months = _combined_values("income_recurring", "income_non_recurring", field="months")
+    expense_owner = _combined_values("expense_recurring", "expense_non_recurring", field="owner_values")
+    expense_months = _combined_values("expense_recurring", "expense_non_recurring", field="months")
+    generation_owner = [
+        (income + expense).quantize(MONEY_QUANT)
+        for income, expense in zip(income_owner, expense_owner, strict=True)
+    ]
+    generation_months = [
+        (income + expense).quantize(MONEY_QUANT)
+        for income, expense in zip(income_months, expense_months, strict=True)
+    ]
+    account_ids_by_owner: dict[int, list[int]] = defaultdict(list)
+    for account in accounts:
+        account_ids_by_owner[account.owner_id].append(account.id)
+    start_owner = [
+        decimal_balance_before(account_ids_by_owner.get(owner.id, []), reference_month, selected_view_mode)
+        for owner in selected_owners
+    ]
+    end_owner = [
+        (start + generation + transfer).quantize(MONEY_QUANT)
+        for start, generation, transfer in zip(start_owner, generation_owner, transfer_owner_values, strict=True)
+    ]
+    balance_rows = projection_months_between(selected_account_ids, first_month, months[-1], selected_view_mode)
+    balance_by_month = {date.fromisoformat(row["month"] + "-01"): row for row in balance_rows}
+    start_months = [
+        to_decimal(balance_by_month.get(month, {}).get("saldo_inicial", Decimal("0.00"))).quantize(MONEY_QUANT)
+        for month in months
+    ]
+    end_months = [
+        to_decimal(balance_by_month.get(month, {}).get("saldo", Decimal("0.00"))).quantize(MONEY_QUANT)
+        for month in months
+    ]
+    summary_rows = [
+        {"label": "Geração de Caixa", "owner_values": generation_owner, "months": _month_values(generation_months)},
+        {"label": "Saldo Previsto / Final", "owner_values": end_owner, "months": _month_values(end_months)},
+        {"label": "Total Receitas", "owner_values": income_owner, "months": _month_values(income_months)},
+        {"label": "Total Despesas", "owner_values": expense_owner, "months": _month_values(expense_months)},
+        {"label": "Movimentações Internas", "owner_values": transfer_owner_values, "months": _month_values(transfer_months)},
+        {"label": "Saldo Atual / Inicial", "owner_values": start_owner, "months": _month_values(start_months)},
+    ]
+
+    return {
+        "reference_month_label": reference_month.strftime("%m/%Y"),
+        "owner_columns": [{"id": owner.id, "name": owner.name} for owner in selected_owners],
+        "months": [
+            {
+                "key": month.strftime("%Y-%m"),
+                "label": month.strftime("%b/%y").capitalize(),
+                "is_current": month == reference_month,
+            }
+            for month in months
+        ],
+        "rows": rows,
+        "summary_rows": summary_rows,
+        "totals": (
+            {"owner_values": grand_owner_values, "months": _month_values(grand_months)}
+            if rows
+            else None
+        ),
+        "account_ids": selected_account_ids,
+    }
 
 
 # ---------------------------------------------------------------------------
