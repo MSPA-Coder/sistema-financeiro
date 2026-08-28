@@ -78,7 +78,12 @@ def test_settings_recusa_arquivo_secreto_vazio_no_modo_operacional(tmp_path):
     resultado = _import_settings(ambiente)
 
     assert resultado.returncode != 0
-    assert "esta vazio" in resultado.stderr
+    # A asserção prova o que importa -- a subida falha e a mensagem nomeia a
+    # variável quebrada -- sem depender da grafia exata. A mensagem agora vem
+    # de `sharedauth.secrets`, compartilhada com os tres apps Flask, e casar
+    # com o texto literal amarraria este teste ao acento de outro repositorio.
+    assert "vazio" in resultado.stderr
+    assert "DJANGO_SECRET_KEY_FILE" in resultado.stderr
 
 
 def test_settings_aceita_variaveis_diretas_apenas_no_modo_local():
