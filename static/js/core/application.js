@@ -1,6 +1,23 @@
 (function () {
     'use strict';
 
+    /* Os botões de abrir/fechar linhas de edição aparecem também em conteúdo
+       trocado pela navegação AJAX. Delegar o clique no documento evita uma
+       janela em que o novo botão ainda não recebeu o listener individual. O
+       script desta aplicação é carregado antes dos scripts de cada página,
+       então o handler já existe inclusive durante a primeira troca. */
+    document.addEventListener('click', function (event) {
+        var button = event.target.closest && event.target.closest('[data-toggle-edit]');
+        if (!button) return;
+
+        var row = document.getElementById(button.dataset.toggleEdit);
+        if (!row) return;
+
+        var force = button.dataset.toggleForce;
+        var show = force === undefined ? row.style.display !== 'table-row' : force === 'true';
+        row.style.display = show ? 'table-row' : 'none';
+    });
+
     /* ============================================================
        SCROLL RESTORE
        ============================================================ */
@@ -786,18 +803,9 @@
     }
 
     function _initToggleButtons(root) {
-        (root || document).querySelectorAll('[data-toggle-edit]').forEach(function (button) {
-            if (button._toggleBound) return;
-            button._toggleBound = true;
-            button.addEventListener('click', function () {
-                var targetId = button.dataset.toggleEdit;
-                var row = document.getElementById(targetId);
-                if (!row) return;
-                var force = button.dataset.toggleForce;
-                var show = force === undefined ? row.style.display !== 'table-row' : force === 'true';
-                row.style.display = show ? 'table-row' : 'none';
-            });
-        });
+        /* Mantido como ponto de extensão de _initContentArea. Os toggles são
+           delegados acima para atender elementos inseridos após AJAX. */
+        void root;
     }
 
     /* ============================================================
