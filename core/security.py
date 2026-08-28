@@ -24,12 +24,16 @@ __all__ = ["CONTENT_SECURITY_POLICY", "SECURITY_HEADERS", "ContentSecurityPolicy
 # pacote (Python puro, sem Flask): a biblioteca nao aplica nada aqui, ela so
 # guarda os valores -- quem aplica continua sendo o middleware abaixo.
 #
-# `imagens_data_uri=True` porque o favicon do `base.html` e um SVG embutido no
-# proprio `<link rel="icon">`. E a unica folga, e ela e pedida por nome.
+# A politica fechada da biblioteca serve este projeto sem excecao nenhuma. A
+# folga de `img-src ... data:` existia por um motivo unico: o favicon do
+# `base.html` era um SVG embutido no proprio `<link rel="icon">`. Ele passou a
+# ser `static/favicon.svg`, servido pelo WhiteNoise com hash como o restante,
+# e a excecao saiu -- era a unica ocorrencia de URI `data:` no projeto (os
+# `data:` de `dashboard.js` sao chaves de objeto do Chart.js, nao URIs).
 #
 # Nao e necessario abrir `font-src` para `data:`: o projeto nao usa
 # `@font-face` nem arquivos de fonte.
-CONTENT_SECURITY_POLICY = montar_csp(imagens_data_uri=True)
+CONTENT_SECURITY_POLICY = montar_csp()
 
 # O dicionario inclui os cabecalhos que o Django tambem emite por configuracao
 # (`SECURE_CONTENT_TYPE_NOSNIFF`, `X_FRAME_OPTIONS`,
