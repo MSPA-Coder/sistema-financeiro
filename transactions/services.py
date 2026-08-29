@@ -351,10 +351,43 @@ def _account_label(account: FinancialAccount | None) -> str:
 
 
 def _monthly_amount_for(entry_amount: Decimal, installments: int, calc_mode: str) -> Decimal:
+    """Valor de UMA parcela.
+
+    No modo `CALC_DIVIDE` o valor sai do arredondamento simples da divisao, sem
+    redistribuir o residuo: R$100,00 em 3x da tres parcelas de R$33,33, que
+    somam R$99,99. E decisao registrada, nao descuido -- redistribuir exigiria
+    que os cinco caminhos abaixo soubessem qual parcela e a ultima, e
+    `current_future` reescreve um SUBCONJUNTO das parcelas, onde "ultima" nao
+    tem resposta obvia. A diferenca e de um ou dois centavos por operacao e o
+    mantenedor a considerou irrelevante para o uso deste sistema (29/08).
+    """
     amount = entry_amount if isinstance(entry_amount, Decimal) else Decimal(str(entry_amount))
     if calc_mode == CALC_DIVIDE and installments > 1:
         return (amount / Decimal(installments)).quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
     return amount.quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
+
+
+def _parcelas_e_valor(req: TransactionRequest, *, recorrente: bool | None = None) -> tuple[int, Decimal]:
+    """Quantas parcelas e quanto vale cada uma, ja validado.
+
+    Cinco caminhos repetiam estas tres linhas: criacao, edicao simples,
+    conversao para transferencia interna, edicao de parcelado/recorrente
+    (que e por onde `current_future` passa) e edicao de transferencia. Copia
+    nao e so verbosidade -- os cinco tinham que continuar concordando sobre o
+    que e uma parcela, e um deles ja divergia: decidia a recorrencia por
+    `operation_type == OPERATION_RECURRING` enquanto os outros quatro olhavam
+    `req.is_recurring`. Sao a mesma pergunta feita de dois jeitos, e nada
+    garantia que continuassem respondendo igual.
+
+    `recorrente` existe para esse caso: quem ja resolveu a recorrencia pelo
+    tipo da operacao passa a resposta pronta, em vez de o helper ter de
+    adivinhar qual das duas fontes vale.
+    """
+    eh_recorrente = req.is_recurring if recorrente is None else recorrente
+    installments = 1 if eh_recorrente else max(1, req.installments)
+    monthly_amount = _monthly_amount_for(req.entry_amount, installments, req.calc_mode)
+    _validate_common_payload(req, monthly_amount, installments)
+    return installments, monthly_amount
 
 
 def operation_type_for(req: TransactionRequest, is_internal: bool) -> str:
@@ -628,9 +661,7 @@ def create_transaction_batch(req: TransactionRequest) -> list[CashFlowEntry]:
     except FinancialAccount.DoesNotExist as exc:
         raise ValueError("Conta inválida.") from exc
 
-    installments = 1 if req.is_recurring else max(1, req.installments)
-    monthly_amount = _monthly_amount_for(req.entry_amount, installments, req.calc_mode)
-    _validate_common_payload(req, monthly_amount, installments)
+    installments, monthly_amount = _parcelas_e_valor(req)
 
     description = (req.description or "").strip()[:MAX_TRANSACTION_DESCRIPTION_LENGTH]
     operation_type = operation_type_for(req, is_internal)
@@ -850,9 +881,7 @@ def _update_single(tx: CashFlowEntry, req: TransactionRequest) -> list[CashFlowE
     if category.is_internal:
         return _convert_single_to_internal_transfer(tx, req)
 
-    installments = 1 if req.is_recurring else max(1, req.installments)
-    monthly_amount = _monthly_amount_for(req.entry_amount, installments, req.calc_mode)
-    _validate_common_payload(req, monthly_amount, installments)
+    installments, monthly_amount = _parcelas_e_valor(req)
 
     account = FinancialAccount.objects.get(id=req.account_id)
     validate_month_not_closed(account, req.due_date)
@@ -877,9 +906,7 @@ def _convert_single_to_internal_transfer(tx: CashFlowEntry, req: TransactionRequ
         raise ValueError("Conta destino inválida.") from exc
     account = FinancialAccount.objects.select_related("owner", "institution").get(id=req.account_id)
 
-    installments = 1 if req.is_recurring else max(1, req.installments)
-    monthly_amount = _monthly_amount_for(req.entry_amount, installments, req.calc_mode)
-    _validate_common_payload(req, monthly_amount, installments)
+    installments, monthly_amount = _parcelas_e_valor(req)
     validate_month_not_closed(account, req.due_date)
     validate_month_not_closed(counterparty_account, req.due_date)
 
@@ -1020,9 +1047,9 @@ def _update_installment_or_recurring(
     from reports.services import add_months
 
     operation_type = tx.operation_type or OPERATION_INSTALLMENT
-    installments = 1 if operation_type == OPERATION_RECURRING else max(1, req.installments)
-    monthly_amount = _monthly_amount_for(req.entry_amount, installments, req.calc_mode)
-    _validate_common_payload(req, monthly_amount, installments)
+    installments, monthly_amount = _parcelas_e_valor(
+        req, recorrente=operation_type == OPERATION_RECURRING
+    )
 
     ordered = sorted(scoped_entries(tx, entries, scope), key=lambda e: (e.current_installment or 1, e.due_date, e.id))
     if not ordered:
@@ -1058,9 +1085,7 @@ def _update_internal_transfer(
     if counterparty_account_id == req.account_id:
         raise ValueError("Conta destino deve ser diferente da conta de origem.")
 
-    installments = 1 if req.is_recurring else max(1, req.installments)
-    monthly_amount = _monthly_amount_for(req.entry_amount, installments, req.calc_mode)
-    _validate_common_payload(req, monthly_amount, installments)
+    installments, monthly_amount = _parcelas_e_valor(req)
 
     account = FinancialAccount.objects.select_related("owner", "institution").get(id=req.account_id)
     counterparty_account = FinancialAccount.objects.select_related("owner", "institution").get(
