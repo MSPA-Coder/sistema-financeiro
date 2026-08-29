@@ -15,4 +15,4 @@ pdfplumber>=0.11,<1
 # **Sem o extra `[flask]`**, de proposito: o nucleo do pacote e Python puro e
 # nao tem dependencia nenhuma. Pedir o extra traria Flask, Flask-WTF e
 # Flask-Limiter para dentro de uma imagem Django, que nao usa nada disso.
-sharedauth @ git+https://github.com/MSPA-Coder/SharedAuth.git@v0.5.0
+sharedauth @ git+https://github.com/MSPA-Coder/SharedAuth.git@v0.6.0

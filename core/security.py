@@ -47,8 +47,19 @@ class ContentSecurityPolicyMiddleware:
     """Define ``Content-Security-Policy`` e os defensivos em toda resposta.
 
     Implementado como middleware simples (sem dependencia nova) porque a
-    politica e fixa para toda a aplicacao: nao ha necessidade de nonces
-    por requisicao nem de configuracao por view.
+    politica e fixa para toda a aplicacao: **nao ha nonce**, e nao ha por que
+    haver.
+
+    Cheguei a introduzir um, para o unico estilo que varia por usuario -- o
+    numero de linhas que cabem numa tabela antes de a rolagem comecar. Nonce
+    exige `<style>` embutido, `<style>` embutido no `<head>` faz o HTMX
+    tentar reinjeta-lo a cada troca de tela (e ele perde o nonce no caminho), e
+    a saida documentada para isso seria expor o nonce num `<meta>` --
+    entregando ao DOM justamente o segredo que o nonce e.
+
+    A preferencia virou `core.views.preferencias_css`, uma folha de estilo de
+    verdade, servida da propria origem. `style-src 'self'` ja a autoriza, sem
+    excecao nenhuma.
     """
 
     def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:

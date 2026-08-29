@@ -108,3 +108,90 @@ def test_settings_do_django_nao_discordam_do_conjunto_comum():
 
 def test_csp_do_middleware_e_a_declarada():
     assert CONTENT_SECURITY_POLICY.startswith("default-src 'self'")
+
+# ---------------------------------------------------------------------------
+# Nonce de estilo
+# ---------------------------------------------------------------------------
+#
+# A CSP fecha `style-src` em 'self', o que bloqueia TAMBEM o estilo aplicado
+# por CSSOM (`el.style.x = ...`) -- e o bloqueio e silencioso: violacao no
+# console, nenhum erro de JavaScript, nenhum teste vermelho, e o estilo nao
+# aparece. Foi assim que o teto de rolagem das tabelas nunca funcionou.
+
+
+def test_style_src_continua_fechado_sem_excecao(client):
+    """Nem `unsafe-inline`, nem nonce, nem hash.
+
+    Cheguei a introduzir um nonce para o unico estilo que varia por usuario.
+    Nonce exige `<style>` embutido; `<style>` no `<head>` faz o HTMX tentar
+    reinjeta-lo a cada troca de tela, perdendo o nonce; e a correcao
+    documentada seria expor o nonce num `<meta>` -- entregando ao DOM
+    justamente o segredo que ele e. A preferencia virou folha de estilo servida
+    da propria origem, e `style-src 'self'` voltou a bastar.
+    """
+    politica = client.get(ROTA).headers["Content-Security-Policy"]
+
+    assert "style-src 'self';" in politica
+    assert "unsafe-inline" not in politica
+    assert "nonce-" not in politica
+
+
+def test_a_casca_nao_traz_estilo_embutido() -> None:
+    """Um `<style>` no `base.html` seria bloqueado -- em silencio."""
+    from django.template.loader import render_to_string
+
+    rendered = render_to_string("base.html", {"app_menu_items": []})
+
+    assert "<style" not in rendered
+    assert 'href="/core/preferencias.css"' in rendered or "preferencias.css" in rendered
+
+
+def test_a_folha_de_preferencias_carrega_a_escolha_do_usuario() -> None:
+    """Servida como CSS de verdade, autorizada por `style-src 'self'`."""
+    from types import SimpleNamespace
+
+    from django.test import RequestFactory
+
+    from core.views import preferencias_css
+
+    pedido = RequestFactory().get("/core/preferencias.css")
+    pedido.user = SimpleNamespace(table_scroll_rows=42)
+    resposta = preferencias_css(pedido)
+
+    assert resposta["Content-Type"].startswith("text/css")
+    assert "--table-scroll-rows: 42" in resposta.content.decode()
+    assert "private" in resposta["Cache-Control"]
+
+
+def test_a_folha_de_preferencias_sanea_valor_absurdo() -> None:
+    """O limite do banco e 5..200; a folha nao pode confiar no que recebe."""
+    from types import SimpleNamespace
+
+    from django.test import RequestFactory
+
+    from core.views import preferencias_css
+
+    pedido = RequestFactory().get("/core/preferencias.css")
+    pedido.user = SimpleNamespace(table_scroll_rows="nao-e-numero")
+
+    assert "--table-scroll-rows: 15" in preferencias_css(pedido).content.decode()
+
+
+def test_nenhum_javascript_do_projeto_aplica_estilo_inline():
+    """A CSP bloquearia, e o sintoma seria invisivel.
+
+    Todo estado alternado por JavaScript mora em classe CSS. Um `el.style.x`
+    novo voltaria a falhar em silencio -- por isso a varredura.
+    """
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent.parent / "static" / "js"
+    sobras = [
+        f"{caminho.relative_to(raiz).as_posix()}:{numero}"
+        for caminho in raiz.rglob("*.js")
+        if "vendor" not in caminho.parts
+        for numero, linha in enumerate(caminho.read_text(encoding="utf-8").splitlines(), 1)
+        if ".style." in linha
+    ]
+
+    assert sobras == [], sobras

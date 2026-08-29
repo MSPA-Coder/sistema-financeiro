@@ -51,7 +51,7 @@ window.addEventListener('load', function() {
     };
     const chartClickCursor = function(event, elements) {
         const target = event && event.native && event.native.target;
-        if (target) target.style.cursor = elements.length ? 'pointer' : 'default';
+        if (target) target.classList.toggle('has-pointer', elements.length > 0);
     };
     const handleCategoryClick = function(_event, elements) {
         if (!elements.length) return;
@@ -252,7 +252,7 @@ window.addEventListener('load', function() {
                 Object.entries(extra||{}).forEach(function(kv){setP(p,kv[0],kv[1]);});
                 var q=p.toString(); return q ? nd.transactionsUrl+'?'+q : nd.transactionsUrl;
             };
-            var hover = function(ev,els){var t=ev&&ev.native&&ev.native.target;if(t)t.style.cursor=els.length?'pointer':'default';};
+            var hover = function(ev,els){var t=ev&&ev.native&&ev.native.target;if(t)t.classList.toggle('has-pointer',els.length>0);};
             var onCatClick = function(_e,els){
                 if(!els.length) return;
                 var label=nd.catLabels[els[0].index];

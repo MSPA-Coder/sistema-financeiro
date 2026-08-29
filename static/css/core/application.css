@@ -968,6 +968,53 @@ html[data-values-hidden="true"] .health-chart-row:has(canvas)::after {
 [data-ui="inline"] { display: inline; }
 [data-ui="table-plain-flex"] { flex: 1; padding: 0; box-shadow: none; }
 [data-ui="hidden"] { display: none; }
+
+/* ============================================================
+   ESTADOS ALTERNADOS POR JAVASCRIPT
+   ============================================================
+   A CSP fecha `style-src` em 'self', o que bloqueia TAMBEM o estilo aplicado
+   por CSSOM (`el.style.display = ...`). O bloqueio e silencioso: o navegador
+   registra a violacao no console e simplesmente nao aplica -- nenhum erro de
+   JavaScript, nenhum teste vermelho, e o elemento nao aparece.
+
+   Por isso todo estado que o JavaScript alterna mora aqui, como classe. */
+[data-ui="hidden"].is-visible { display: block; }
+[data-ui="delete-scope-hidden"].is-visible { display: block; }
+.app-modal.is-open { display: flex; }
+.is-collapsed { display: none; }
+.has-pointer { cursor: pointer; }
+
+/* Indicador de requisicao do HTMX. Estas tres regras sao as que o proprio HTMX
+   injetaria num `<style>` sem nonce -- e que a CSP vinha bloqueando desde
+   sempre, deixando o "Importando..." de `banking/imports.html` visivel o tempo
+   todo em vez de so durante a importacao. */
+.htmx-indicator { opacity: 0; transition: opacity 200ms ease-in; }
+.htmx-request .htmx-indicator { opacity: 1; }
+.htmx-request.htmx-indicator { opacity: 1; }
+
+/* O Chart.js escreve `display: block; box-sizing: border-box` no atributo
+   `style` de cada `<canvas>`, e a CSP recusa. As mesmas duas declaracoes ficam
+   aqui, entao o resultado visual e o mesmo com a politica intacta.
+
+   As tentativas do Chart.js continuam aparecendo no console: e biblioteca de
+   terceiro, nao ha opcao para desliga-las, e a alternativa seria
+   `'unsafe-hashes'` -- abrir a politica para calar um aviso, que e trocar
+   seguranca por silencio. */
+canvas { display: block; box-sizing: border-box; }
+
+/* Envoltorio de rolagem criado por `_initTableScrollWrappers`. A altura maxima
+   vem de `--table-scroll-rows`, que o servidor declara por usuario num `<style>`
+   com nonce -- ver `base.html`. Antes eram quatro atributos inline, e a CSP
+   descartava os quatro: a rolagem nunca recebeu o teto que este codigo sempre
+   pretendeu dar. */
+.auto-table-scroll-wrapper {
+    max-height: calc(
+        var(--table-header-height, 2.6rem)
+        + var(--table-row-height, 2.25rem) * var(--table-scroll-rows, 15)
+    );
+    overflow: auto;
+    width: 100%;
+}
 [data-ui="w-100"] { width: 100px; }
 [data-ui="m-0"] { margin: 0; }
 [data-ui="mb-075"] { margin-bottom: 0.75rem; }
