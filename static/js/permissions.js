@@ -8,7 +8,7 @@
             var target = input.getAttribute('data-filter-target');
             var term = normalize(input.value);
             document.querySelectorAll('[data-filter-row="' + target + '"]').forEach(function (row) {
-                row.style.display = normalize(row.textContent).includes(term) ? '' : 'none';
+                row.classList.toggle('is-collapsed', !normalize(row.textContent).includes(term));
             });
         });
     });
@@ -17,7 +17,7 @@
         button.addEventListener('click', function () {
             var action = button.getAttribute('data-owner-bulk');
             document.querySelectorAll('[data-filter-row="owner-row"]').forEach(function (row) {
-                if (row.style.display === 'none') { return; }
+                if (row.classList.contains('is-collapsed')) { return; }
                 var checkbox = row.querySelector('[data-owner-action="' + action + '"]');
                 var view = row.querySelector('[data-owner-action="view"]');
                 if (checkbox) { checkbox.checked = true; }
@@ -30,7 +30,7 @@
     if (ownerClear) {
         ownerClear.addEventListener('click', function () {
             document.querySelectorAll('[data-filter-row="owner-row"]').forEach(function (row) {
-                if (row.style.display === 'none') { return; }
+                if (row.classList.contains('is-collapsed')) { return; }
                 row.querySelectorAll('input[type="checkbox"]').forEach(function (checkbox) { checkbox.checked = false; });
             });
         });
@@ -70,7 +70,7 @@
     if (permissionBulk) {
         permissionBulk.addEventListener('click', function () {
             document.querySelectorAll('[data-filter-row="permission-row"]').forEach(function (row) {
-                if (row.style.display === 'none') { return; }
+                if (row.classList.contains('is-collapsed')) { return; }
                 var checkbox = row.querySelector('[data-permission-checkbox]');
                 if (checkbox) {
                     checkbox.checked = true;
@@ -84,7 +84,7 @@
     if (permissionClear) {
         permissionClear.addEventListener('click', function () {
             document.querySelectorAll('[data-filter-row="permission-row"]').forEach(function (row) {
-                if (row.style.display === 'none') { return; }
+                if (row.classList.contains('is-collapsed')) { return; }
                 var checkbox = row.querySelector('[data-permission-checkbox]');
                 if (checkbox && !checkbox.disabled) { checkbox.checked = false; }
             });

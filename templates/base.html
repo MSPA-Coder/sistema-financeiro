@@ -11,11 +11,33 @@
     <link rel="stylesheet" href="{% static 'css/base.css' %}">
     <link rel="stylesheet" href="{% static 'sharedauth/sharedauth-ui.css' %}">
 
+    {% comment %}
+    Configuracao lida pelo HTMX na inicializacao, ANTES de ele injetar coisa
+    alguma. Era feita em `js/core/htmx-config.js`, que rodava depois de
+    `htmx.min.js` -- tarde demais: o `<style>` do indicador ja tinha sido
+    injetado, sem nonce, e a CSP o bloqueava a cada carga. A classe
+    `.htmx-indicator` e estilizada em `core/application.css`, onde o resto da
+    aparencia deste projeto mora.
+
+    `attributesToSettle` sai com `style` de fora (o padrao inclui). Manter
+    `style` fazia o HTMX copiar o atributo dos `<canvas>` do Chart.js a cada
+    troca, e a CSP recusava a copia -- seis violacoes por troca no painel.
+    Nenhum elemento deste projeto depende de `style` sobreviver a um swap.
+    {% endcomment %}
+    <meta name="htmx-config" content='{"includeIndicatorStyles": false, "attributesToSettle": ["class", "width", "height"]}'>
     <script src="{% static 'vendor/htmx.min.js' %}"></script>
-    <script src="{% static 'js/core/htmx-config.js' %}"></script>
     <script src="{% static 'sharedauth/sharedauth-ui.js' %}" defer></script>
 
     {% block styles %}{% endblock %}
+
+    {% comment %}
+    Quantas linhas cabem numa tabela antes de a rolagem comecar e preferencia
+    por usuario (5 a 200), entao nao cabe numa folha estatica. Vem como folha
+    de estilo de verdade, servida desta origem: `style-src 'self'` ja a
+    autoriza, sem `<style>` embutido e sem nonce. Quem calcula a altura a
+    partir dela e `.auto-table-scroll-wrapper`, em `core/application.css`.
+    {% endcomment %}
+    <link rel="stylesheet" href="{% url 'core:preferencias_css' %}">
 </head>
 <body data-table-scroll-rows="{{ table_scroll_rows|default:15 }}">
     <div id="ajaxLoadingBar" aria-hidden="true"></div>

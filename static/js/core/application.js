@@ -14,8 +14,8 @@
         if (!row) return;
 
         var force = button.dataset.toggleForce;
-        var show = force === undefined ? row.style.display !== 'table-row' : force === 'true';
-        row.style.display = show ? 'table-row' : 'none';
+        var show = force === undefined ? row.classList.contains('is-collapsed') : force === 'true';
+        row.classList.toggle('is-collapsed', !show);
     });
 
     /* ============================================================
@@ -448,18 +448,13 @@
             if (dataRows.length <= maxRows) return;
             if (table.parentElement && table.parentElement.classList.contains('auto-table-scroll-wrapper')) return;
 
-            var thead     = table.querySelector('thead');
-            var firstRow  = dataRows[0];
-            var hdrH      = thead ? thead.getBoundingClientRect().height : 0;
-            var rowH      = firstRow ? firstRow.getBoundingClientRect().height : 36;
-            var maxH      = Math.ceil(hdrH + rowH * maxRows);
-
+            /* A altura maxima e o resto da aparencia vivem em
+               `.auto-table-scroll-wrapper`, no CSS. Aqui isto era quatro
+               atributos inline, e a CSP (`style-src 'self'`) descartava os
+               quatro em silencio -- a rolagem nunca recebeu o teto que este
+               codigo pretendia dar. */
             var wrapper = document.createElement('div');
             wrapper.className = 'auto-table-scroll-wrapper';
-            wrapper.style.maxHeight  = maxH + 'px';
-            wrapper.style.overflowY  = 'auto';
-            wrapper.style.overflowX  = 'auto';
-            wrapper.style.width      = '100%';
 
             table.parentNode.insertBefore(wrapper, table);
             wrapper.appendChild(table);

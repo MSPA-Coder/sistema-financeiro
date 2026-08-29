@@ -15,7 +15,7 @@ function toggleRealizedFields(select) {
     var show = select.value === 'realizado';
     if (!form) return;
     form.querySelectorAll('.realized-field').forEach(function (el) {
-        el.style.display = show ? 'block' : 'none';
+        el.classList.toggle('is-visible', show);
     });
 }
 
@@ -35,7 +35,7 @@ function toggleCounterpartyFields(select) {
     var isInternal = selected && selected.dataset.internal === '1';
     if (!form) return;
     form.querySelectorAll('.counterparty-field').forEach(function (el) {
-        el.style.display = isInternal ? 'block' : 'none';
+        el.classList.toggle('is-visible', isInternal);
         var acSel = el.querySelector('select[name="counterparty_account_id"]');
         if (acSel) acSel.required = isInternal;
     });
@@ -58,12 +58,12 @@ function openRealizeModal(txId, dueDate, plannedValue) {
     var url  = new URL(form.action, window.location.origin);
     url.pathname = url.pathname.replace(/\/mark_realized\/\d+\/?$/, '/mark_realized/' + txId + '/');
     form.action  = url.pathname + url.search;
-    document.getElementById('realizeModal').style.display = 'flex';
+    document.getElementById('realizeModal').classList.add('is-open');
 }
 
 function closeRealizeModal() {
     var m = document.getElementById('realizeModal');
-    if (m) m.style.display = 'none';
+    if (m) m.classList.remove('is-open');
 }
 
 function openDeleteModal(actionUrl, supportsScope, currentFutureToken) {
@@ -79,12 +79,12 @@ function openDeleteModal(actionUrl, supportsScope, currentFutureToken) {
     form.setAttribute('hx-target', '#transactions-table-container');
     form.setAttribute('hx-swap', 'outerHTML');
     if (window.htmx) window.htmx.process(form);
-    scopeOptions.style.display = supportsScope ? 'block' : 'none';
+    scopeOptions.classList.toggle('is-visible', supportsScope);
     if (scopeSelect) scopeSelect.value = 'all';
     if (scopeInput)  scopeInput.value  = 'all';
     if (confirmationToken) confirmationToken.value = '';
     if (scopeSelect) scopeSelect.dataset.currentFutureToken = currentFutureToken || '';
-    modal.style.display = 'flex';
+    modal.classList.add('is-open');
     setTimeout(function () {
         var btn = document.getElementById('cancelDeleteButton');
         if (btn) btn.focus();
@@ -93,7 +93,7 @@ function openDeleteModal(actionUrl, supportsScope, currentFutureToken) {
 
 function closeDeleteModal() {
     var m = document.getElementById('confirmDeleteModal');
-    if (m) m.style.display = 'none';
+    if (m) m.classList.remove('is-open');
 }
 
 /* Re-init dos modais (event-listeners perdidos apos AJAX swap) */
