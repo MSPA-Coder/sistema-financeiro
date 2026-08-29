@@ -11,7 +11,14 @@ Duas coisas que a suite nao protegia, e ambas custaram caro:
 2. Uma chave podia viver no catalogo sem quem a consumisse. O comentario de
    `PERMISSION_DEFINITIONS` afirma que so entram chaves que "algum
    @permission_required ou item de menu realmente referencia hoje" -- era
-   falso, e nada verificava a afirmacao.
+   falso para nove chaves, e nada verificava a afirmacao.
+
+Nao ha lista de excecao para a segunda guarda, e isso e deliberado. Uma chave
+orfa chegou a ficar registrada aqui como "conhecida", o que deixava a suite
+verde sobre um defeito da aplicacao. Teste existe para validar a aplicacao;
+quando ele precisa de uma excecao para passar, quem tem de mudar e quase
+sempre a aplicacao. Naquele caso era: a tela ficava sem permissao so por ser o
+destino fixo do login, e a correcao foi tornar esse destino derivado.
 
 Nao abre banco: le a URLconf e a arvore de menu, que sao estrutura declarada,
 nao dado. E a mesma razao pela qual estes testes conseguem existir nesta suite.
@@ -22,7 +29,7 @@ from __future__ import annotations
 from django.urls import get_resolver
 
 from accounts.services import PERMISSION_DEFINITIONS
-from core.context_processors import _build_menu_items
+from core.context_processors import _build_menu_items, primeira_tela_permitida
 
 #: Rotas que respondem sem exigir permissao funcional, cada uma com o motivo.
 #: Entrar aqui e uma decisao consciente; e o unico jeito de uma rota nova
@@ -36,10 +43,10 @@ ROTAS_ABERTAS: dict[str, str] = {
     "health": "sonda de infraestrutura, sem sessao",
     "health/": "sonda de infraestrutura, sem sessao",
     "change-password/": "todo usuario troca a propria senha, sempre",
-    "reports/upcoming-movements/": (
-        "tela de pouso: e o LOGIN_REDIRECT_URL e o destino de negacao dos "
-        "demais relatorios. Exigir permissao aqui deixaria o usuario negado "
-        "sem lugar para cair."
+    "inicio/": (
+        "nao e tela: resolve para onde a pessoa pode ir e redireciona. Exigir "
+        "permissao no destino do login e da negacao seria o laco que ela "
+        "existe para evitar; quem nao pode abrir nada recebe 403 com aviso."
     ),
 }
 
@@ -48,18 +55,6 @@ ROTAS_ABERTAS: dict[str, str] = {
 VERIFICADAS_NO_CORPO: dict[str, str] = {
     "tables.users.manage": "core/views.py, em settings_home_view",
 }
-
-#: Chave que sobrevive no catalogo sem ninguem que a verifique. As outras
-#: quatro que estavam aqui foram removidas na `accounts/migrations/0007`; esta
-#: fica porque a ausencia de verificacao e DELIBERADA, nao esquecimento -- ver
-#: o motivo abaixo. Uma orfa nova, por esquecimento, reprova a suite.
-ORFAS_CONHECIDAS: dict[str, str] = {
-    "reports.upcoming_movements.view": (
-        "a rota e aberta de proposito (tela de pouso), e o item de menu nao e "
-        "restrito -- restringi-lo esconderia o link de quem cai ali no login"
-    ),
-}
-
 
 def _rotas():
     """(padrao, view) de toda rota do projeto, menos o admin do Django."""
@@ -132,23 +127,52 @@ def test_nenhuma_chave_do_catalogo_fica_sem_quem_a_verifique() -> None:
     }
     consumidas = por_rota | _permissoes_do_menu() | set(VERIFICADAS_NO_CORPO)
 
-    orfas = set(PERMISSION_DEFINITIONS) - consumidas - set(ORFAS_CONHECIDAS)
+    orfas = set(PERMISSION_DEFINITIONS) - consumidas
     assert not orfas, (
         f"Chaves no catalogo que ninguem verifica: {sorted(orfas)}. "
-        "Ligue a verificacao, remova a chave, ou registre em ORFAS_CONHECIDAS."
+        "Ligue a verificacao ou remova a chave -- nao ha lista de perdao aqui, "
+        "de proposito: chave que nao guarda nada nao pode aparecer na tela de "
+        "Permissoes como se guardasse."
     )
 
 
-def test_orfas_conhecidas_continuam_orfas() -> None:
-    """Quando uma orfa ganhar consumidor, ela sai da lista -- e o teste cobra."""
-    por_rota = {
-        permissao
-        for _, view in _rotas()
-        if (permissao := getattr(view, "permissao_exigida", None))
-    }
-    consumidas = por_rota | _permissoes_do_menu() | set(VERIFICADAS_NO_CORPO)
+class _UsuarioSemNada:
+    """Usuario ativo que nao possui permissao funcional alguma."""
 
-    resolvidas = sorted(set(ORFAS_CONHECIDAS) & consumidas)
-    assert not resolvidas, (
-        f"Estas chaves deixaram de ser orfas: {resolvidas}. Remova-as de ORFAS_CONHECIDAS."
+    is_staff = False
+    is_active = True
+
+    def has_perm(self, _perm, obj=None) -> bool:
+        return False
+
+
+def test_quem_nao_tem_permissao_nenhuma_cai_numa_rota_aberta() -> None:
+    """O destino do login nao pode mandar ninguem para uma porta fechada.
+
+    `core.views.inicio_view` resolve para onde a pessoa pode ir. Se a varredura
+    do menu devolvesse uma tela que ela nao pode abrir, o resultado seria o
+    laco que essa view existe justamente para evitar -- e se devolvesse `None`
+    sem tratamento, um erro. Hoje ela para em "Alterar senha", aberta a
+    qualquer autenticado.
+    """
+    destino = primeira_tela_permitida(_UsuarioSemNada())
+
+    assert destino is None or destino.lstrip("/") in ROTAS_ABERTAS, (
+        f"Usuario sem permissao seria mandado para {destino!r}, que exige permissao."
+    )
+
+
+def test_o_destino_do_login_nao_e_uma_tela_fixa() -> None:
+    """Regressao: enquanto era fixo, obrigava aquela tela a nao ter permissao.
+
+    `LOGIN_REDIRECT_URL` apontava para `/reports/upcoming-movements/`, e por
+    isso aquela tela nao podia exigir `reports.upcoming_movements.view` -- a
+    chave ficava no catalogo sem guardar nada. O destino agora e derivado.
+    """
+    from django.conf import settings
+
+    assert settings.LOGIN_REDIRECT_URL == "/inicio/", (
+        "O destino do login voltou a ser uma tela concreta. Se for mesmo o "
+        "caso, aquela tela precisa continuar exigindo a sua permissao -- e o "
+        "laco de negacao precisa de outra saida."
     )

@@ -85,7 +85,7 @@ def _build_menu_items() -> list[MenuItem]:
             "\U0001F4C8",
             "/reports/",
             children=(
-                MenuItem("Próximos movimentos", "/reports/upcoming-movements/", "\U0001F4CC", "/reports/upcoming-movements/"),
+                MenuItem("Próximos movimentos", "/reports/upcoming-movements/", "\U0001F4CC", "/reports/upcoming-movements/", required_permission="reports.upcoming_movements.view"),
                 MenuItem("Projeções", "/reports/projections/", "\U0001F4C9", "/reports/projections/", required_permission="projections.view"),
                 MenuItem("Posição por conta", "/reports/account-position/", "\U0001F9EE", "/reports/account-position/", required_permission="reports.account_position.view"),
                 MenuItem(
@@ -151,6 +151,35 @@ def _is_allowed(item: MenuItem, user) -> bool:
     return not (
         item.required_permission and not (user and user.has_perm(item.required_permission))
     )
+
+
+def primeira_tela_permitida(user) -> str | None:
+    """URL da primeira tela que `user` pode abrir, ou `None` se nao houver.
+
+    Existe para que o DESTINO do login e o destino de uma negacao saiam do que
+    a pessoa pode ver, em vez de serem uma tela fixa. Enquanto eram fixos, a
+    tela escolhida (Proximos movimentos) nao podia exigir permissao -- quem
+    nao a tivesse cairia num lugar que nao pode abrir. Era a navegacao
+    ditando o modelo de permissoes, e o preco foi uma chave de catalogo que
+    aparecia na tela de Permissoes sem guardar nada.
+
+    Percorre a arvore na ordem do menu e devolve uma FOLHA: um item de topo
+    pode estar liberado e ter todos os filhos bloqueados, e mandar a pessoa
+    para o pai nao resolveria nada.
+    """
+    def procurar(itens):
+        for item in itens:
+            if not _is_allowed(item, user):
+                continue
+            if item.children:
+                encontrada = procurar(item.children)
+                if encontrada:
+                    return encontrada
+                continue
+            return item.url
+        return None
+
+    return procurar(_build_menu_items())
 
 
 def _serialize_menu_item(item: MenuItem, user, path: str, level: int = 0):

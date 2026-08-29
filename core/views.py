@@ -33,6 +33,7 @@ from accounts.services import (
     update_user_account_visibility,
     user_mutation_block_message,
 )
+from core.context_processors import primeira_tela_permitida
 from core.domain.identity import USER_TYPE_LABELS
 from core.domain.settings import (
     APP_SETTING_LAST_OPTIMIZE_INFO,
@@ -74,6 +75,24 @@ def _user_audit_snapshot(user: AppUser) -> dict:
         "user_type": user.user_type,
         "must_change_password": bool(user.must_change_password),
     }
+
+
+@login_required
+def inicio_view(request):
+    """Manda a pessoa para a primeira tela a que ela tem acesso.
+
+    E o destino do login (`LOGIN_REDIRECT_URL`) e o destino padrao de uma
+    negacao de permissao. Ser derivado, e nao fixo, e o que permite que TODA
+    tela do sistema exija a sua permissao: nao existe mais uma tela obrigada a
+    ficar sem controle so por ser o lugar onde as pessoas caem.
+
+    Quem nao tem permissao para tela nenhuma cai em "Alterar senha", que e
+    aberta a qualquer autenticado e e a unica coisa que essa pessoa de fato
+    pode fazer. Verificado: com todas as permissoes negadas, a varredura do
+    menu ja para ali sozinha -- o `or` e a rede de seguranca para o caso de o
+    menu mudar, nao o caminho normal.
+    """
+    return redirect(primeira_tela_permitida(request.user) or reverse("change_password"))
 
 
 @login_required

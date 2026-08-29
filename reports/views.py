@@ -76,6 +76,7 @@ def projections_view(request):
 
 
 @login_required
+@permission_required("reports.upcoming_movements.view")
 def upcoming_movements_view(request):
     default_start, default_end = services.current_week_period()
     start_date = services.parse_iso_date(request.GET.get("start_date")) or default_start

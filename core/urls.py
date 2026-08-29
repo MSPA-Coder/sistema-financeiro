@@ -7,6 +7,8 @@ from . import views
 app_name = "core"
 
 urlpatterns = [
+    path("inicio/", views.inicio_view, name="inicio"),
+
     path("permissions/", views.permissions_view, name="permissions"),
 
     path("settings/", views.settings_home_view, name="settings_home"),

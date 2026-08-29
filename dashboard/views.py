@@ -53,7 +53,7 @@ def _month_label(year: int, month: int) -> str:
 
 
 @login_required
-@permission_required("dashboard.view", fallback="reports:upcoming_movements_view")
+@permission_required("dashboard.view")
 def dashboard_view(request):
 	"""Renderiza o dashboard completo ou parcial (HTMX)."""
 	today = date.today()
@@ -314,7 +314,7 @@ def dashboard_view(request):
 
 
 @login_required
-@permission_required("dashboard.view", fallback="reports:upcoming_movements_view")
+@permission_required("dashboard.view")
 def dashboard_content(request):
 	"""Alias para carregamento parcial via HTMX."""
 	return dashboard_view(request)
