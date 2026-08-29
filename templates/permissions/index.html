@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static icons dict_filters navegacao %}
+{% load static icons dict_filters %}
 
 {% block title %}Permissões{% endblock %}
 
@@ -12,7 +12,7 @@
     <div>
         <h1>Administração de Permissões</h1>
     </div>
-    <form method="get" class="permissions-user-form" hx-get="{{ request.path }}" hx-trigger="change" {% nav_filtro %}>
+    <form method="get" class="permissions-user-form" data-auto-submit="true">
         <label for="user_id">Usuário
             <select id="user_id" name="user_id" class="form-control">
                 {% for u in users %}

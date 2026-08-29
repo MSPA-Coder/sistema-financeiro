@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static navegacao %}
+{% load static %}
 {% load money_filters %}
 {% load icons %}
 {% block title %}Projeções{% endblock %}
@@ -10,7 +10,7 @@
 
 {% block page_header %}
 <div class="top-filter-card">
-    <form method="get" class="top-filter-row projection-filter-row" hx-get="{{ request.path }}" hx-trigger="change" {% nav_filtro %}>
+    <form method="get" class="top-filter-row projection-filter-row" data-auto-submit="true">
         <label class="top-filter-field compact top-filter-month-range">
             Mês inicial
             <input type="month" name="start_month" value="{{ start_month }}" {% if system_start_date %}min="{{ system_start_date|date:'Y-m' }}"{% endif %}>
@@ -67,7 +67,7 @@
         </div>
         <div class="top-filter-actions">
             <a href="{% url 'reports:projections_view' %}?mode=a_vencer&amp;start_month={{ default_start_month }}&amp;end_month={{ default_end_month }}&amp;detail=complete"
-               class="btn btn-ghost btn-sm" hx-boost="true" {% nav_filtro %}>{% icon 'x' %}<span>Limpar</span></a>
+               class="btn btn-ghost btn-sm" data-ajax-nav>{% icon 'x' %}<span>Limpar</span></a>
         </div>
     </form>
 </div>

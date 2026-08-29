@@ -56,6 +56,10 @@
        (ex.: ações em lote "Criar"/"Ignorar" no mesmo form). */
     function _submitSync(form, submitter) {
         if (!form) return;
+        if (form.dataset.ajaxPostRedirect === 'true') {
+            submitPostRedirectAjax(form);
+            return;
+        }
         rememberMainPanelScroll();
         if (typeof form.requestSubmit === 'function') form.requestSubmit(submitter || undefined);
         else form.submit();
@@ -102,13 +106,11 @@
         _mirrorSubmitterAsHiddenField(btn.form, btn);
     }, true);
 
-    /* Um GET declarado com `{% nav_filtro %}` ja sabe se trocar sozinho: basta
-       disparar o gatilho que ele escuta. POST continua sincrono. */
     window.submitWithMainPanelRestore = function (form) {
         if (!form) return;
         var method = (form.getAttribute('method') || 'get').toLowerCase();
-        if (method === 'get' && form.getAttribute('hx-get')) {
-            window.htmx.trigger(form, 'change');
+        if (method === 'get') {
+            submitFormAjax(form);
         } else {
             _submitSync(form);
         }
@@ -269,105 +271,162 @@
     }
 
     /* ============================================================
-       NAVEGAÇÃO POR FILTRO — feita pelo HTMX
-       ============================================================
+       AJAX NAVIGATION
+       ============================================================ */
+    var _ajaxInflight = false;
+    var _ajaxController = null;
+    var _ajaxRequestSeq = 0;
+    var _ajaxActiveCanonicalUrl = null;
+    var _ajaxActivePromise = null;
+    var _ajaxTimeoutId = null;
+    var _ajaxTimeoutMs = 15000;
+    var _maxFilterCascadeDepth = 2;
 
-       Trocar uma tela por filtro troca duas regiões: `#appMain`, com o
-       conteúdo, e `#appPageHeader`, com os próprios seletores. Isso era feito
-       aqui, à mão: `fetch` da página inteira, recorte das duas regiões com
-       `DOMParser`, `pushState`, reexecução de `<script>`, reinstalação de
-       listeners, aborto de requisição concorrente e um temporizador de 15s.
+    function _showLoadingBar() {
+        var bar = document.getElementById('ajaxLoadingBar');
+        var main = document.getElementById('appMain');
+        if (bar) bar.classList.add('active');
+        if (main) main.classList.add('content-loading');
+    }
 
-       Hoje quem faz é o HTMX, declarado no template pela tag `{% nav_filtro %}`
-       (`core/templatetags/navegacao.py`). O que sobrou aqui é só o que ele não
-       tem como saber. */
+    function _hideLoadingBar() {
+        var bar  = document.getElementById('ajaxLoadingBar');
+        var main = document.getElementById('appMain');
+        if (bar) bar.classList.remove('active');
+        if (main) {
+            main.classList.remove('content-loading');
+            main.classList.remove('content-refreshed');
+            /* force reflow para re-disparar a animacao */
+            void main.offsetHeight;
+            main.classList.add('content-refreshed');
+            setTimeout(function () { main.classList.remove('content-refreshed'); }, 300);
+        }
+    }
 
-    /* O servidor às vezes CORRIGE um filtro em silêncio: escolher um titular
-       que não é o dono da conta selecionada faz `selected_context` anular a
-       conta (ver `reports/services.py`). O conteúdo e o cabeçalho já voltam
-       coerentes na mesma resposta — mas o endereço na barra ainda é o que foi
-       pedido, com a conta que não vale mais.
+    function _clearAjaxTimeout() {
+        if (_ajaxTimeoutId !== null) {
+            clearTimeout(_ajaxTimeoutId);
+            _ajaxTimeoutId = null;
+        }
+    }
 
-       Ninguém no cliente tem como prever essa correção; o único jeito de saber
-       é comparar o que o formulário do cabeçalho passou a dizer com o que a
-       barra diz. Quando divergem, refaz a busca com os valores corrigidos —
-       no máximo duas vezes, para que um servidor que insista em corrigir não
-       gere laço. */
-    var MAX_RECONCILIACOES = 2;
-    var _reconciliacoes = 0;
+    function _resetAjaxState(seq) {
+        if (seq !== undefined && seq !== _ajaxRequestSeq) return;
+        _clearAjaxTimeout();
+        _ajaxInflight = false;
+        _ajaxController = null;
+        _ajaxActiveCanonicalUrl = null;
+        _ajaxActivePromise = null;
+        _hideLoadingBar();
+    }
 
-    function _parametrosDoFormulario(form) {
+    function _navigateWithoutAjax(url) {
+        rememberMainPanelScroll();
+        window.location.assign(url);
+    }
+
+    function _buildFormUrl(form) {
+        var action = form.getAttribute('action') || window.location.pathname;
+        var url = new URL(action, window.location.href);
         var params = new URLSearchParams();
-        new FormData(form).forEach(function (valor, chave) {
-            if (valor !== '') params.append(chave, valor);
+        new FormData(form).forEach(function (v, k) {
+            if (v !== '') params.append(k, v);
         });
-        params.sort();
-        return params.toString();
+        url.search = params.toString();
+        return url.toString();
     }
 
-    function _parametrosDaBarra() {
-        var params = new URLSearchParams(window.location.search);
-        Array.from(params.keys()).forEach(function (chave) {
-            if (params.get(chave) === '') params.delete(chave);
-        });
-        params.sort();
-        return params.toString();
+    function _canonicalAjaxUrl(rawUrl) {
+        try {
+            var url = new URL(rawUrl, window.location.href);
+            var pairs = [];
+            url.searchParams.forEach(function (value, key) {
+                if (value !== '') pairs.push([key, value]);
+            });
+            pairs.sort(function (a, b) {
+                if (a[0] === b[0]) return a[1] < b[1] ? -1 : (a[1] > b[1] ? 1 : 0);
+                return a[0] < b[0] ? -1 : 1;
+            });
+            var params = new URLSearchParams();
+            pairs.forEach(function (pair) { params.append(pair[0], pair[1]); });
+            var search = params.toString();
+            return url.origin + url.pathname + (search ? '?' + search : '');
+        } catch (_) {
+            return String(rawUrl || '');
+        }
     }
 
-    document.addEventListener('htmx:afterSwap', function (ev) {
-        var alvo = ev.detail && ev.detail.target;
-        if (!alvo || alvo.id !== 'appMain') return;
+    function _sameAjaxUrl(left, right) {
+        return _canonicalAjaxUrl(left) === _canonicalAjaxUrl(right);
+    }
 
-        var form = document.getElementById('contextForm') ||
-            document.querySelector('#appPageHeader form[hx-get]');
-        if (!form) { _reconciliacoes = 0; return; }
+    /* Re-executa <script> tags no conteudo trocado (ex.: graficos inline) */
+    function _execScriptsIn(root) {
+        root.querySelectorAll('script').forEach(function (old) {
+            var neo = document.createElement('script');
+            Array.from(old.attributes).forEach(function (a) {
+                neo.setAttribute(a.name, a.value);
+            });
+            neo.textContent = old.textContent;
+            old.parentNode.replaceChild(neo, old);
+        });
+    }
 
-        if (_parametrosDoFormulario(form) === _parametrosDaBarra()) {
-            _reconciliacoes = 0;
-            return;
-        }
-        if (_reconciliacoes >= MAX_RECONCILIACOES) {
-            console.warn('[navegação] filtros não convergiram; parando');
-            _reconciliacoes = 0;
-            return;
-        }
-        _reconciliacoes += 1;
-        window.htmx.trigger(form, 'change');
-    });
+    function _initPageHeader(root) {
+        _initAutoSubmitForms(root);
+        _initFilterFormSelects(root);
+        _initClearFilterButtons(root);
+        _updateFilterSelects(root);
+        _initPrivacyToggles(root);
+        _applyValuesPrivacy(_readValuesPrivacyPreference(), root);
+    }
 
-    /* Conteúdo recém-trocado precisa dos mesmos ajustes que a carga inicial
-       faz: indicador de filtro ativo, envoltório de rolagem das tabelas e
-       máscara de valores. `_initContentArea` é declaração de função, então já
-       existe quando este listener roda. */
-    document.addEventListener('htmx:afterSwap', function (ev) {
-        var alvo = (ev.detail && ev.detail.target) || ev.target;
-        if (alvo && alvo.nodeType === Node.ELEMENT_NODE) _initContentArea(alvo);
-        _updateTableOverflow();
+    /* -- Sincroniza o cabecalho apos AJAX -----------------------------------
+       O #appPageHeader fica fora do #appMain. Quando filtros como titular
+       alteram opcoes dependentes de banco/conta, o header antigo precisa ser
+       substituido pelo header renderizado pelo servidor e re-inicializado.
+       Se o servidor saneou parametros invalidos, uma cascata curta re-busca
+       o conteudo com a URL canonica do formulario ja corrigido.
+    ------------------------------------------------------------------------ */
+    function _syncPageHeader(parsedDoc, currentUrl) {
+        var newHeader = parsedDoc.getElementById('appPageHeader');
+        var curHeader = document.getElementById('appPageHeader');
+        if (!newHeader || !curHeader) return false;
 
-        /* `app:contentLoaded` era emitido pela navegacao propria e tem tres
-           consumidores (dashboard, planejamento anual, lancamentos), cada um
-           reconstruindo o que so ele sabe -- graficos, calendario, atalhos de
-           linha. Continua sendo emitido daqui, um por troca de `#appMain`,
-           para que esses tres nao precisem cada um descobrir o HTMX sozinho. */
-        var principal = document.getElementById('appMain');
-        if (principal && alvo === principal) {
-            document.dispatchEvent(new CustomEvent('app:contentLoaded', {
-                detail: { root: principal, url: window.location.href }
-            }));
-        }
-    });
+        curHeader.innerHTML = newHeader.innerHTML;
+        _initPageHeader(curHeader);
 
+        var form = curHeader.querySelector('form[data-auto-submit="true"]');
+        if (!form) return false;
+
+        var correctedUrl = _buildFormUrl(form);
+        return !_sameAjaxUrl(correctedUrl, currentUrl);
+    }
+
+    function _syncSidebarLinks(parsedDoc) {
+        var newSidebar = parsedDoc.getElementById('appSidebar');
+        var curSidebar = document.getElementById('appSidebar');
+        if (!newSidebar || !curSidebar) return;
+
+        var newLinks = newSidebar.querySelectorAll('a.sidebar-link');
+        var curLinks = curSidebar.querySelectorAll('a.sidebar-link');
+        curLinks.forEach(function (link, index) {
+            var newLink = newLinks[index];
+            if (!newLink) return;
+            link.setAttribute('href', newLink.getAttribute('href') || '#');
+        });
+    }
 
     /* sharedauth-ui.js só varre `[data-sa-avisos]` em dois gatilhos:
-       `DOMContentLoaded` (carga cheia) e `htmx:afterSwap`. O bloco de
-       mensagens chega fora de banda (`hx-swap-oob`, ver `core/htmx.py`), e
-       troca fora de banda dispara `htmx:oobAfterSwap` -- evento distinto, que
-       o componente não escuta. Sem a ponte abaixo, mensagem gerada numa
-       requisição HTMX nunca vira toast: fica no DOM, escondida, esperando um
-       `htmx:afterSwap` que não vem.
-       Reemitir o evento que o componente já escuta é mais simples e mais
-       seguro que duplicar `lerAvisosDoServidor` aqui - e não exige tocar no
-       arquivo vendorizado. `ev.target` de um evento disparado direto no
+       `DOMContentLoaded` (carga cheia) e `htmx:afterSwap` (troca via htmx de
+       verdade). A navegação AJAX própria deste app (`fetchAndSwapMain` /
+       `submitPostRedirectAjax`) não é nenhum dos dois - ela clona o bloco de
+       mensagens na hora, sem disparar evento algum. Sem isto, uma mensagem
+       gerada por essas rotas nunca vira toast: fica no DOM, escondida,
+       esperando um `htmx:afterSwap` que não vai vir.
+       Reemitir o mesmo evento que o componente já escuta é mais simples e
+       mais seguro que duplicar `lerAvisosDoServidor` aqui - e não exige tocar
+       no arquivo vendorizado. `ev.target` de um evento disparado direto no
        `document` é o próprio `document`, e `lerAvisosDoServidor(document)`
        varre a página inteira, o que cobre o bloco recém-inserido. */
     function _maskServerAvisos(root) {
@@ -428,6 +487,303 @@
             });
         });
         observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    function _syncFlashMessages(parsedDoc) {
+        var appContent = document.querySelector('.app-content');
+        if (!appContent) return;
+        var currentFlash = document.getElementById('flashMessages');
+        if (currentFlash) currentFlash.remove();
+        var newFlash = parsedDoc.getElementById('flashMessages');
+        if (!newFlash) return;
+        var main = document.getElementById('appMain');
+        appContent.insertBefore(newFlash.cloneNode(true), main || null);
+        _announceServerAvisos();
+    }
+
+    function _scheduleFilterCascade(form, currentUrl, cascadeDepth) {
+        if (!form) return;
+
+        var nextDepth = (Number(cascadeDepth) || 0) + 1;
+        if (nextDepth > _maxFilterCascadeDepth) {
+            console.warn('[AJAX nav] cascata de filtros interrompida');
+            return;
+        }
+
+        var nextUrl = _buildFormUrl(form);
+        if (_sameAjaxUrl(nextUrl, currentUrl) || _sameAjaxUrl(nextUrl, window.location.href)) return;
+
+        setTimeout(function () {
+            submitFormAjax(form, { replaceHistory: true, cascadeDepth: nextDepth });
+        }, 0);
+    }
+
+    function fetchAndSwapMain(url, options) {
+        options = options || {};
+        var canonicalUrl = _canonicalAjaxUrl(url);
+
+        if (!options.force && !_ajaxInflight && canonicalUrl === _canonicalAjaxUrl(window.location.href)) {
+            return Promise.resolve(true);
+        }
+
+        if (_ajaxInflight && _ajaxActiveCanonicalUrl === canonicalUrl) {
+            return _ajaxActivePromise || Promise.resolve(true);
+        }
+
+        var seq = _ajaxRequestSeq + 1;
+        if (_ajaxController && typeof _ajaxController.abort === 'function') {
+            _ajaxController.abort();
+        }
+        _clearAjaxTimeout();
+
+        _ajaxRequestSeq = seq;
+        _ajaxInflight = true;
+        _ajaxActiveCanonicalUrl = canonicalUrl;
+
+        var controller = null;
+        if ('AbortController' in window) {
+            controller = new AbortController();
+            _ajaxController = controller;
+        } else {
+            _ajaxController = null;
+        }
+
+        _showLoadingBar();
+        _ajaxTimeoutId = setTimeout(function () {
+            if (seq !== _ajaxRequestSeq) return;
+            console.warn('[AJAX nav] tempo limite excedido; interface liberada');
+            _ajaxRequestSeq += 1;
+            if (_ajaxController && typeof _ajaxController.abort === 'function') {
+                _ajaxController.abort();
+            }
+            _resetAjaxState();
+        }, _ajaxTimeoutMs);
+
+        var fetchOptions = {
+            headers: { 'Accept': 'text/html', 'X-Requested-With': 'XMLHttpRequest' }
+        };
+        if (controller) fetchOptions.signal = controller.signal;
+
+        var requestPromise = fetch(url, fetchOptions).then(function (resp) {
+            if (seq !== _ajaxRequestSeq) return true;
+            var responseUrl = resp.url || url;
+            if (!resp.ok) return false;
+            return resp.text().then(function (html) {
+                if (seq !== _ajaxRequestSeq) return true;
+                var historyUrl = responseUrl || url;
+                var doc = (new DOMParser()).parseFromString(html, 'text/html');
+                var newMain = doc.getElementById('appMain');
+                var curMain = document.getElementById('appMain');
+                if (!newMain || !curMain) return false;
+
+                /* Preserva posicao de scroll - nao joga o usuario para o topo */
+                var savedScroll = curMain.scrollTop;
+
+                curMain.innerHTML = newMain.innerHTML;
+                if (!_sameAjaxUrl(historyUrl, window.location.href)) {
+                    if (options.replaceHistory) history.replaceState({ ajaxNav: true }, '', historyUrl);
+                    else history.pushState({ ajaxNav: true }, '', historyUrl);
+                } else if (options.replaceHistory) {
+                    history.replaceState({ ajaxNav: true }, '', historyUrl);
+                }
+
+                /* Sincroniza o cabecalho que fica fora do #appMain. */
+                var cascadeNeeded = _syncPageHeader(doc, historyUrl);
+                _syncSidebarLinks(doc);
+                _syncFlashMessages(doc);
+
+                /* re-init bindings e scripts no conteudo novo */
+                _initContentArea(curMain);
+                _execScriptsIn(curMain);
+
+                document.dispatchEvent(new CustomEvent('app:contentLoaded', {
+                    detail: { root: curMain, url: historyUrl }
+                }));
+
+                /* Restaura scroll apos o repaint */
+                requestAnimationFrame(function () {
+                    curMain.scrollTop = savedScroll;
+                });
+
+                /* Cascata: um select ficou invalido (ex: conta de outro titular).
+                   Re-busca com os params corrigidos para que o conteudo e os
+                   selects fiquem em sincronia. */
+                if (cascadeNeeded) {
+                    var cascadeForm = document.getElementById('contextForm') ||
+                        document.querySelector('#appPageHeader form[data-auto-submit="true"]');
+                    _scheduleFilterCascade(cascadeForm, historyUrl, options.cascadeDepth);
+                }
+
+                return true;
+            });
+        }).catch(function (e) {
+            if (e && e.name === 'AbortError') return true;
+            if (seq !== _ajaxRequestSeq) return true;
+            console.warn('[AJAX nav]', e);
+            return false;
+        }).finally(function () {
+            if (seq !== _ajaxRequestSeq) return;
+            _resetAjaxState(seq);
+        });
+
+        _ajaxActivePromise = requestPromise;
+        return requestPromise;
+    }
+
+    function submitFormAjax(form, options) {
+        if (!form) return;
+        var method = (form.getAttribute('method') || 'get').toLowerCase();
+        if (method !== 'get') {
+            _submitSync(form);
+            return;
+        }
+        var url = _buildFormUrl(form);
+        fetchAndSwapMain(url, options).then(function (ok) {
+            if (!ok) _navigateWithoutAjax(url);
+        });
+    }
+
+    function submitPostRedirectAjax(form) {
+        if (!form) return;
+        rememberMainPanelScroll();
+        _showLoadingBar();
+
+        var panel = document.getElementById('appMain');
+        var savedScroll = panel ? panel.scrollTop : 0;
+        var action = form.getAttribute('action') || window.location.href;
+        var url = new URL(action, window.location.href).toString();
+
+        fetch(url, {
+            method: (form.getAttribute('method') || 'post').toUpperCase(),
+            body: new FormData(form),
+            headers: { 'Accept': 'text/html', 'X-Requested-With': 'XMLHttpRequest' },
+            redirect: 'follow'
+        }).then(function (resp) {
+            if (!resp.ok) return false;
+            var responseUrl = resp.url || url;
+            return resp.text().then(function (html) {
+                var doc = (new DOMParser()).parseFromString(html, 'text/html');
+                var newMain = doc.getElementById('appMain');
+                var curMain = document.getElementById('appMain');
+                if (!newMain || !curMain) return false;
+
+                curMain.innerHTML = newMain.innerHTML;
+                if (!_sameAjaxUrl(responseUrl, window.location.href)) {
+                    history.pushState({ ajaxNav: true }, '', responseUrl);
+                }
+
+                _syncPageHeader(doc, responseUrl);
+                _syncSidebarLinks(doc);
+                _syncFlashMessages(doc);
+                _initContentArea(curMain);
+                _execScriptsIn(curMain);
+
+                document.dispatchEvent(new CustomEvent('app:contentLoaded', {
+                    detail: { root: curMain, url: responseUrl }
+                }));
+
+                requestAnimationFrame(function () {
+                    curMain.scrollTop = savedScroll;
+                });
+                return true;
+            });
+        }).catch(function (e) {
+            console.warn('[AJAX post]', e);
+            return false;
+        }).then(function (ok) {
+            if (!ok) {
+                form.dataset.ajaxPostRedirect = 'false';
+                _submitSync(form);
+                form.dataset.ajaxPostRedirect = 'true';
+            }
+        }).finally(function () {
+            _hideLoadingBar();
+        });
+    }
+
+    window.fetchAndSwapMain = fetchAndSwapMain;
+    window.submitFormAjax   = submitFormAjax;
+
+    /* Links que redefinem filtros devem trocar cabeçalho e conteúdo juntos.
+       Links de menu continuam convencionais: assim sempre abrem os valores
+       padrão da tela de destino, enquanto links de contexto conservam os
+       parâmetros explícitos no próprio href. */
+    document.addEventListener('click', function (event) {
+        var link = event.target.closest && event.target.closest('a[data-ajax-nav]');
+        if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey ||
+            event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        fetchAndSwapMain(link.href).then(function (ok) {
+            if (!ok) _navigateWithoutAjax(link.href);
+        });
+    });
+
+    /* Popstate: back/forward recarrega normalmente */
+    window.addEventListener('popstate', function () {
+        window.location.reload();
+    });
+
+    /* ============================================================
+       AUTO-SUBMIT FORMS
+       ============================================================ */
+    function _initAutoSubmitForms(root) {
+        root.querySelectorAll('form[data-auto-submit="true"]').forEach(function (form) {
+            form.querySelectorAll('select, input[type="date"], input[type="month"], input[type="checkbox"], input[type="radio"]').forEach(function (field) {
+                if (field.type === 'hidden' || field.dataset.autoSubmitIgnore === 'true') return;
+                if (field._autoSubmitBound) return;
+                field._autoSubmitBound = true;
+                field.addEventListener('change', function () {
+                    submitFormAjax(form);
+                });
+            });
+        });
+    }
+
+    /* ============================================================
+       FILTER-FORM SELECTS (data-filter-form / data-filter-param)
+       ============================================================ */
+    function _initFilterFormSelects(root) {
+        root.querySelectorAll('select[data-filter-form]').forEach(function (sel) {
+            if (sel._filterBound) return;
+            sel._filterBound = true;
+            sel.addEventListener('change', function () {
+                var form = document.getElementById(sel.dataset.filterForm);
+                if (!form) return;
+                var param = sel.dataset.filterParam;
+                if (!param) return;
+                var hidden = form.querySelector('input[name="' + param + '"]');
+                if (hidden) hidden.remove();
+                if (sel.value !== '') {
+                    var inp = document.createElement('input');
+                    inp.type = 'hidden';
+                    inp.name  = param;
+                    inp.value = sel.value;
+                    form.appendChild(inp);
+                }
+                submitFormAjax(form);
+            });
+        });
+    }
+
+    /* ============================================================
+       CLEAR-FILTERS BUTTONS (data-clear-filters / data-clear-params)
+       ============================================================ */
+    function _initClearFilterButtons(root) {
+        root.querySelectorAll('[data-clear-filters]').forEach(function (btn) {
+            if (btn._clearBound) return;
+            btn._clearBound = true;
+            btn.addEventListener('click', function () {
+                var form = document.getElementById(btn.dataset.clearFilters);
+                if (!form) return;
+                var params = (btn.dataset.clearParams || '').split(',')
+                    .map(function (s) { return s.trim(); }).filter(Boolean);
+                params.forEach(function (p) {
+                    var old = form.querySelector('input[name="' + p + '"]');
+                    if (old) old.remove();
+                });
+                submitFormAjax(form);
+            });
+        });
     }
 
     /* ============================================================
@@ -511,6 +867,9 @@
        CONTENT AREA INIT - chamado na carga e apos AJAX swap
        ============================================================ */
     function _initContentArea(root) {
+        _initAutoSubmitForms(root);
+        _initFilterFormSelects(root);
+        _initClearFilterButtons(root);
         _initToggleButtons(root);
         _initSelectAllCheckboxes(root);
         _updateFilterSelects(root);

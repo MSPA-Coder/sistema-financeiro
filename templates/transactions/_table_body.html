@@ -1,4 +1,4 @@
-{% load static l10n money_filters icons navegacao %}
+{% load static l10n money_filters icons %}
 {# Partial HTMX: corpo da tabela de lançamentos + cartões de resumo (OOB). #}
 <div class="table-container" id="transactions-table-container">
     <table class="tx-table">
@@ -16,34 +16,25 @@
             </tr>
             <tr class="filter-header-row">
                 <th class="filter-date">
-                    <select data-table-filter name="filter_date" aria-label="Filtrar por data" hx-get="{% url 'transactions:transactions_view' %}" hx-trigger="change" hx-include="#contextForm" {% nav_filtro %}>
+                    <select name="filter_date" aria-label="Filtrar por data" data-filter-form="contextForm" data-filter-param="filter_date">
                         <option value="">Todas</option>
                         {% for d in available_dates %}<option value="{{ d }}" {% if d == filter_date %}selected{% endif %}>{{ d|slice:"8:10" }}/{{ d|slice:"5:7" }}</option>{% endfor %}
                     </select>
                 </th>
                 <th class="filter-type">
-                    <select data-table-filter name="filter_type" aria-label="Filtrar por tipo" hx-get="{% url 'transactions:transactions_view' %}" hx-trigger="change" hx-include="#contextForm" {% nav_filtro %}>
+                    <select name="filter_type" aria-label="Filtrar por tipo" data-filter-form="contextForm" data-filter-param="filter_type">
                         <option value="">Todos</option>
                         {% for t in available_types %}<option value="{{ t }}" {% if t == filter_type %}selected{% endif %}>{{ t|capfirst }}</option>{% endfor %}
                     </select>
                 </th>
                 <th>
-                    <select data-table-filter name="filter_category" aria-label="Filtrar por categoria" hx-get="{% url 'transactions:transactions_view' %}" hx-trigger="change" hx-include="#contextForm" {% nav_filtro %}>
+                    <select name="filter_category" aria-label="Filtrar por categoria" data-filter-form="contextForm" data-filter-param="filter_category">
                         <option value="">Todas</option>
                         {% for c in available_categories %}<option value="{{ c }}" {% if c == filter_category %}selected{% endif %}>{{ c }}</option>{% endfor %}
                     </select>
                 </th>
                 <th colspan="{{ filter_actions_colspan }}" data-ui="filter-clear-header">
-                    {% comment %}
-                    Limpa so os filtros da tabela e o recorte vindo do
-                    dashboard, preservando periodo, modo e o recorte de
-                    titular/instituicao/conta escolhido no cabecalho. Endereco
-                    explicito em vez de `hx-include`: o que este botao faz e
-                    DESCARTAR campos, e `hx-include` so sabe incluir.
-                    {% endcomment %}
-                    <a href="{% url 'transactions:transactions_view' %}?period={{ selected_period }}&amp;mode={{ view_mode }}{% if current_owner_id %}&amp;owner_id={{ current_owner_id }}{% endif %}{% if current_institution_id %}&amp;institution_id={{ current_institution_id }}{% endif %}{% if current_account_id %}&amp;account_id={{ current_account_id }}{% endif %}"
-                       class="btn btn-ghost btn-sm" title="Limpar filtros"
-                       hx-boost="true" {% nav_filtro %}>{% icon 'x' %}<span>Limpar</span></a>
+                    <button type="button" class="btn btn-ghost btn-sm" data-clear-filters="contextForm" data-clear-params="filter_date,filter_type,filter_category,operation_id,entry_id" title="Limpar filtros">{% icon 'x' %}<span>Limpar</span></button>
                 </th>
             </tr>
         </thead>

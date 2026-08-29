@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static money_filters icons sharedauth_tags navegacao %}
+{% load static money_filters icons sharedauth_tags %}
 {% block title %}Lançamentos{% endblock %}
 
 {% block styles %}
@@ -8,20 +8,10 @@
 
 {% block page_header %}
 <div class="top-filter-card">
-    {% comment %}
-    Os filtros da tabela (`[data-table-filter]`, em _table_body.html) ficam fora
-    deste formulario, no cabecalho da propria tabela. `hx-include` os traz junto
-    -- sem isso, mudar o titular aqui perderia o filtro de tipo ou de categoria
-    que a pessoa tinha escolhido la. Eram tres `<input type="hidden">` copiando
-    esses valores; agora o `<select>` de la e a unica fonte da verdade, e nao ha
-    copia para sair de sincronia.
-    {% endcomment %}
-    <form id="contextForm" method="get"
-          action="{% url 'transactions:transactions_view' %}"
-          hx-get="{% url 'transactions:transactions_view' %}"
-          hx-trigger="change"
-          hx-include="[data-table-filter]"
-          {% nav_filtro %}>
+    <form id="contextForm" method="get" class="top-filter-row" data-auto-submit="true">
+        <input type="hidden" name="filter_type" value="{{ filter_type }}">
+        <input type="hidden" name="filter_date" value="{{ filter_date }}">
+        <input type="hidden" name="filter_category" value="{{ filter_category }}">
         {% if operation_id %}<input type="hidden" name="operation_id" value="{{ operation_id }}">{% endif %}
         {% if entry_id %}<input type="hidden" name="entry_id" value="{{ entry_id }}">{% endif %}
         {% if dashboard_drilldown %}<input type="hidden" name="dashboard_drilldown" value="1">{% endif %}
@@ -66,7 +56,7 @@
             </select>
         </label>
         <div class="top-filter-actions">
-            <a href="{% url 'transactions:transactions_view' %}?period={{ current_period }}&amp;mode=a_vencer" class="btn btn-ghost btn-sm" title="Limpar filtros" hx-boost="true" {% nav_filtro %}>{% icon 'x' %}<span>Limpar</span></a>
+            <a href="{% url 'transactions:transactions_view' %}?period={{ current_period }}&amp;mode=a_vencer" class="btn btn-ghost btn-sm" title="Limpar filtros" data-ajax-nav>{% icon 'x' %}<span>Limpar</span></a>
             {% if can_create_transactions %}<button type="button" class="btn btn-primary btn-sm" data-transaction-action="toggle-entry-form" title="Novo lançamento">{% icon 'plus' %}<span>Incluir</span></button>{% endif %}
         </div>
     </form>
