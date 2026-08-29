@@ -30,14 +30,6 @@
 
     {% block styles %}{% endblock %}
 
-    {% comment %}
-    Quantas linhas cabem numa tabela antes de a rolagem comecar e preferencia
-    por usuario (5 a 200), entao nao cabe numa folha estatica. Vem como folha
-    de estilo de verdade, servida desta origem: `style-src 'self'` ja a
-    autoriza, sem `<style>` embutido e sem nonce. Quem calcula a altura a
-    partir dela e `.auto-table-scroll-wrapper`, em `core/application.css`.
-    {% endcomment %}
-    <link rel="stylesheet" href="{% url 'core:preferencias_css' %}">
 </head>
 <body data-table-scroll-rows="{{ table_scroll_rows|default:15 }}">
     <div id="ajaxLoadingBar" aria-hidden="true"></div>

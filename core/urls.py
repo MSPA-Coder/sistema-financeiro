@@ -7,9 +7,6 @@ from . import views
 app_name = "core"
 
 urlpatterns = [
-    # Preferencias visuais como folha de estilo de verdade -- ver o docstring
-    # da view para por que nao e um `<style>` no `base.html`.
-    path("preferencias.css", views.preferencias_css, name="preferencias_css"),
     path("permissions/", views.permissions_view, name="permissions"),
 
     path("settings/", views.settings_home_view, name="settings_home"),
