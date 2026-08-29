@@ -55,14 +55,19 @@ def test_permissions_policy_restringe_dispositivos(client, banco_sondavel):
         assert recurso in politica
 
 
-def test_csp_libera_data_uri_so_para_imagem(client, banco_sondavel):
-    # A folga existe por um motivo so: o favicon do base.html e um SVG
-    # embutido no proprio `<link rel="icon">`. Fontes nao precisam de `data:`:
-    # o projeto nao tem `@font-face` nem arquivo de fonte.
+def test_csp_nao_libera_data_uri_para_nada(client, banco_sondavel):
+    """A politica e a fechada da biblioteca, sem excecao nenhuma.
+
+    A folga de `img-src ... data:` existia por um motivo unico -- o favicon
+    era um SVG embutido no proprio `<link rel="icon">`. Ele virou
+    `static/favicon.svg` e a folga saiu junto. Este teste passa a guardar a
+    ausencia: se `data:` reaparecer na politica, alguem reabriu a excecao e
+    precisa justificar por que.
+    """
     csp = client.get(ROTA).headers.get("Content-Security-Policy", "")
-    assert "img-src 'self' data:" in csp
+    assert "img-src 'self';" in csp
     assert "font-src 'self';" in csp
-    assert csp.count("data:") == 1
+    assert "data:" not in csp
 
 
 @pytest.mark.parametrize(

@@ -146,17 +146,9 @@ function _initTransactionActions(root) {
 }
 
 function _initTransactionEditToggles(root) {
-    (root || document).querySelectorAll('[data-toggle-edit]').forEach(function (button) {
-        if (button._transactionEditBound || button._toggleBound) return;
-        button._transactionEditBound = true;
-        button.addEventListener('click', function () {
-            var row = document.getElementById(button.dataset.toggleEdit);
-            if (!row) return;
-            var force = button.dataset.toggleForce;
-            var show = force === undefined ? row.style.display !== 'table-row' : force === 'true';
-            row.style.display = show ? 'table-row' : 'none';
-        });
-    });
+    /* O handler delegado de core/application.js cobre os botões inseridos
+       pela navegação AJAX antes mesmo de este script de página ser recarregado. */
+    void root;
 }
 
 /* Editar parcelado/recorrente com escopo "Este registro e os próximos" apaga

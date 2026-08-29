@@ -1,0 +1,101 @@
+{% load money_filters %}
+{% load icons %}
+<section class="annual-planning-report" aria-labelledby="annual-planning-title">
+    <div class="section-header annual-planning-heading">
+        <div class="annual-planning-title-group">
+            <h2 id="annual-planning-title">Planejamento anual</h2>
+            <span class="annual-reference-label">Mês de referência · {{ report.reference_month_label }}</span>
+            {% if report.subtitle %}<p class="text-muted">{{ report.subtitle }}</p>{% endif %}
+        </div>
+        <div class="annual-heading-actions">
+            <span class="annual-layout-badge">{% if layout == 'rolling' %}Janela móvel{% else %}Ano calendário{% endif %}</span>
+            <details class="annual-filter-details"{% if filter_panel_open %} open{% endif %}>
+                <summary class="annual-filter-button" title="Abrir filtros" aria-label="Abrir filtros">{% icon 'filter' %}<span>Filtros</span></summary>
+                <div class="top-filter-card annual-planning-filter-card">
+                    <form method="get" class="top-filter-row annual-planning-filter-row" data-auto-submit="true">
+                        <input type="hidden" name="filters_open" value="1">
+                        <label class="top-filter-field annual-reference-field">Mês de referência<input type="month" name="reference_month" value="{{ reference_month }}" {% if system_start_date %}min="{{ system_start_date|date:'Y-m' }}"{% endif %}></label>
+                        <label class="top-filter-field annual-layout-field">Layout<select name="layout" aria-label="Layout do planejamento"><option value="calendar"{% if layout == 'calendar' %} selected{% endif %}>Ano calendário</option><option value="rolling"{% if layout == 'rolling' %} selected{% endif %}>Janela móvel (13 meses)</option></select></label>
+                        <label class="top-filter-field annual-status-field">Status<select name="mode">{% for mode_value, mode_label in status_options %}<option value="{{ mode_value }}"{% if mode_value == view_mode %} selected{% endif %}>{{ mode_label }}</option>{% endfor %}</select></label>
+                        <label class="top-filter-field annual-multi-field">Titulares<select name="owner_ids" multiple size="3" aria-describedby="annual-filter-help">{% for owner in owners %}<option value="{{ owner.id }}"{% if owner.id in selected_owner_ids %} selected{% endif %}>{{ owner.name }}</option>{% endfor %}</select></label>
+                        <label class="top-filter-field annual-multi-field">Contas<select name="account_ids" multiple size="3" aria-describedby="annual-filter-help">{% for account in accounts %}<option value="{{ account.id }}"{% if account.id in selected_account_ids %} selected{% endif %}>{{ account.owner.name }} · {{ account.account_name }}</option>{% endfor %}</select></label>
+                        <label class="annual-description-toggle"><input type="checkbox" name="show_descriptions" value="1"{% if show_descriptions %} checked{% endif %}><span>Mostrar descrições</span></label>
+                        <div class="top-filter-actions"><a href="{% url 'reports:annual_planning_view' %}?layout=calendar{% if default_reference_month %}&amp;reference_month={{ default_reference_month }}{% endif %}" class="btn btn-ghost btn-sm" data-ajax-nav>{% icon 'x' %}<span>Limpar</span></a></div>
+                    </form>
+                    <p id="annual-filter-help" class="annual-filter-help">Use Ctrl (Windows) ou ⌘ (macOS) para selecionar mais de um titular ou conta.</p>
+                </div>
+            </details>
+        </div>
+    </div>
+
+    <div class="annual-summary-wrap">
+        <table class="annual-summary-table">
+            <caption class="sr-only">Totais do planejamento por titular e mês</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Resumo</th>
+                    {% for owner in report.owner_columns %}
+                    <th class="annual-value-column annual-owner-column" scope="col">{{ owner.name }}</th>
+                    {% endfor %}
+                    {% for month in report.months %}
+                    <th class="annual-value-column{% if month.is_current %} is-current{% endif %}" scope="col">{{ month.label }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in report.summary_rows %}
+                <tr class="annual-summary-row annual-summary-row-{{ forloop.counter }}">
+                    <th scope="row">{{ row.label }}</th>
+                    {% for value in row.owner_values %}
+                    <td class="annual-value-column annual-owner-column {{ value|amount_class }}">{{ value|money_signed }}</td>
+                    {% endfor %}
+                    {% for month in row.months %}
+                    <td class="annual-value-column{% if month.is_current %} is-current{% endif %} {{ month.value|amount_class }}">{{ month.value|money_signed }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="annual-planning-table-wrap table-scroll-wrap" data-annual-planning-table>
+        <table class="annual-planning-table">
+            <caption class="sr-only">Planejamento por categoria, titulares e mês</caption>
+            <tbody>
+                {% for row in report.rows %}
+                <tr class="annual-row annual-row-{{ row.kind|default:'category' }} annual-level-{{ row.level|default:0 }}"{% if row.kind == 'category' %} aria-level="{{ row.level|add:'1' }}"{% endif %}>
+                    <th class="annual-category-column" scope="row">
+                        {% if row.kind == 'description' %}
+                        <span class="annual-description-inline">{{ row.description }}</span>
+                        {% else %}
+                        <span class="annual-category-label">{{ row.label }}</span>
+                        {% endif %}
+                    </th>
+                    {% for value in row.owner_values %}
+                    <td class="annual-value-column annual-owner-column {{ value|amount_class }}">{{ value|money_signed }}</td>
+                    {% empty %}
+                    {% for owner in report.owner_columns %}<td class="annual-value-column annual-owner-column text-muted">—</td>{% endfor %}
+                    {% endfor %}
+                    {% for month in row.months %}
+                    <td class="annual-value-column{% if month.is_current %} is-current{% endif %} {{ month.value|amount_class }}">{{ month.value|money_signed }}</td>
+                    {% empty %}
+                    {% for month in report.months %}<td class="annual-value-column text-muted">—</td>{% endfor %}
+                    {% endfor %}
+                </tr>
+                {% empty %}
+                <tr><td class="annual-empty" colspan="20">Nenhum dado encontrado para os filtros selecionados.</td></tr>
+                {% endfor %}
+            </tbody>
+            {% if report.totals %}
+            <tfoot>
+                <tr class="annual-total-row">
+                    <th scope="row">TOTAL</th>
+                    {% for value in report.totals.owner_values %}<td class="annual-value-column annual-owner-column {{ value|amount_class }}">{{ value|money_signed }}</td>{% endfor %}
+                    {% for month in report.totals.months %}<td class="annual-value-column{% if month.is_current %} is-current{% endif %} {{ month.value|amount_class }}">{{ month.value|money_signed }}</td>{% endfor %}
+                </tr>
+            </tfoot>
+            {% endif %}
+        </table>
+    </div>
+
+</section>

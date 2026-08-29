@@ -89,6 +89,13 @@ def _build_menu_items() -> list[MenuItem]:
                 MenuItem("Projeções", "/reports/projections/", "\U0001F4C9", "/reports/projections/"),
                 MenuItem("Posição por conta", "/reports/account-position/", "\U0001F9EE", "/reports/account-position/"),
                 MenuItem(
+                    "Planejamento anual",
+                    "/reports/annual-planning/",
+                    "\U0001F4C5",
+                    "/reports/annual-planning/",
+                    required_permission="reports.annual_planning.view",
+                ),
+                MenuItem(
                     "Controle gerencial",
                     "/management/",
                     "\U0001F5C2",

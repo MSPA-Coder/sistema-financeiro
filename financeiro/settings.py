@@ -8,37 +8,30 @@ subir, e `DEBUG` so liga quando pedido explicitamente.
 import os
 from pathlib import Path
 
+from sharedauth.secrets import resolver_segredo
 from sharedauth.ui import CAMINHO_ESTATICO as SHAREDAUTH_UI
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 def _read_required_secret(name: str) -> str:
-    """Lê segredo por arquivo no Compose e só aceita ambiente no modo local.
+    """Le segredo por arquivo no Compose e so aceita ambiente no modo local.
 
-    `REQUIRE_FILE_SECRETS=true` é o contrato do Compose operacional. A queda
-    para variável direta é mantida somente para comandos locais explícitos, que
-    não passam por esse contrato.
+    `REQUIRE_FILE_SECRETS=true` e o contrato do Compose operacional. A queda
+    para variavel direta e mantida somente para comandos locais explicitos, que
+    nao passam por esse contrato.
+
+    A mecanica vem de `sharedauth.secrets`, compartilhada com os tres apps
+    Flask; o que continua sendo decisao deste projeto e quando a forma direta e
+    aceitavel. `SegredoInvalidoError` e um `RuntimeError`, entao quem ja tratava
+    a falha por esse tipo continua tratando.
     """
-    path = os.environ.get(f"{name}_FILE")
     require_file = os.environ.get("REQUIRE_FILE_SECRETS", "false").lower() == "true"
-
-    if path:
-        try:
-            value = Path(path).read_text(encoding="utf-8").strip()
-        except OSError as exc:
-            raise RuntimeError(f"Arquivo de segredo obrigatorio para {name} nao pode ser lido.") from exc
-        if value:
-            return value
-        raise RuntimeError(f"Arquivo de segredo obrigatorio para {name} esta vazio.")
-
-    if require_file:
-        raise RuntimeError(f"Arquivo de segredo obrigatorio para {name} nao foi configurado.")
-
-    value = os.environ.get(name, "")
-    if value:
-        return value
-    raise RuntimeError(f"{name} e obrigatoria. Defina a variavel ou {name}_FILE.")
+    return resolver_segredo(
+        name,
+        aceitar_variavel=not require_file,
+        obrigatorio=True,
+    )
 
 
 # SECURITY WARNING: keep the secret key used in production secret!

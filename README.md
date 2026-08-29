@@ -60,6 +60,8 @@ volumes persistentes do banco e dos comprovantes.
   recorrências.
 - [Desenvolvimento e validação](docs/development.md): ambiente, comandos e
   critérios de verificação.
+- [Relatório de planejamento anual](docs/annual-planning-report.md): contrato
+  de contexto da tela analítica por titular.
 - [Operação, dados e backup](docs/operations.md): configuração, persistência,
   implantação, backup e restauração.
 - `AGENTS.md`: regras operacionais para quem mantém o repositório.

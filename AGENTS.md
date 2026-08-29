@@ -36,8 +36,12 @@ docker compose --env-file .env.docker -f compose.yaml -f compose.dev.yaml up --b
 docker compose --env-file .env.docker -f compose.yaml run --rm web python manage.py check
 
 # Ruff e pytest.
-docker compose --env-file .env.docker -f compose.yaml --profile quality run --rm quality
+docker compose --env-file .env.docker -f compose.yaml --profile quality run --build --rm quality
 ```
+
+`--build` faz parte do comando: o serviço `quality` não monta o código do
+host e `docker compose run` só reconstrói quando a imagem não existe. Sem
+ele, a validação roda a versão anterior do código e passa em verde.
 
 `web` é o único serviço de aplicação. `migrate` aplica migrations e executa
 `collectstatic` antes de `web`; `quality` executa as verificações. Não há

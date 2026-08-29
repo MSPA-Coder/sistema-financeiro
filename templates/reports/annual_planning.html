@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% load static %}
+{% load icons %}
+
+{% block title %}Relatórios - Planejamento anual{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/annual-planning.css' %}">
+{% endblock %}
+
+{% block content %}
+<div id="report-content">
+    {% include "reports/partials/annual_planning_content.html" %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/annual-planning.js' %}"></script>
+{% endblock %}
