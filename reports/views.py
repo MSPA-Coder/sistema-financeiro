@@ -32,6 +32,7 @@ def _parse_int(value: str | None) -> int | None:
 
 
 @login_required
+@permission_required("projections.view")
 def projections_view(request):
     today = date.today()
     view_mode = normalize_view_mode(request.GET.get("mode", VIEW_PROJECTED))
@@ -112,6 +113,7 @@ def upcoming_movements_view(request):
 
 
 @login_required
+@permission_required("reports.account_position.view")
 def account_position_view(request):
     today = date.today()
     view_mode = normalize_view_mode(request.GET.get("mode"), default=VIEW_REALIZED)

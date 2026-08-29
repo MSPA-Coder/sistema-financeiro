@@ -20,7 +20,7 @@ class MenuItem:
 
 def _build_menu_items() -> list[MenuItem]:
     return [
-        MenuItem("Dashboard", "/dashboard/", "\U0001F4CA", "/dashboard/"),
+        MenuItem("Dashboard", "/dashboard/", "\U0001F4CA", "/dashboard/", required_permission="dashboard.view"),
         MenuItem(
             "Movimentação",
             "/transactions/",
@@ -86,8 +86,8 @@ def _build_menu_items() -> list[MenuItem]:
             "/reports/",
             children=(
                 MenuItem("Próximos movimentos", "/reports/upcoming-movements/", "\U0001F4CC", "/reports/upcoming-movements/"),
-                MenuItem("Projeções", "/reports/projections/", "\U0001F4C9", "/reports/projections/"),
-                MenuItem("Posição por conta", "/reports/account-position/", "\U0001F9EE", "/reports/account-position/"),
+                MenuItem("Projeções", "/reports/projections/", "\U0001F4C9", "/reports/projections/", required_permission="projections.view"),
+                MenuItem("Posição por conta", "/reports/account-position/", "\U0001F9EE", "/reports/account-position/", required_permission="reports.account_position.view"),
                 MenuItem(
                     "Planejamento anual",
                     "/reports/annual-planning/",

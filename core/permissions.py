@@ -39,6 +39,13 @@ def permission_required(perm: str, fallback: str = "dashboard:dashboard") -> Cal
                 return redirect(fallback)
             return view_func(request, *args, **kwargs)
 
+        # A permissao exigida fica legivel de fora. Sem isto, "esta rota checa
+        # permissao?" so se responde lendo o decorator no fonte -- e foi
+        # exatamente assim que quatro telas ficaram com chave no catalogo e
+        # nenhuma verificacao, por tempo indeterminado. `tests/
+        # test_permissoes_por_rota.py` varre a URLconf lendo este atributo.
+        wrapper.permissao_exigida = perm
+
         return wrapper
 
     return decorator
