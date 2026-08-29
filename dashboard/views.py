@@ -15,6 +15,7 @@ from django.urls import reverse
 from accounts.models import AccountOwner
 from accounts.services import accessible_owner_ids, hidden_account_ids
 from core.domain.finance import ENTRY_TYPE_EXPENSE, ENTRY_TYPE_INCOME, STATUS_REALIZED
+from core.htmx import quer_fragmento
 from core.services import system_start_date
 from transactions.models import CashFlowEntry
 
@@ -305,7 +306,7 @@ def dashboard_view(request):
 		"chart_data": chart_data,
 	}
 
-	if request.headers.get("HX-Request"):
+	if quer_fragmento(request):
 		return render(request, "dashboard/_content.html", context)
 	return render(request, "dashboard/index.html", context)
 

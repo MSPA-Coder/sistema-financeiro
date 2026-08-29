@@ -15,6 +15,7 @@ from core.domain.finance import (
     VIEW_REALIZED,
     normalize_view_mode,
 )
+from core.htmx import quer_fragmento
 from core.permissions import permission_required
 from core.services import system_start_date
 
@@ -44,7 +45,7 @@ def projections_view(request):
     )
     default_start_month, default_end_month = services.resolve_projection_month_range(None, None, today=today)
 
-    ctx = services.selected_context(request.user, request.GET)
+    ctx = services.selected_context(request.user, request.GET, request=request)
     options = services.context_options(request.user, ctx, hidden_scope="projections")
     month_data = services.projection_months_between(options.account_ids, start_month, end_month, view_mode)
 
@@ -68,7 +69,7 @@ def projections_view(request):
         "system_start_date": system_start_date(),
     }
 
-    if request.headers.get("HX-Request"):
+    if quer_fragmento(request):
         return render(request, "reports/partials/projections_content.html", context)
     return render(request, "reports/projections.html", context)
 
@@ -82,7 +83,7 @@ def upcoming_movements_view(request):
         end_date = start_date
 
     view_mode = services.normalize_upcoming_movement_mode(request.GET.get("mode", VIEW_PROJECTED))
-    ctx = services.selected_context(request.user, request.GET)
+    ctx = services.selected_context(request.user, request.GET, request=request)
     options = services.context_options(request.user, ctx)
     report = services.upcoming_movements_report(options.account_ids, start_date, end_date, view_mode)
 
@@ -105,7 +106,7 @@ def upcoming_movements_view(request):
         "system_start_date": system_start_date(),
     }
 
-    if request.headers.get("HX-Request"):
+    if quer_fragmento(request):
         return render(request, "reports/partials/upcoming_movements_content.html", context)
     return render(request, "reports/upcoming_movements.html", context)
 
@@ -124,7 +125,7 @@ def account_position_view(request):
     selected_period = services.month_input_value(selected_month)
     today_period = services.month_input_value(date(today.year, today.month, 1))
 
-    selected_ctx = services.selected_context(request.user, request.GET)
+    selected_ctx = services.selected_context(request.user, request.GET, request=request)
     ctx = services.FinancialContext(owner_id=selected_ctx.owner_id, institution_id=selected_ctx.institution_id, account_id=None)
     options = services.context_options(request.user, ctx)
     rows = services.account_cash_report_rows(options.account_ids, selected_month, selected_month, view_mode)
@@ -146,7 +147,7 @@ def account_position_view(request):
         "system_start_date": system_start_date(),
     }
 
-    if request.headers.get("HX-Request"):
+    if quer_fragmento(request):
         return render(request, "reports/partials/account_position_content.html", context)
     return render(request, "reports/account_position.html", context)
 
@@ -213,6 +214,6 @@ def annual_planning_view(request):
         "show_descriptions": show_descriptions,
         "system_start_date": system_start_date(),
     }
-    if request.headers.get("HX-Request"):
+    if quer_fragmento(request):
         return render(request, "reports/partials/annual_planning_content.html", context)
     return render(request, "reports/annual_planning.html", context)

@@ -8,6 +8,7 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
 
+from core.htmx import quer_fragmento
 from core.permissions import permission_required
 from core.services import system_start_date
 from reports import services as reports_services
@@ -31,7 +32,7 @@ def management_view(request):
     period_value = request.GET.get("month") or reports_services.month_input_value(date(today.year, today.month, 1))
     period_month = reports_services.parse_month_input(period_value) or date(today.year, today.month, 1)
 
-    ctx = reports_services.selected_context(request.user, request.GET)
+    ctx = reports_services.selected_context(request.user, request.GET, request=request)
     options = reports_services.context_options(request.user, ctx)
 
     budget_rows = services.budget_rows_for_period(
@@ -56,7 +57,7 @@ def management_view(request):
         "recent_entries": recent_entries,
         "can_manage": request.user.has_perm("management.manage"),
     }
-    if request.headers.get("HX-Request"):
+    if quer_fragmento(request):
         return render(request, "management/partials/management_content.html", context)
     return render(request, "management/index.html", context)
 

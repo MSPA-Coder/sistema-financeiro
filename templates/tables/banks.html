@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static navegacao %}
 {% load icons %}
 
 {% block title %}Cadastros • Instituições{% endblock %}
@@ -36,14 +36,11 @@
     </form>
 
     <div class="table-container" data-ui="table-plain-flex">
-        <form id="institutionsFilterForm" method="get">
-            {% if current_filter_type %}<input type="hidden" name="filter_type" value="{{ current_filter_type }}">{% endif %}
-        </form>
         <table>
             <thead>
                 <tr>
                     <th>
-                        <select aria-label="Filtrar por tipo" data-filter="true" data-filter-form="institutionsFilterForm" data-filter-param="filter_type">
+                        <select data-table-filter name="filter_type" aria-label="Filtrar por tipo" data-filter="true" hx-get="{{ request.path }}" hx-trigger="change" hx-include="[data-table-filter]" {% nav_filtro %}>
                             <option value="">Todos os tipos</option>
                             <option value="Banco" {% if current_filter_type == 'Banco' %}selected{% endif %}>Banco</option>
                             <option value="Corretora" {% if current_filter_type == 'Corretora' %}selected{% endif %}>Corretora</option>

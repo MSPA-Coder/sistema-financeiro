@@ -7,6 +7,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from accounts.services import accessible_owner_ids
+from core.htmx import quer_fragmento
 from core.permissions import permission_required
 
 from .models import FinancialAccount, FinancialInstitution
@@ -33,7 +34,7 @@ def institutions_view(request):
         "institutions": list_institutions(current_filter_type or None),
         "current_filter_type": current_filter_type,
     }
-    if request.headers.get('HX-Request'):
+    if quer_fragmento(request):
         return render(request, 'tables/_institutions_table.html', context)
     return render(request, 'tables/banks.html', context)
 
@@ -103,7 +104,7 @@ def accounts_view(request):
         "current_filter_owner_id": int(current_filter_owner_id) if current_filter_owner_id else None,
         "current_filter_institution_id": int(current_filter_institution_id) if current_filter_institution_id else None,
     }
-    if request.headers.get('HX-Request'):
+    if quer_fragmento(request):
         return render(request, 'tables/_accounts_table.html', context)
     return render(request, 'tables/accounts.html', context)
 
@@ -169,7 +170,7 @@ def delete_account_view(request, account_id):
 
 
 def _respond(request, redirect_name):
-    if request.headers.get('HX-Request'):
+    if quer_fragmento(request):
         response = HttpResponse(status=200)
         response.headers['HX-Redirect'] = reverse(redirect_name)
         return response

@@ -25,6 +25,7 @@ from accounts.services import (
     list_owners,
     update_owner,
 )
+from core.htmx import quer_fragmento
 from core.permissions import permission_required
 
 
@@ -38,7 +39,7 @@ def _owners_context():
 def owners_view(request):
     """Lista e cadastro de titulares, com suporte a HTMX."""
     context = _owners_context()
-    if request.headers.get('HX-Request'):
+    if quer_fragmento(request):
         return render(request, 'tables/_owners_table.html', context)
     return render(request, 'tables/owners.html', context)
 
@@ -85,7 +86,7 @@ def delete_owner_view(request, owner_id):
 
 
 def _respond(request):
-    if request.headers.get('HX-Request'):
+    if quer_fragmento(request):
         response = HttpResponse(status=200)
         response.headers['HX-Redirect'] = reverse('accounts:owners_view')
         return response

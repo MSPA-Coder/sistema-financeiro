@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Dashboard • Fluxo de Caixa{% endblock %}
-{% load static icons %}
+{% load static icons navegacao %}
 
 {% block styles %}
 <link rel="stylesheet" href="{% static 'css/pages/dashboard.css' %}">
@@ -8,7 +8,7 @@
 
 {% block page_header %}
 <div class="top-filter-card">
-    <form method="get" class="top-filter-row" data-auto-submit="true">
+    <form method="get" class="top-filter-row" hx-get="{{ request.path }}" hx-trigger="change" {% nav_filtro %}>
         <label class="top-filter-field compact">
             Período
             <input type="month" name="period" value="{{ selected_period }}" {% if system_start_date %}min="{{ system_start_date|date:'Y-m' }}"{% endif %}>
@@ -49,7 +49,7 @@
             </select>
         </label>
         <div class="top-filter-actions">
-            <a href="{% url 'dashboard:dashboard' %}?period={{ today_period }}&mode=todos" class="btn btn-ghost btn-sm" data-ajax-nav>{% icon 'x' %}<span>Limpar</span></a>
+            <a href="{% url 'dashboard:dashboard' %}?period={{ today_period }}&mode=todos" class="btn btn-ghost btn-sm" hx-boost="true" {% nav_filtro %}>{% icon 'x' %}<span>Limpar</span></a>
         </div>
     </form>
 </div>
