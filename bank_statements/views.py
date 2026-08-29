@@ -7,6 +7,7 @@ from django.http import FileResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
 
+from core.htmx import quer_fragmento
 from core.permissions import permission_required
 
 from . import reconciliation
@@ -54,7 +55,7 @@ def create_import_view(request):
     except ValueError as exc:
         messages.error(request, str(exc))
 
-    if request.headers.get('HX-Request'):
+    if quer_fragmento(request):
         context = {"imports": statement_imports_for_user(request.user)}
         return render(request, 'banking/_import_table.html', context)
     return redirect('bank_statements:imports_view')
@@ -110,7 +111,7 @@ def reconcile_view(request):
     except ValueError as exc:
         messages.error(request, str(exc))
 
-    if request.headers.get('HX-Request'):
+    if quer_fragmento(request):
         return render(request, 'banking/_reconciliation_tables.html', _reconciliation_context(request))
     return redirect('bank_statements:reconciliation_view')
 
@@ -129,7 +130,7 @@ def create_entry_from_line_view(request):
     except ValueError as exc:
         messages.error(request, str(exc))
 
-    if request.headers.get('HX-Request'):
+    if quer_fragmento(request):
         return render(request, 'banking/_reconciliation_tables.html', _reconciliation_context(request))
     return redirect('bank_statements:reconciliation_view')
 
@@ -164,7 +165,7 @@ def bulk_action_lines_view(request):
     else:
         messages.warning(request, "Ação em lote inválida.")
 
-    if request.headers.get('HX-Request'):
+    if quer_fragmento(request):
         return render(request, 'banking/_reconciliation_tables.html', _reconciliation_context(request))
     return redirect('bank_statements:reconciliation_view')
 
@@ -185,7 +186,7 @@ def undo_reconciliation_view(request):
     except ValueError as exc:
         messages.error(request, str(exc))
 
-    if request.headers.get('HX-Request'):
+    if quer_fragmento(request):
         return render(request, 'banking/_reconciliation_tables.html', _reconciliation_context(request))
     return redirect('bank_statements:reconciliation_view')
 
@@ -223,7 +224,7 @@ def create_attachment_view(request):
     except ValueError as exc:
         messages.error(request, str(exc))
 
-    if request.headers.get('HX-Request'):
+    if quer_fragmento(request):
         return render(request, 'banking/_attachments_table.html', _attachments_context(request))
     return redirect('bank_statements:attachments_view')
 
@@ -261,6 +262,6 @@ def ignore_line_view(request):
     except ValueError as exc:
         messages.error(request, str(exc))
 
-    if request.headers.get('HX-Request'):
+    if quer_fragmento(request):
         return render(request, 'banking/_reconciliation_tables.html', _reconciliation_context(request))
     return redirect('bank_statements:reconciliation_view')

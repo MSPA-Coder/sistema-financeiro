@@ -177,13 +177,34 @@ class ContextOptions:
     account_ids: list[int]
 
 
-def selected_context(user, params) -> FinancialContext:
+def selected_context(user, params, *, request=None) -> FinancialContext:
+    """Contexto financeiro pedido, já saneado.
+
+    Filtro incoerente é descartado em silêncio -- escolher um titular que não é
+    dono da conta selecionada anula a conta, e a tela volta correta. O que NÃO
+    volta sozinho é o endereço na barra: ele continua com a conta que deixou de
+    valer, e um F5 ou um favorito reaplicariam o filtro que o servidor acabou de
+    recusar.
+
+    Por isso, quando recebe `request`, esta função anota ali o que descartou.
+    `core.navegacao.UrlCanonicaMiddleware` lê essa anotação e devolve o endereço
+    já sem os parâmetros mortos. É o servidor corrigindo a barra na mesma
+    resposta -- sem segunda requisição e sem o cliente tendo que adivinhar o que
+    aconteceu aqui dentro.
+    """
+
     def _int(name: str) -> int | None:
         raw = params.get(name)
         try:
             return int(raw) if raw else None
         except (TypeError, ValueError):
             return None
+
+    descartados: set[str] = set()
+
+    def _descartar(nome: str) -> None:
+        if params.get(nome):
+            descartados.add(nome)
 
     owner_id = _int("owner_id")
     institution_id = _int("institution_id")
@@ -192,6 +213,7 @@ def selected_context(user, params) -> FinancialContext:
     allowed_owner_ids = set(accessible_owner_ids(user))
     if owner_id is not None and owner_id not in allowed_owner_ids:
         owner_id = None
+        _descartar("owner_id")
 
     if account_id is not None:
         account = FinancialAccount.objects.filter(pk=account_id, owner_id__in=allowed_owner_ids).first()
@@ -202,6 +224,11 @@ def selected_context(user, params) -> FinancialContext:
                 account_id = None
             if institution_id and account.institution_id != institution_id:
                 account_id = None
+        if account_id is None:
+            _descartar("account_id")
+
+    if request is not None and descartados:
+        request.filtros_descartados = descartados
 
     return FinancialContext(owner_id=owner_id, institution_id=institution_id, account_id=account_id)
 

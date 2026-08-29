@@ -284,79 +284,47 @@
 
     /* O servidor às vezes CORRIGE um filtro em silêncio: escolher um titular
        que não é o dono da conta selecionada faz `selected_context` anular a
-       conta (ver `reports/services.py`). O conteúdo e o cabeçalho já voltam
-       coerentes na mesma resposta — mas o endereço na barra ainda é o que foi
-       pedido, com a conta que não vale mais.
+       conta. O conteúdo e o cabeçalho já voltam coerentes na mesma resposta, e
+       o endereço também -- `selected_context` anota o que descartou e
+       `core/navegacao.py` devolve a barra já sem aquele parâmetro.
 
-       Ninguém no cliente tem como prever essa correção; o único jeito de saber
-       é comparar o que o formulário do cabeçalho passou a dizer com o que a
-       barra diz. Quando divergem, refaz a busca com os valores corrigidos —
-       no máximo duas vezes, para que um servidor que insista em corrigir não
-       gere laço. */
-    var MAX_RECONCILIACOES = 2;
-    var _reconciliacoes = 0;
+       Isto já foi ~40 linhas aqui, comparando o formulário devolvido com a
+       barra e refazendo a busca quando divergiam. Além de custar uma segunda
+       requisição, era uma corrida: no instante em que `htmx:afterSwap` do
+       `#appMain` dispara, o cabeçalho ainda não foi trocado, então a comparação
+       lia o formulário ANTIGO e concluía que estava tudo certo. Quem sabe o que
+       foi descartado é o servidor, e é lá que a correção mora. */
 
-    function _parametrosDoFormulario(form) {
-        var params = new URLSearchParams();
-        new FormData(form).forEach(function (valor, chave) {
-            if (valor !== '') params.append(chave, valor);
-        });
-        params.sort();
-        return params.toString();
-    }
+    /* `htmx:afterSwap` chega DUAS vezes por troca: o evento e disparado no
+       elemento e sobe ate o `document`, onde este listener esta. Sem a guarda
+       abaixo, `_initContentArea` rodaria em dobro (inofensivo, mas desperdicio)
+       e `app:contentLoaded` sairia em dobro (nao inofensivo: os tres
+       consumidores reconstroem grafico e calendario, e reconstruir duas vezes
+       pisca). `ev.detail.xhr` e a mesma instancia nas duas passagens e distinta
+       entre requisicoes -- e a chave certa para deduplicar. */
+    var _ultimaTroca = null;
 
-    function _parametrosDaBarra() {
-        var params = new URLSearchParams(window.location.search);
-        Array.from(params.keys()).forEach(function (chave) {
-            if (params.get(chave) === '') params.delete(chave);
-        });
-        params.sort();
-        return params.toString();
-    }
-
-    document.addEventListener('htmx:afterSwap', function (ev) {
-        var alvo = ev.detail && ev.detail.target;
-        if (!alvo || alvo.id !== 'appMain') return;
-
-        var form = document.getElementById('contextForm') ||
-            document.querySelector('#appPageHeader form[hx-get]');
-        if (!form) { _reconciliacoes = 0; return; }
-
-        if (_parametrosDoFormulario(form) === _parametrosDaBarra()) {
-            _reconciliacoes = 0;
-            return;
-        }
-        if (_reconciliacoes >= MAX_RECONCILIACOES) {
-            console.warn('[navegação] filtros não convergiram; parando');
-            _reconciliacoes = 0;
-            return;
-        }
-        _reconciliacoes += 1;
-        window.htmx.trigger(form, 'change');
-    });
-
-    /* Conteúdo recém-trocado precisa dos mesmos ajustes que a carga inicial
-       faz: indicador de filtro ativo, envoltório de rolagem das tabelas e
-       máscara de valores. `_initContentArea` é declaração de função, então já
-       existe quando este listener roda. */
     document.addEventListener('htmx:afterSwap', function (ev) {
         var alvo = (ev.detail && ev.detail.target) || ev.target;
+        var xhr = ev.detail && ev.detail.xhr;
+        if (xhr && xhr === _ultimaTroca) return;
+        _ultimaTroca = xhr;
+
         if (alvo && alvo.nodeType === Node.ELEMENT_NODE) _initContentArea(alvo);
         _updateTableOverflow();
+
+        var principal = document.getElementById('appMain');
+        if (!principal || alvo !== principal) return;
 
         /* `app:contentLoaded` era emitido pela navegacao propria e tem tres
            consumidores (dashboard, planejamento anual, lancamentos), cada um
            reconstruindo o que so ele sabe -- graficos, calendario, atalhos de
            linha. Continua sendo emitido daqui, um por troca de `#appMain`,
            para que esses tres nao precisem cada um descobrir o HTMX sozinho. */
-        var principal = document.getElementById('appMain');
-        if (principal && alvo === principal) {
-            document.dispatchEvent(new CustomEvent('app:contentLoaded', {
-                detail: { root: principal, url: window.location.href }
-            }));
-        }
+        document.dispatchEvent(new CustomEvent('app:contentLoaded', {
+            detail: { root: principal, url: window.location.href }
+        }));
     });
-
 
     /* sharedauth-ui.js só varre `[data-sa-avisos]` em dois gatilhos:
        `DOMContentLoaded` (carga cheia) e `htmx:afterSwap`. O bloco de

@@ -1520,7 +1520,7 @@ def _new_entry_defaults(get_params, today: date) -> dict[str, str]:
     }
 
 
-def build_transactions_view_context(user, get_params, session) -> dict:
+def build_transactions_view_context(user, get_params, session, *, request=None) -> dict:
     """Monta o contexto completo da tela Movimentação > Lançamentos.
 
     Resolve período/mês, `view_mode`, filtros por coluna, saldo corrente por
@@ -1559,7 +1559,9 @@ def build_transactions_view_context(user, get_params, session) -> dict:
         filter_date_raw = ""
         filter_date_parsed = None
 
-    ctx = report_services.selected_context(user, get_params)
+    # `request` chega só para que `selected_context` possa anotar nele o filtro
+    # que descartou; ver `core/navegacao.py`. Nada mais aqui o usa.
+    ctx = report_services.selected_context(user, get_params, request=request)
     options = report_services.context_options(user, ctx)
     account_ids = options.account_ids
 

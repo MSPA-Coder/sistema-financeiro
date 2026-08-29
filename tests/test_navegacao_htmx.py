@@ -232,3 +232,133 @@ def test_nenhum_template_ainda_depende_do_application_js() -> None:
     ]
 
     assert sobras == [], sobras
+
+# ---------------------------------------------------------------------------
+# Qual das duas formas a view devolve
+# ---------------------------------------------------------------------------
+#
+# Estes testes existem por causa de um defeito real: a primeira versao desta
+# migracao supos que as views devolviam a pagina inteira e usou
+# `hx-select="#appMain"` para recorta-la. Nao devolviam -- 26 ramos respondiam
+# fragmento a `HX-Request`, e a navegacao antiga so nao caia neles porque
+# mandava `X-Requested-With`, nao `HX-Request`. O resultado foi a tela ficar
+# vazia ao primeiro filtro. Nenhum teste pegou, porque nenhum descrevia esta
+# fronteira.
+
+
+def _pedido_htmx(alvo: str | None = None):
+    cabecalhos = {"HTTP_HX_REQUEST": "true"}
+    if alvo is not None:
+        cabecalhos["HTTP_HX_TARGET"] = alvo
+    return RequestFactory().get("/transactions/", **cabecalhos)
+
+
+def test_navegacao_por_filtro_recebe_a_tela_inteira() -> None:
+    """`hx-select="#appMain"` precisa de uma pagina que TENHA `#appMain`."""
+    from core.htmx import quer_fragmento
+
+    assert quer_fragmento(_pedido_htmx("appMain")) is False
+
+
+@pytest.mark.parametrize(
+    "alvo",
+    ["transactions-table-container", "reconciliation-results", "import-results",
+     "attachment-results", "alvo-que-ainda-nao-existe"],
+)
+def test_qualquer_outro_alvo_recebe_fragmento(alvo: str) -> None:
+    """Inclusive um alvo novo: quem quer fragmento nao precisa se cadastrar.
+
+    O caminho contrario -- listar os alvos de fragmento -- faria um alvo novo
+    receber a pagina inteira dentro de um contêiner pequeno, que e falha
+    silenciosa e confusa.
+    """
+    from core.htmx import quer_fragmento
+
+    assert quer_fragmento(_pedido_htmx(alvo)) is True
+
+
+def test_requisicao_sem_htmx_nunca_recebe_fragmento() -> None:
+    from core.htmx import quer_fragmento
+
+    assert quer_fragmento(RequestFactory().get("/transactions/")) is False
+
+
+def test_htmx_sem_alvo_declarado_recebe_fragmento() -> None:
+    """Sem `hx-target` o HTMX troca o proprio elemento -- nunca a tela."""
+    from core.htmx import quer_fragmento
+
+    assert quer_fragmento(_pedido_htmx(None)) is True
+
+
+def test_o_alvo_da_navegacao_e_o_que_a_tag_declara() -> None:
+    """Se um mudar sem o outro, a navegacao volta a receber fragmento vazio."""
+    from django.template import Context, Template
+
+    from core.htmx import ALVO_DA_NAVEGACAO
+
+    emitido = Template("{% load navegacao %}{% nav_filtro %}").render(Context({}))
+    assert f'hx-target="#{ALVO_DA_NAVEGACAO}"' in emitido
+
+
+def test_toda_view_usa_o_discriminador_e_nao_o_cabecalho_cru() -> None:
+    """`HX-Request` sozinho nao distingue mais os dois clientes.
+
+    Desde que a navegacao virou HTMX, os DOIS mandam esse cabecalho. Uma view
+    que volte a testa-lo direto devolveria fragmento para a navegacao, e a tela
+    ficaria vazia -- sem erro no console e sem teste vermelho.
+    """
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent.parent
+    sobras = [
+        f"{caminho.relative_to(raiz).as_posix()}:{numero}"
+        for caminho in raiz.rglob("*/views.py")
+        for numero, linha in enumerate(caminho.read_text(encoding="utf-8").splitlines(), 1)
+        if "HX-Request" in linha
+    ]
+
+    assert sobras == [], sobras
+
+# ---------------------------------------------------------------------------
+# Filtro que a view descarta em silencio
+# ---------------------------------------------------------------------------
+
+
+def test_filtro_descartado_pela_view_sai_do_endereco() -> None:
+    """A conta que deixou de valer nao pode continuar na barra.
+
+    Escolher um titular que nao e dono da conta selecionada faz
+    `selected_context` anular a conta. A tela volta correta; sem isto o
+    endereco continuaria oferecendo o filtro que o servidor acabou de recusar,
+    e um F5 ou um favorito o reaplicariam -- para ser recusado de novo, em
+    silencio, para sempre.
+    """
+    pedido = _pedido("owner_id=3&account_id=4&period=2026-08")
+    pedido.filtros_descartados = {"account_id"}
+
+    assert url_canonica(pedido) == "/lancamentos/?owner_id=3&period=2026-08"
+
+
+def test_sem_descarte_o_endereco_nao_muda() -> None:
+    pedido = _pedido("owner_id=3&account_id=4")
+    assert url_canonica(pedido) is None
+
+
+def test_descarte_e_o_unico_motivo_basta_para_reescrever() -> None:
+    """Mesmo sem campo vazio nenhum, um descarte precisa corrigir a barra."""
+    pedido = _pedido("owner_id=3&account_id=4")
+    pedido.filtros_descartados = {"account_id"}
+    assert url_canonica(pedido) == "/lancamentos/?owner_id=3"
+
+
+def test_selected_context_anota_a_conta_que_anulou() -> None:
+    """O contrato entre `reports.services` e o middleware, nos dois lados."""
+    import inspect
+
+    from reports import services
+
+    assinatura = inspect.signature(services.selected_context)
+    assert "request" in assinatura.parameters, (
+        "selected_context precisa aceitar `request` para anotar o descarte"
+    )
+    assert "filtros_descartados" in inspect.getsource(services.selected_context)

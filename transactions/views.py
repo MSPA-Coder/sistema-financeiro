@@ -18,6 +18,7 @@ from core.domain.finance import (
     STATUS_REALIZED,
     VALID_OPERATION_SCOPES,
 )
+from core.htmx import quer_fragmento
 from core.permissions import permission_required
 from transactions import access
 from transactions.models import CashFlowCategory, CashFlowEntry
@@ -120,7 +121,9 @@ def _transaction_request_from_post(post) -> TransactionRequest:
 @permission_required("transactions.view")
 def transactions_view(request):
     """Lista de transações com filtros, saldo corrente e resumo (HTMX)."""
-    context = build_transactions_view_context(request.user, request.GET, request.session)
+    context = build_transactions_view_context(
+        request.user, request.GET, request.session, request=request
+    )
     show_balance_column = not context["dashboard_drilldown"]
     show_actions_column = not context["dashboard_drilldown"]
     table_columns = 6 + (1 if context["view_mode"] == STATUS_REALIZED else 0) \
@@ -138,7 +141,7 @@ def transactions_view(request):
         "filter_actions_colspan": table_columns - 3,
     })
 
-    if request.headers.get("HX-Request"):
+    if quer_fragmento(request):
         # _table_body.html inclui uma copia OOB (out-of-band) dos cards de resumo
         # para o HTMX atualizar os totais fora da area trocada pelo hx-swap normal.
         # So faz sentido quando este template e a resposta HTMX inteira -- quando
@@ -175,7 +178,7 @@ def mark_realized(request, tx_id):
     except ValueError as e:
         messages.error(request, str(e))
 
-    if request.headers.get("HX-Request"):
+    if quer_fragmento(request):
         response = HttpResponse(status=204)
         response.headers["HX-Trigger"] = "tableRefresh"
         return response
@@ -226,7 +229,7 @@ def _transaction_new_post(request):
             "new_due_date": req.due_date.isoformat(),
         })
 
-    if request.headers.get("HX-Request"):
+    if quer_fragmento(request):
         response = HttpResponse(status=204)
         response.headers["HX-Trigger"] = "tableRefresh"
         return response
@@ -275,7 +278,7 @@ def _transaction_edit_post(request, tx):
         messages.error(request, str(e))
         return _redirect_to_transactions(request)
 
-    if request.headers.get("HX-Request"):
+    if quer_fragmento(request):
         response = HttpResponse(status=204)
         response.headers["HX-Trigger"] = "tableRefresh"
         return response
@@ -306,7 +309,7 @@ def transaction_delete(request, tx_id):
     except ValueError as e:
         messages.error(request, str(e))
 
-    if request.headers.get("HX-Request"):
+    if quer_fragmento(request):
         response = HttpResponse(status=204)
         response.headers["HX-Trigger"] = "tableRefresh"
         return response
@@ -325,7 +328,7 @@ def categories_view(request):
         "categories": list_categories(current_filter_type or None),
         "current_filter_type": current_filter_type,
     }
-    if request.headers.get('HX-Request'):
+    if quer_fragmento(request):
         return render(request, 'tables/_categories_table.html', context)
     return render(request, 'tables/categories.html', context)
 
@@ -372,7 +375,7 @@ def delete_category_view(request, category_id):
 
 
 def _respond_categories(request):
-    if request.headers.get('HX-Request'):
+    if quer_fragmento(request):
         response = HttpResponse(status=200)
         response.headers['HX-Redirect'] = reverse('transactions:categories_view')
         return response
@@ -421,6 +424,6 @@ def operations_view(request):
         'has_next_page': (page * page_size) < result.total_operations,
     }
 
-    if request.headers.get('HX-Request'):
+    if quer_fragmento(request):
         return render(request, 'transactions/_operations_table.html', context)
     return render(request, 'transactions/operations.html', context)

@@ -15,10 +15,10 @@ responsabilidade do servidor: este middleware devolve o endereço equivalente
 sem ruído no cabeçalho ``HX-Replace-Url``, e o HTMX troca a barra sem
 recarregar nada.
 
-**O filtro continua na URL quando é um filtro de verdade.** Só sai o que está
-vazio e o que é estado de interface — `?owner_id=3` aparece exatamente quando
-alguém escolheu o titular 3, e o endereço continua servindo para F5, favorito
-e link compartilhado.
+**O filtro continua na URL quando é um filtro de verdade.** Sai o que está
+vazio, o que é estado de interface, e o que a própria view descartou por
+incoerência — `?owner_id=3` aparece exatamente quando alguém escolheu o titular
+3, e o endereço continua servindo para F5, favorito e link compartilhado.
 """
 
 from __future__ import annotations
@@ -86,11 +86,17 @@ def url_canonica(request: HttpRequest) -> str | None:
     da mesma chave, e `items()` devolve só a última. Com `items()`, um filtro
     de seleção múltipla perderia todas as escolhas menos uma — em silêncio.
     """
+    # Filtro que a view descartou por incoerência (conta que não é do titular
+    # escolhido, por exemplo). Sem isto, a barra continuaria oferecendo um
+    # filtro que o servidor acabou de recusar, e um F5 ou um favorito o
+    # reaplicariam -- para ser recusado de novo, em silêncio, para sempre.
+    descartados = getattr(request, "filtros_descartados", frozenset())
+
     originais = 0
     mantidos: list[tuple[str, str]] = []
     for chave, valores in request.GET.lists():
         originais += len(valores)
-        if chave in ESTADO_DE_INTERFACE:
+        if chave in ESTADO_DE_INTERFACE or chave in descartados:
             continue
         mantidos.extend((chave, valor) for valor in valores if valor != "")
 

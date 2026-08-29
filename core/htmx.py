@@ -28,6 +28,38 @@ from django.contrib import messages
 from django.http import HttpRequest, HttpResponse
 from django.template.loader import render_to_string
 
+#: Id do elemento que a navegação por filtro (`{% nav_filtro %}`) troca. Ver
+#: `core/templatetags/navegacao.py`.
+ALVO_DA_NAVEGACAO = "appMain"
+
+
+def quer_fragmento(request: HttpRequest) -> bool:
+    """``True`` quando a requisição HTMX pede o fragmento desta view.
+
+    As views deste projeto respondem em duas formas à mesma URL: a tela
+    inteira, e um fragmento — a tabela de lançamentos, o conteúdo de um
+    relatório, o resultado de uma conciliação. Até agosto/2026 quem escolhia
+    era só a presença de ``HX-Request``, porque o único cliente HTMX era quem
+    queria fragmento: a navegação por filtro era feita à mão em
+    ``application.js``, com ``fetch`` e ``X-Requested-With``, e por isso caía
+    sempre no ramo da tela inteira.
+
+    Com a navegação passando a ser HTMX, ``HX-Request`` deixou de distinguir os
+    dois: **os dois clientes passaram a mandá-lo**. Quem distingue agora é o
+    alvo. A navegação mira ``#appMain`` e recorta a tela com ``hx-select`` —
+    ela precisa da página inteira. Todo fragmento preexistente mira o próprio
+    contêiner (``#transactions-table-container``, ``#reconciliation-results``,
+    ...), e é para esses que o ramo de fragmento existe.
+
+    Um alvo novo que queira fragmento não precisa fazer nada: qualquer alvo
+    diferente de ``#appMain`` cai aqui. O caminho contrário — listar os alvos
+    de fragmento — faria um alvo novo receber a página inteira dentro de um
+    contêiner pequeno, que é falha silenciosa e confusa.
+    """
+    if not request.headers.get("HX-Request"):
+        return False
+    return request.headers.get("HX-Target") != ALVO_DA_NAVEGACAO
+
 
 class HtmxFlashMessagesMiddleware:
     """Anexa um swap fora de banda do bloco de mensagens a toda resposta HTMX.
