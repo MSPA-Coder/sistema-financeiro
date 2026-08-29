@@ -152,6 +152,22 @@ def account_position_view(request):
     return render(request, "reports/account_position.html", context)
 
 
+def _multi_id_param(request, key: str) -> list[int] | None:
+    """Devolve ``None`` quando o parametro nao veio na URL -- ou seja, "todos".
+
+    `QueryDict.getlist` devolve `[]` tanto para "parametro ausente" quanto para
+    "parametro presente e vazio", e `_planning_id_filter([])` devolve `[]`, que
+    o filtro entende como "nenhum titular/conta escolhido". Sem esta distincao
+    a primeira carga da tela (sem query string) chegava filtrando por lista
+    vazia: nenhuma opcao vinha marcada e o relatorio saia sem linhas. Um
+    parametro presente porem invalido continua devolvendo `[]`, preservando o
+    fecha-fechado descrito em `_authorized_planning_accounts`.
+    """
+    if key not in request.GET:
+        return None
+    return services._planning_id_filter(request.GET.getlist(key))
+
+
 @login_required
 @permission_required("reports.annual_planning.view")
 def annual_planning_view(request):
@@ -167,8 +183,8 @@ def annual_planning_view(request):
         else services.ANNUAL_PLANNING_CALENDAR
     )
     view_mode = normalize_view_mode(request.GET.get("mode"), default=VIEW_ALL)
-    owner_ids = services._planning_id_filter(request.GET.getlist("owner_ids"))
-    account_ids = services._planning_id_filter(request.GET.getlist("account_ids"))
+    owner_ids = _multi_id_param(request, "owner_ids")
+    account_ids = _multi_id_param(request, "account_ids")
     allowed_owner_ids = set(services.accessible_owner_ids(request.user, "view"))
     selected_owner_ids = (
         sorted(allowed_owner_ids)

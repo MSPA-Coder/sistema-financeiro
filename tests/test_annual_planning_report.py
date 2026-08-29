@@ -7,10 +7,12 @@ regra e segurança sem depender de uma instância PostgreSQL local.
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest import mock
 
 from django.contrib.auth.models import AnonymousUser
+from django.test import RequestFactory
 
-from reports import services
+from reports import services, views
 
 
 def test_planejamento_tem_ano_calendario_e_janela_movel_de_13_meses():
@@ -38,6 +40,39 @@ def test_classificacao_de_recorrencia_usa_is_recurring():
 def test_filtro_de_ids_descarta_bool_invalidos_e_nao_duplica():
     assert services._planning_id_filter([1, "1", True, 0, -2, "x", None]) == [1]
     assert services._planning_id_filter(None) is None
+
+
+def test_ausencia_do_parametro_vale_todos_e_lista_vazia_nao_e_ausencia():
+    """Carga sem query string precisa marcar todos os titulares e contas.
+
+    `QueryDict.getlist` devolve `[]` tanto para "parametro ausente" quanto para
+    "parametro presente e vazio", e `_planning_id_filter([])` devolve `[]` --
+    que o filtro le como "nenhum escolhido". Ler `getlist` direto fazia a
+    primeira carga da tela filtrar por lista vazia: nenhuma opcao vinha
+    marcada e o relatorio saia sem uma linha sequer.
+    """
+    fabrica = RequestFactory()
+
+    sem_query = fabrica.get("/reports/annual-planning/")
+    assert views._multi_id_param(sem_query, "owner_ids") is None
+    assert views._multi_id_param(sem_query, "account_ids") is None
+
+    com_ids = fabrica.get("/reports/annual-planning/?owner_ids=3&owner_ids=7")
+    assert views._multi_id_param(com_ids, "owner_ids") == [3, 7]
+
+    # Presente porem invalido continua fechando: nao vira "todos".
+    invalido = fabrica.get("/reports/annual-planning/?owner_ids=abc")
+    assert views._multi_id_param(invalido, "owner_ids") == []
+
+
+def test_none_seleciona_todas_as_contas_permitidas_e_lista_vazia_nenhuma():
+    """O contrato que a view consome: `None` e "todos", `[]` e "nenhum"."""
+    usuario = SimpleNamespace(is_authenticated=True)
+
+    with mock.patch.object(services, "accessible_owner_ids", return_value=[4, 9]):
+        contas, ids = services._authorized_planning_accounts(usuario, [], None)
+
+    assert (contas, ids) == ([], [])
 
 
 def test_usuario_anonimo_falha_fechado_antes_de_consultar_contas():

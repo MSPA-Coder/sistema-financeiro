@@ -16,7 +16,7 @@
     esses valores; agora o `<select>` de la e a unica fonte da verdade, e nao ha
     copia para sair de sincronia.
     {% endcomment %}
-    <form id="contextForm" method="get"
+    <form id="contextForm" method="get" class="top-filter-row"
           action="{% url 'transactions:transactions_view' %}"
           hx-get="{% url 'transactions:transactions_view' %}"
           hx-trigger="change"
