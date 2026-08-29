@@ -1,5 +1,6 @@
+{% load navegacao %}
 <div class="type-bar">
-    <form id="typeForm" method="get" data-ui="filter-type-form" data-auto-submit="true">
+    <form id="typeForm" method="get" data-ui="filter-type-form" hx-get="{{ request.path }}" hx-trigger="change" {% nav_filtro %}>
         {% if selected_period %}
         <input type="hidden" name="period" value="{{ selected_period }}">
         {% else %}

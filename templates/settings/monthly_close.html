@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static navegacao %}
 {% load money_filters %}
 {% load icons %}
 
@@ -17,7 +17,7 @@
     </div>
 </div>
 <div class="top-filter-card">
-    <form method="get" class="top-filter-row monthly-close-filter-row" data-auto-submit="true">
+    <form method="get" class="top-filter-row monthly-close-filter-row" hx-get="{{ request.path }}" hx-trigger="change" {% nav_filtro %}>
         <label class="top-filter-field">
             Conta
             <select name="filter_account_id">
@@ -54,7 +54,7 @@
             </select>
         </label>
         <div class="top-filter-actions">
-            <a href="{% url 'core:settings_monthly_close' %}" class="btn btn-ghost btn-sm" data-ajax-nav>{% icon 'x' %}<span>Limpar</span></a>
+            <a href="{% url 'core:settings_monthly_close' %}" class="btn btn-ghost btn-sm" hx-boost="true" {% nav_filtro %}>{% icon 'x' %}<span>Limpar</span></a>
         </div>
     </form>
 </div>

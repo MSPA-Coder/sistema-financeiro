@@ -1,4 +1,4 @@
-{% load money_filters %}
+{% load money_filters navegacao %}
 {% load icons %}
 <section class="annual-planning-report" aria-labelledby="annual-planning-title">
     <div class="section-header annual-planning-heading">
@@ -12,7 +12,7 @@
             <details class="annual-filter-details"{% if filter_panel_open %} open{% endif %}>
                 <summary class="annual-filter-button" title="Abrir filtros" aria-label="Abrir filtros">{% icon 'filter' %}<span>Filtros</span></summary>
                 <div class="top-filter-card annual-planning-filter-card">
-                    <form method="get" class="top-filter-row annual-planning-filter-row" data-auto-submit="true">
+                    <form method="get" class="top-filter-row annual-planning-filter-row" hx-get="{{ request.path }}" hx-trigger="change" {% nav_filtro %}>
                         <input type="hidden" name="filters_open" value="1">
                         <label class="top-filter-field annual-reference-field">Mês de referência<input type="month" name="reference_month" value="{{ reference_month }}" {% if system_start_date %}min="{{ system_start_date|date:'Y-m' }}"{% endif %}></label>
                         <label class="top-filter-field annual-layout-field">Layout<select name="layout" aria-label="Layout do planejamento"><option value="calendar"{% if layout == 'calendar' %} selected{% endif %}>Ano calendário</option><option value="rolling"{% if layout == 'rolling' %} selected{% endif %}>Janela móvel (13 meses)</option></select></label>
@@ -20,7 +20,7 @@
                         <label class="top-filter-field annual-multi-field">Titulares<select name="owner_ids" multiple size="3" aria-describedby="annual-filter-help">{% for owner in owners %}<option value="{{ owner.id }}"{% if owner.id in selected_owner_ids %} selected{% endif %}>{{ owner.name }}</option>{% endfor %}</select></label>
                         <label class="top-filter-field annual-multi-field">Contas<select name="account_ids" multiple size="3" aria-describedby="annual-filter-help">{% for account in accounts %}<option value="{{ account.id }}"{% if account.id in selected_account_ids %} selected{% endif %}>{{ account.owner.name }} · {{ account.account_name }}</option>{% endfor %}</select></label>
                         <label class="annual-description-toggle"><input type="checkbox" name="show_descriptions" value="1"{% if show_descriptions %} checked{% endif %}><span>Mostrar descrições</span></label>
-                        <div class="top-filter-actions"><a href="{% url 'reports:annual_planning_view' %}?layout=calendar{% if default_reference_month %}&amp;reference_month={{ default_reference_month }}{% endif %}" class="btn btn-ghost btn-sm" data-ajax-nav>{% icon 'x' %}<span>Limpar</span></a></div>
+                        <div class="top-filter-actions"><a href="{% url 'reports:annual_planning_view' %}?layout=calendar{% if default_reference_month %}&amp;reference_month={{ default_reference_month }}{% endif %}" class="btn btn-ghost btn-sm" hx-boost="true" {% nav_filtro %}>{% icon 'x' %}<span>Limpar</span></a></div>
                     </form>
                     <p id="annual-filter-help" class="annual-filter-help">Use Ctrl (Windows) ou ⌘ (macOS) para selecionar mais de um titular ou conta.</p>
                 </div>

@@ -13,4 +13,9 @@ function initProjectionDetail(root) {
 }
 
 document.addEventListener('DOMContentLoaded', function () { initProjectionDetail(document); });
-document.addEventListener('app:contentLoaded', function (event) { initProjectionDetail(event.target); });
+/* `app:contentLoaded` era emitido pela navegacao AJAX propria, que deixou de
+   existir; o evento equivalente do HTMX e `htmx:afterSwap`. */
+document.addEventListener('htmx:afterSwap', function (event) {
+    const alvo = (event.detail && event.detail.target) || event.target;
+    initProjectionDetail(alvo && alvo.nodeType === Node.ELEMENT_NODE ? alvo : document);
+});

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static navegacao %}
 {% load icons %}
 
 {% block title %}Cadastros • Contas{% endblock %}
@@ -49,21 +49,17 @@
     {% endif %}
 
     <div class="table-container" data-ui="table-plain-flex">
-        <form id="accountsFilterForm" method="get">
-            {% if current_filter_owner_id %}<input type="hidden" name="filter_owner_id" value="{{ current_filter_owner_id }}">{% endif %}
-            {% if current_filter_institution_id %}<input type="hidden" name="filter_institution_id" value="{{ current_filter_institution_id }}">{% endif %}
-        </form>
         <table>
             <thead>
                 <tr>
                     <th>
-                        <select aria-label="Filtrar por titular" data-filter="true" data-filter-form="accountsFilterForm" data-filter-param="filter_owner_id">
+                        <select data-table-filter name="filter_owner_id" aria-label="Filtrar por titular" data-filter="true" hx-get="{{ request.path }}" hx-trigger="change" hx-include="[data-table-filter]" {% nav_filtro %}>
                             <option value="">Todos os titulares</option>
                             {% for owner in owners %}<option value="{{ owner.id }}" {% if owner.id == current_filter_owner_id %}selected{% endif %}>{{ owner.name }}</option>{% endfor %}
                         </select>
                     </th>
                     <th>
-                        <select aria-label="Filtrar por instituição" data-filter="true" data-filter-form="accountsFilterForm" data-filter-param="filter_institution_id">
+                        <select data-table-filter name="filter_institution_id" aria-label="Filtrar por instituição" data-filter="true" hx-get="{{ request.path }}" hx-trigger="change" hx-include="[data-table-filter]" {% nav_filtro %}>
                             <option value="">Todas as instituições</option>
                             {% for institution in institutions %}<option value="{{ institution.id }}" {% if institution.id == current_filter_institution_id %}selected{% endif %}>{{ institution.institution_name }}</option>{% endfor %}
                         </select>
