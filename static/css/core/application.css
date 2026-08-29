@@ -1003,15 +1003,9 @@ html[data-values-hidden="true"] .health-chart-row:has(canvas)::after {
 canvas { display: block; box-sizing: border-box; }
 
 /* Envoltorio de rolagem criado por `_initTableScrollWrappers`. A altura maxima
-   vem de `--table-scroll-rows`, que o servidor declara por usuario num `<style>`
-   com nonce -- ver `base.html`. Antes eram quatro atributos inline, e a CSP
-   descartava os quatro: a rolagem nunca recebeu o teto que este codigo sempre
-   pretendeu dar. */
+   nao esta aqui de proposito: depende da altura real do cabecalho e da primeira
+   linha de cada tabela, que variam entre telas. O JavaScript mede e escreve. */
 .auto-table-scroll-wrapper {
-    max-height: calc(
-        var(--table-header-height, 2.6rem)
-        + var(--table-row-height, 2.25rem) * var(--table-scroll-rows, 15)
-    );
     overflow: auto;
     width: 100%;
 }

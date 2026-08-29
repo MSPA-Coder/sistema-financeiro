@@ -120,15 +120,7 @@ def test_csp_do_middleware_e_a_declarada():
 
 
 def test_style_src_continua_fechado_sem_excecao(client):
-    """Nem `unsafe-inline`, nem nonce, nem hash.
-
-    Cheguei a introduzir um nonce para o unico estilo que varia por usuario.
-    Nonce exige `<style>` embutido; `<style>` no `<head>` faz o HTMX tentar
-    reinjeta-lo a cada troca de tela, perdendo o nonce; e a correcao
-    documentada seria expor o nonce num `<meta>` -- entregando ao DOM
-    justamente o segredo que ele e. A preferencia virou folha de estilo servida
-    da propria origem, e `style-src 'self'` voltou a bastar.
-    """
+    """Nem `unsafe-inline`, nem nonce, nem hash."""
     politica = client.get(ROTA).headers["Content-Security-Policy"]
 
     assert "style-src 'self';" in politica
@@ -137,51 +129,64 @@ def test_style_src_continua_fechado_sem_excecao(client):
 
 
 def test_a_casca_nao_traz_estilo_embutido() -> None:
-    """Um `<style>` no `base.html` seria bloqueado -- em silencio."""
+    """`<style>` sem nonce e o que a CSP realmente bloqueia (`style-src-elem`).
+
+    Escrita por CSSOM (`el.style.x = ...`) NAO e bloqueada -- a politica governa
+    o ATRIBUTO `style` do HTML e o elemento `<style>`, nao a propriedade `style`
+    de um objeto. A distincao custou uma correcao errada; fica registrada aqui.
+    """
     from django.template.loader import render_to_string
 
     rendered = render_to_string("base.html", {"app_menu_items": []})
 
     assert "<style" not in rendered
-    assert 'href="/core/preferencias.css"' in rendered or "preferencias.css" in rendered
 
 
-def test_a_folha_de_preferencias_carrega_a_escolha_do_usuario() -> None:
-    """Servida como CSS de verdade, autorizada por `style-src 'self'`."""
-    from types import SimpleNamespace
+def test_htmx_nao_reaplica_o_atributo_style_ao_trocar_de_tela() -> None:
+    """`attributesToSettle` inclui `style` por padrao -- e isso a CSP bloqueia.
 
-    from django.test import RequestFactory
+    O HTMX copiava o atributo `style` dos `<canvas>` do Chart.js a cada troca,
+    e cada copia virava uma violacao (`style-src-attr`): seis por troca no
+    painel. Nenhum elemento deste projeto depende de `style` sobreviver a um
+    swap; todo estado alternado por JavaScript mora em classe.
+    """
+    import json
+    import re
 
-    from core.views import preferencias_css
+    from django.template.loader import render_to_string
 
-    pedido = RequestFactory().get("/core/preferencias.css")
-    pedido.user = SimpleNamespace(table_scroll_rows=42)
-    resposta = preferencias_css(pedido)
+    rendered = render_to_string("base.html", {"app_menu_items": []})
+    bruto = re.search("content='([^']+)'", rendered).group(1)
+    config = json.loads(bruto)
 
-    assert resposta["Content-Type"].startswith("text/css")
-    assert "--table-scroll-rows: 42" in resposta.content.decode()
-    assert "private" in resposta["Cache-Control"]
-
-
-def test_a_folha_de_preferencias_sanea_valor_absurdo() -> None:
-    """O limite do banco e 5..200; a folha nao pode confiar no que recebe."""
-    from types import SimpleNamespace
-
-    from django.test import RequestFactory
-
-    from core.views import preferencias_css
-
-    pedido = RequestFactory().get("/core/preferencias.css")
-    pedido.user = SimpleNamespace(table_scroll_rows="nao-e-numero")
-
-    assert "--table-scroll-rows: 15" in preferencias_css(pedido).content.decode()
+    assert "style" not in config["attributesToSettle"]
+    assert config["includeIndicatorStyles"] is False
 
 
-def test_nenhum_javascript_do_projeto_aplica_estilo_inline():
-    """A CSP bloquearia, e o sintoma seria invisivel.
+def test_o_indicador_do_htmx_tem_estilo_proprio() -> None:
+    """Com `includeIndicatorStyles` desligado, quem estiliza e o projeto.
 
-    Todo estado alternado por JavaScript mora em classe CSS. Um `el.style.x`
-    novo voltaria a falhar em silencio -- por isso a varredura.
+    Sem estas regras o "Importando..." fica visivel o tempo todo -- que era o
+    comportamento real, porque o `<style>` que o HTMX injetava era bloqueado.
+    """
+    from pathlib import Path
+
+    css = (
+        Path(__file__).resolve().parent.parent
+        / "static" / "css" / "core" / "application.css"
+    ).read_text(encoding="utf-8")
+
+    assert ".htmx-indicator" in css
+    assert ".htmx-request .htmx-indicator" in css
+
+
+def test_nenhum_javascript_do_projeto_escreve_o_atributo_style() -> None:
+    """`setAttribute('style', ...)` e bloqueado; `el.style.x = ...` nao.
+
+    A varredura mira o primeiro, que e o que a CSP recusa. A propriedade
+    continua permitida e e usada num lugar so, com justificativa:
+    `_initTableScrollWrappers` mede a altura real do cabecalho e da primeira
+    linha, que nenhuma regra CSS conhece.
     """
     from pathlib import Path
 
@@ -191,7 +196,7 @@ def test_nenhum_javascript_do_projeto_aplica_estilo_inline():
         for caminho in raiz.rglob("*.js")
         if "vendor" not in caminho.parts
         for numero, linha in enumerate(caminho.read_text(encoding="utf-8").splitlines(), 1)
-        if ".style." in linha
+        if "setAttribute('style'" in linha or 'setAttribute("style"' in linha
     ]
 
     assert sobras == [], sobras

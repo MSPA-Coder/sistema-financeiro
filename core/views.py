@@ -6,7 +6,6 @@ from datetime import date, timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.http import urlencode
@@ -38,7 +37,6 @@ from core.domain.identity import USER_TYPE_LABELS
 from core.domain.settings import (
     APP_SETTING_LAST_OPTIMIZE_INFO,
     UI_THEME_LABELS,
-    normalize_table_scroll_rows,
 )
 from core.permissions import permission_required
 from core.services import (
@@ -76,40 +74,6 @@ def _user_audit_snapshot(user: AppUser) -> dict:
         "user_type": user.user_type,
         "must_change_password": bool(user.must_change_password),
     }
-
-
-def preferencias_css(request):
-    """Folha de estilo com as preferencias visuais de quem esta logado.
-
-    Existe uma so variavel aqui: `--table-scroll-rows`, quantas linhas cabem
-    numa tabela antes de a rolagem comecar (5 a 200, por usuario). Quem a usa
-    para calcular a altura e `.auto-table-scroll-wrapper`, em
-    `core/application.css`.
-
-    **Por que uma rota, e nao um `<style>` no `base.html`.** A CSP fecha
-    `style-src` em 'self', o que bloqueia estilo embutido. As saidas seriam
-    `'unsafe-inline'` (que abre a politica para qualquer injecao) ou um nonce
-    -- e o nonce trouxe problema proprio: `<style>` no `<head>` faz o HTMX
-    tentar reinjeta-lo a cada troca de tela, perdendo o nonce no caminho, e a
-    correcao documentada seria expor o nonce num `<meta>`, entregando ao DOM
-    justamente o segredo que ele e.
-
-    Servida da propria origem, esta folha ja e autorizada por `style-src
-    'self'` sem excecao nenhuma.
-
-    `private`: o valor e de um usuario. `must-revalidate` com vida curta para
-    que mudar a preferencia apareca na navegacao seguinte, nao daqui a uma
-    hora.
-    """
-    linhas_visiveis = normalize_table_scroll_rows(
-        getattr(request.user, "table_scroll_rows", 15)
-    )
-    resposta = HttpResponse(
-        f":root {{ --table-scroll-rows: {linhas_visiveis}; }}",
-        content_type="text/css; charset=utf-8",
-    )
-    resposta["Cache-Control"] = "private, max-age=60, must-revalidate"
-    return resposta
 
 
 @login_required
