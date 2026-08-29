@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% load icons %}
+{% load icons navegacao %}
 {% block title %}Gestão • Painel gerencial{% endblock %}
 
 {% block page_header %}
 <div class="top-filter-card">
-    <form method="get" class="top-filter-row" data-auto-submit="true">
+    <form method="get" class="top-filter-row" hx-get="{{ request.path }}" hx-trigger="change" {% nav_filtro %}>
         <label class="top-filter-field">
             Titular
             <select name="owner_id">
@@ -38,7 +38,7 @@
         </label>
         <div class="top-filter-actions">
             <a href="{% url 'management:management_view' %}"
-               class="btn btn-ghost btn-sm" data-ajax-nav>{% icon 'x' %}<span>Limpar</span></a>
+               class="btn btn-ghost btn-sm" hx-boost="true" {% nav_filtro %}>{% icon 'x' %}<span>Limpar</span></a>
         </div>
     </form>
 </div>
