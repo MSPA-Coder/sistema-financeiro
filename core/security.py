@@ -15,9 +15,35 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from django.http import HttpRequest, HttpResponse
+from django.utils.cache import patch_vary_headers
 from sharedauth.security import SECURITY_HEADERS, montar_csp
 
-__all__ = ["CONTENT_SECURITY_POLICY", "SECURITY_HEADERS", "ContentSecurityPolicyMiddleware"]
+__all__ = [
+    "CABECALHOS_QUE_VARIAM_A_RESPOSTA",
+    "CONTENT_SECURITY_POLICY",
+    "SECURITY_HEADERS",
+    "ContentSecurityPolicyMiddleware",
+]
+
+# A MESMA URL devolve corpos diferentes conforme estes dois cabecalhos:
+# `core.htmx.quer_fragmento` decide pelo ALVO da troca, entao `/transactions/`
+# responde a pagina inteira (63 KB, com `#appMain`) quando o alvo e `appMain`,
+# e um fragmento (36 KB, sem ele) quando o alvo e outro. Sem declarar isso, um
+# cache compartilhado pode servir o fragmento a quem pediu a pagina.
+#
+# `HX-Request` sozinho NAO basta, que era a recomendacao original da auditoria:
+# ela foi escrita quando a decisao era pelo cabecalho, e a migracao para HTMX
+# a trocou por decisao pelo alvo sem que o achado fosse reescrito. Com
+# `HX-Request: true` o corpo ainda muda conforme `HX-Target`.
+#
+# Constante local de proposito, e nao em `sharedauth`: a biblioteca guarda
+# VALORES e o consumidor APLICA -- e o mesmo contrato de `SECURITY_HEADERS`
+# logo abaixo, que existe porque o nucleo e Python puro e nao pode depender de
+# Django. Quando houver um segundo projeto Django, esta tupla sobe para
+# `sharedauth.security` (e neutra de framework) e cada app segue aplicando a
+# sua. Um middleware Django na biblioteca arrastaria o Django para dentro dela
+# para servir um consumidor so.
+CABECALHOS_QUE_VARIAM_A_RESPOSTA = ("HX-Request", "HX-Target")
 
 # A politica e os valores dos cabecalhos vem de `sharedauth.security`, o mesmo
 # lugar que os tres apps Flask usam. Este projeto instala so o nucleo do
@@ -57,9 +83,12 @@ class ContentSecurityPolicyMiddleware:
     a saida documentada para isso seria expor o nonce num `<meta>` --
     entregando ao DOM justamente o segredo que o nonce e.
 
-    A preferencia virou `core.views.preferencias_css`, uma folha de estilo de
-    verdade, servida da propria origem. `style-src 'self'` ja a autoriza, sem
-    excecao nenhuma.
+    Nada disso foi necessario: a CSP nunca bloqueou o estilo aplicado por
+    CSSOM (`el.style.x = ...`). `style-src` governa o ELEMENTO `<style>`
+    (`style-src-elem`) e o ATRIBUTO `style` do HTML (`style-src-attr`), nao a
+    propriedade `style` de um objeto -- verificado no navegador em 29/08. A
+    folha `preferencias_css`, que chegou a existir por essa leitura errada, foi
+    removida junto com a rota.
     """
 
     def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
@@ -70,4 +99,7 @@ class ContentSecurityPolicyMiddleware:
         response.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
         for header, value in SECURITY_HEADERS.items():
             response.setdefault(header, value)
+        # `patch_vary_headers` acrescenta sem apagar o que ja houver (o Django
+        # costuma pos `Cookie` aqui), e nao duplica se rodar duas vezes.
+        patch_vary_headers(response, CABECALHOS_QUE_VARIAM_A_RESPOSTA)
         return response
