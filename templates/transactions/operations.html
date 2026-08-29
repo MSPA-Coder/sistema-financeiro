@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static icons sharedauth_tags navegacao %}
+{% load static icons sharedauth_tags %}
 
 {% block title %}Operações{% endblock %}
 
@@ -9,7 +9,7 @@
 
 {% block page_header %}
 <div class="top-filter-card">
-    <form method="get" class="top-filter-row" hx-get="{{ request.path }}" hx-trigger="change" {% nav_filtro %}>
+    <form method="get" class="top-filter-row" data-auto-submit="true">
         <input type="hidden" name="page_size" value="{{ page_size }}">
         <label class="top-filter-field compact">
             Início a partir de
@@ -38,7 +38,7 @@
             </select>
         </label>
         <div class="top-filter-actions">
-            <a href="{% url 'transactions:operations_view' %}" class="btn btn-ghost btn-sm" hx-boost="true" {% nav_filtro %}>{% icon 'x' %}<span>Limpar</span></a>
+            <a href="{% url 'transactions:operations_view' %}" class="btn btn-ghost btn-sm" data-ajax-nav>{% icon 'x' %}<span>Limpar</span></a>
             <a href="{% url 'transactions:transactions_view' %}" class="btn btn-primary btn-sm">{% icon 'back' %}<span>Voltar</span></a>
         </div>
     </form>

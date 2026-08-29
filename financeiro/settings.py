@@ -84,8 +84,6 @@ MIDDLEWARE = [
     'django_htmx.middleware.HtmxMiddleware',
     'core.htmx.HtmxAuthenticationMiddleware',
     'core.htmx.HtmxFlashMessagesMiddleware',
-    # Depois do HtmxMiddleware, que e quem define `request.htmx`.
-    'core.navegacao.UrlCanonicaMiddleware',
     'core.security.ContentSecurityPolicyMiddleware',
     # Por ultimo de proposito: precisa de `request.user`, que vem do
     # AuthenticationMiddleware acima, e nao tem nada a dizer sobre a resposta.

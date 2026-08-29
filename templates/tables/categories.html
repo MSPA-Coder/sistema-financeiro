@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static navegacao %}
+{% load static %}
 {% load icons %}
 
 {% block title %}Cadastros • Categorias{% endblock %}
@@ -35,12 +35,15 @@
     </form>
 
     <div class="table-container" data-ui="table-plain-flex">
+        <form id="categoriesFilterForm" method="get">
+            {% if current_filter_type %}<input type="hidden" name="filter_type" value="{{ current_filter_type }}">{% endif %}
+        </form>
         <table>
             <thead>
                 <tr>
                     <th>Nome</th>
                     <th>
-                        <select data-table-filter name="filter_type" aria-label="Filtrar por tipo" data-filter="true" hx-get="{{ request.path }}" hx-trigger="change" hx-include="[data-table-filter]" {% nav_filtro %}>
+                        <select aria-label="Filtrar por tipo" data-filter="true" data-filter-form="categoriesFilterForm" data-filter-param="filter_type">
                             <option value="">Todos os tipos</option>
                             <option value="normal" {% if current_filter_type == 'normal' %}selected{% endif %}>Normal</option>
                             <option value="internal" {% if current_filter_type == 'internal' %}selected{% endif %}>Interna</option>

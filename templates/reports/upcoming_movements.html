@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static navegacao %}
+{% load static %}
 {% load icons %}
 {% block title %}Relatórios - Próximos movimentos{% endblock %}
 
@@ -9,7 +9,7 @@
 
 {% block page_header %}
 <div class="top-filter-card">
-    <form method="get" class="top-filter-row upcoming-filter-row" hx-get="{{ request.path }}" hx-trigger="change" {% nav_filtro %}>
+    <form method="get" class="top-filter-row upcoming-filter-row" data-auto-submit="true">
         <label class="top-filter-field top-filter-date">
             Data inicial
             <input type="date" name="start_date" value="{{ start_date|date:'Y-m-d' }}" {% if system_start_date %}min="{{ system_start_date|date:'Y-m-d' }}"{% endif %}>
@@ -55,7 +55,7 @@
         </label>
         <div class="top-filter-actions">
             <a href="{% url 'reports:upcoming_movements_view' %}?mode=a_vencer&amp;start_date={{ default_start_date|date:'Y-m-d' }}&amp;end_date={{ default_end_date|date:'Y-m-d' }}"
-               class="btn btn-ghost btn-sm" hx-boost="true" {% nav_filtro %}>{% icon 'x' %}<span>Limpar</span></a>
+               class="btn btn-ghost btn-sm" data-ajax-nav>{% icon 'x' %}<span>Limpar</span></a>
         </div>
     </form>
 </div>

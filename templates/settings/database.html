@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load icons navegacao %}
+{% load icons %}
 
 {% block title %}Banco de Dados{% endblock %}
 
@@ -34,7 +34,7 @@
 
 <div class="section-card">
     <h3>Inspeção de Dados</h3>
-    <form method="get" class="btn-group form-spaced" hx-get="{{ request.path }}" hx-trigger="change" {% nav_filtro %}>
+    <form method="get" class="btn-group form-spaced" data-auto-submit="true">
         <select name="table_name" class="form-control form-control-fit" aria-label="Tabela para inspeção">
             <option value="">Selecione uma tabela...</option>
             {% for t in available_tables %}
