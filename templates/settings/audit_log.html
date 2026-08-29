@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static navegacao %}
 
 {% block title %}Auditoria{% endblock %}
 
@@ -19,7 +19,7 @@
 {% block content %}
 <div class="section-card">
     <h3>Eventos recentes</h3>
-    <form method="get" data-auto-submit="true">
+    <form method="get" hx-get="{{ request.path }}" hx-trigger="change" {% nav_filtro %}>
         <div class="table-inspection-scroll">
             <table>
                 <thead>

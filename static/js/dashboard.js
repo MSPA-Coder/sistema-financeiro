@@ -303,13 +303,5 @@ window.addEventListener('load', function() {
             }
         });
 
-        /* HTMX substitui apenas #appMain e nao emite app:contentLoaded. */
-        document.addEventListener('htmx:afterSwap', function (event) {
-            var appMain = document.getElementById('appMain');
-            if (!appMain || !event.detail || event.detail.target !== appMain) return;
-            document.dispatchEvent(new CustomEvent('app:contentLoaded', {
-                detail: { root: appMain }
-            }));
-        });
     })();
 });
