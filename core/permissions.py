@@ -18,12 +18,17 @@ from django.shortcuts import redirect
 from django_htmx.http import HttpResponseClientRedirect
 
 
-def permission_required(perm: str, fallback: str = "dashboard:dashboard") -> Callable:
+def permission_required(perm: str, fallback: str = "core:inicio") -> Callable:
     """Bloqueia a view quando o usuario ativo nao possui a permissao funcional.
 
     Espera vir depois de `@login_required` na pilha de decorators (nao trata
     usuario anonimo). Em requisicoes HTMX, redireciona via `HX-Redirect` para
     que o client-side siga a navegacao mesmo dentro de um swap parcial.
+
+    O `fallback` padrao e `core:inicio`, que resolve o destino a partir do que
+    a pessoa pode ver. Era `dashboard:dashboard`, o que so funcionava enquanto
+    o dashboard nao exigia permissao: assim que passou a exigir, negar o
+    dashboard mandaria a pessoa de volta para o dashboard.
     """
 
     def decorator(view_func: Callable) -> Callable:
@@ -38,6 +43,13 @@ def permission_required(perm: str, fallback: str = "dashboard:dashboard") -> Cal
                     return HttpResponseClientRedirect(fallback_url)
                 return redirect(fallback)
             return view_func(request, *args, **kwargs)
+
+        # A permissao exigida fica legivel de fora. Sem isto, "esta rota checa
+        # permissao?" so se responde lendo o decorator no fonte -- e foi
+        # exatamente assim que quatro telas ficaram com chave no catalogo e
+        # nenhuma verificacao, por tempo indeterminado. `tests/
+        # test_permissoes_por_rota.py` varre a URLconf lendo este atributo.
+        wrapper.permissao_exigida = perm
 
         return wrapper
 

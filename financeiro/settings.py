@@ -205,7 +205,12 @@ AUTHENTICATION_BACKENDS = [
     'accounts.auth_backends.AppPermissionBackend',
 ]
 LOGIN_URL = '/login'
-LOGIN_REDIRECT_URL = '/reports/upcoming-movements/'
+# Destino DERIVADO: `core.views.inicio_view` manda cada pessoa para a primeira
+# tela a que ela tem acesso. Era fixo em `/reports/upcoming-movements/`, e o
+# preco disso era que aquela tela nao podia exigir permissao -- quem nao a
+# tivesse cairia num lugar que nao pode abrir. A chave ficava no catalogo,
+# aparecia na tela de Permissoes e nao guardava nada.
+LOGIN_REDIRECT_URL = '/inicio/'
 LOGOUT_REDIRECT_URL = '/login'
 
 # Endurecimento de transporte. E uma propriedade da implantacao, nao do modo de

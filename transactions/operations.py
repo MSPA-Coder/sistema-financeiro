@@ -2,8 +2,11 @@
 (parcelados, recorrentes ou pares de transferência interna) por operação.
 
 O agrupamento é feito por `bank_operation_id`: `BankOperation` é uma entidade
-real, criada por `create_installment_entries`/`create_internal_transfer`, e o
-identificador exibido e filtrável é `BankOperation.operation_key`.
+real, criada por `create_transaction_batch` (e reaproveitada pelos caminhos de
+edição), e o identificador exibido e filtrável é `BankOperation.operation_key`.
+As duas funções que este comentário citava antes -- `create_installment_entries`
+e `create_internal_transfer` -- nunca foram chamadas por nada e saíram em
+29/08.
 
 `BankOperation.legacy_operation_id` é apenas um campo legado: não é chave de
 agrupamento nem deve ser usado em consultas.

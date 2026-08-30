@@ -166,10 +166,16 @@ def test_resposta_de_erro_nao_muda_a_barra() -> None:
 #: sintoma diferente e igualmente confuso: sem `hx-select` a página inteira
 #: entra dentro do `main`; sem `hx-select-oob` os seletores do cabeçalho ficam
 #: com as opções antigas; sem `hx-push-url` o endereço não acompanha a tela.
+#:
+#: O `> *` foi o que faltou na primeira correção do aninhamento. Acrescentar
+#: `hx-select` impediu a PÁGINA de entrar no `main`, mas `hx-select="#appMain"`
+#: com `hx-swap="innerHTML"` passou a aninhar o próprio `<main>` -- sintoma
+#: menor, mesma causa, e esta constante protegeu o estado intermediário até
+#: 29/08. A verificação que pegou foi no DOM depois da troca, não no servidor.
 ATRIBUTOS_DE_NAVEGACAO = (
     'hx-target="#appMain"',
     'hx-swap="innerHTML"',
-    'hx-select="#appMain"',
+    'hx-select="#appMain > *"',
     'hx-select-oob="#appPageHeader:innerHTML"',
     'hx-push-url="true"',
 )
@@ -200,7 +206,11 @@ def test_filtros_da_tabela_de_lancamentos_navegam_por_htmx() -> None:
         },
     )
 
-    seletores = re.findall(r"<select[^>]*data-table-filter[^>]*>", rendered)
+    # `[^>]*` nao serve aqui: `hx-select="#appMain > *"` tem um `>` DENTRO do
+    # valor do atributo, e o corte ingenuo trunca a tag no meio. Este padrao
+    # atravessa valores entre aspas antes de aceitar o `>` que fecha a tag.
+    tag_select = r"""<select(?:[^>"']|"[^"]*"|'[^']*')*>"""
+    seletores = [t for t in re.findall(tag_select, rendered) if "data-table-filter" in t]
     assert len(seletores) == 3, seletores
     for seletor in seletores:
         for atributo in ATRIBUTOS_DE_NAVEGACAO:

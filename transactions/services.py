@@ -78,74 +78,6 @@ def transfer_counterparty(entry: CashFlowEntry) -> CashFlowEntry | None:
     return entry.derived_entries.first()
 
 
-def create_installment_entries(
-    account: FinancialAccount,
-    category: CashFlowCategory,
-    entry_type: str,
-    description: str,
-    total_amount: Decimal,
-    first_due_date: date,
-    installments: int,
-    calc_mode: str = "repeat",
-    status: str = STATUS_PROJECTED,
-) -> list[CashFlowEntry]:
-    """Cria lançamentos parcelados."""
-    from core.domain.finance import CALC_DIVIDE
-    
-    validate_month_not_closed(account, first_due_date)
-    
-    if installments < 1 or installments > MAX_TRANSACTION_INSTALLMENTS:
-        raise ValueError(f"Número de parcelas deve estar entre 1 e {MAX_TRANSACTION_INSTALLMENTS}")
-    
-    if total_amount <= 0:
-        raise ValueError("O valor total deve ser positivo")
-    
-    # Calcular valor por parcela. O if/else fica no lugar de um ternário porque
-    # o comentário do ramo `else` nomeia o modo (CALC_REPEAT), que é a
-    # informação que faz a linha ser entendida sem consultar a constante.
-    if calc_mode == CALC_DIVIDE:  # noqa: SIM108
-        installment_amount = total_amount / installments
-    else:  # CALC_REPEAT
-        installment_amount = total_amount
-    
-    # Criar operação agrupadora
-    last_due_date = first_due_date + timedelta(days=30 * (installments - 1))
-    operation_key = f"installment_{timezone.now().timestamp()}_{description[:50]}"
-    
-    bank_operation = BankOperation.objects.create(
-        operation_key=operation_key,
-        operation_type=OPERATION_INSTALLMENT,
-        description=description[:255],
-        status=status,
-        installment_total=installments,
-        first_due_date=first_due_date,
-        last_due_date=last_due_date,
-        entry_count=installments,
-    )
-    
-    entries = []
-    for i in range(installments):
-        installment_due_date = first_due_date + timedelta(days=30 * i)
-        validate_month_not_closed(account, installment_due_date)
-        
-        entry = CashFlowEntry.objects.create(
-            account=account,
-            category=category,
-            entry_type=entry_type,
-            description=description[:255],
-            entry_amount=installment_amount,
-            installments=installments,
-            current_installment=i + 1,
-            due_date=installment_due_date,
-            status=status,
-            operation_type=OPERATION_INSTALLMENT,
-            bank_operation=bank_operation,
-        )
-        entries.append(entry)
-    
-    return entries
-
-
 @db_transaction.atomic
 def realize_transaction(
     entry: CashFlowEntry,
@@ -314,76 +246,6 @@ def reopen_month(
     return month_close
 
 
-@db_transaction.atomic
-def create_internal_transfer(
-    source_account: FinancialAccount,
-    target_account: FinancialAccount,
-    amount: Decimal,
-    description: str,
-    due_date: date,
-) -> tuple[CashFlowEntry, CashFlowEntry]:
-    """Cria uma transferência interna entre contas."""
-    validate_month_not_closed(source_account, due_date)
-    validate_month_not_closed(target_account, due_date)
-    
-    if amount <= 0:
-        raise ValueError("O valor da transferência deve ser positivo")
-    
-    if source_account == target_account:
-        raise ValueError("Contas de origem e destino devem ser diferentes")
-    
-    # Criar operação agrupadora
-    operation_key = f"transfer_{timezone.now().timestamp()}_{description[:50]}"
-    bank_operation = BankOperation.objects.create(
-        operation_key=operation_key,
-        operation_type=OPERATION_INTERNAL_TRANSFER,
-        description=description[:255],
-        status=STATUS_PROJECTED,
-        installment_total=1,
-        first_due_date=due_date,
-        last_due_date=due_date,
-        entry_count=2,
-    )
-    
-    # Lançamento de saída (despesa na conta de origem)
-    expense_category = CashFlowCategory.objects.get_or_create(
-        category_name="Transferência Interna",
-        defaults={'is_internal': True},
-    )[0]
-    
-    source_entry = CashFlowEntry.objects.create(
-        account=source_account,
-        category=expense_category,
-        entry_type=ENTRY_TYPE_EXPENSE,
-        description=f"Transf.: {description}"[:255],
-        entry_amount=amount,
-        installments=1,
-        current_installment=1,
-        due_date=due_date,
-        status=STATUS_PROJECTED,
-        operation_type=OPERATION_INTERNAL_TRANSFER,
-        bank_operation=bank_operation,
-    )
-    
-    # Lançamento de entrada (receita na conta de destino)
-    target_entry = CashFlowEntry.objects.create(
-        account=target_account,
-        category=expense_category,
-        entry_type=ENTRY_TYPE_INCOME,
-        description=f"Transf.: {description}"[:255],
-        entry_amount=amount,
-        installments=1,
-        current_installment=1,
-        due_date=due_date,
-        status=STATUS_PROJECTED,
-        operation_type=OPERATION_INTERNAL_TRANSFER,
-        bank_operation=bank_operation,
-        source_entry=source_entry,
-    )
-    
-    return source_entry, target_entry
-
-
 # --- Cadastros: Categorias ---
 
 _MAX_CATEGORY_NAME_LENGTH = 100
@@ -489,10 +351,43 @@ def _account_label(account: FinancialAccount | None) -> str:
 
 
 def _monthly_amount_for(entry_amount: Decimal, installments: int, calc_mode: str) -> Decimal:
+    """Valor de UMA parcela.
+
+    No modo `CALC_DIVIDE` o valor sai do arredondamento simples da divisao, sem
+    redistribuir o residuo: R$100,00 em 3x da tres parcelas de R$33,33, que
+    somam R$99,99. E decisao registrada, nao descuido -- redistribuir exigiria
+    que os cinco caminhos abaixo soubessem qual parcela e a ultima, e
+    `current_future` reescreve um SUBCONJUNTO das parcelas, onde "ultima" nao
+    tem resposta obvia. A diferenca e de um ou dois centavos por operacao e o
+    mantenedor a considerou irrelevante para o uso deste sistema (29/08).
+    """
     amount = entry_amount if isinstance(entry_amount, Decimal) else Decimal(str(entry_amount))
     if calc_mode == CALC_DIVIDE and installments > 1:
         return (amount / Decimal(installments)).quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
     return amount.quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
+
+
+def _parcelas_e_valor(req: TransactionRequest, *, recorrente: bool | None = None) -> tuple[int, Decimal]:
+    """Quantas parcelas e quanto vale cada uma, ja validado.
+
+    Cinco caminhos repetiam estas tres linhas: criacao, edicao simples,
+    conversao para transferencia interna, edicao de parcelado/recorrente
+    (que e por onde `current_future` passa) e edicao de transferencia. Copia
+    nao e so verbosidade -- os cinco tinham que continuar concordando sobre o
+    que e uma parcela, e um deles ja divergia: decidia a recorrencia por
+    `operation_type == OPERATION_RECURRING` enquanto os outros quatro olhavam
+    `req.is_recurring`. Sao a mesma pergunta feita de dois jeitos, e nada
+    garantia que continuassem respondendo igual.
+
+    `recorrente` existe para esse caso: quem ja resolveu a recorrencia pelo
+    tipo da operacao passa a resposta pronta, em vez de o helper ter de
+    adivinhar qual das duas fontes vale.
+    """
+    eh_recorrente = req.is_recurring if recorrente is None else recorrente
+    installments = 1 if eh_recorrente else max(1, req.installments)
+    monthly_amount = _monthly_amount_for(req.entry_amount, installments, req.calc_mode)
+    _validate_common_payload(req, monthly_amount, installments)
+    return installments, monthly_amount
 
 
 def operation_type_for(req: TransactionRequest, is_internal: bool) -> str:
@@ -766,9 +661,7 @@ def create_transaction_batch(req: TransactionRequest) -> list[CashFlowEntry]:
     except FinancialAccount.DoesNotExist as exc:
         raise ValueError("Conta inválida.") from exc
 
-    installments = 1 if req.is_recurring else max(1, req.installments)
-    monthly_amount = _monthly_amount_for(req.entry_amount, installments, req.calc_mode)
-    _validate_common_payload(req, monthly_amount, installments)
+    installments, monthly_amount = _parcelas_e_valor(req)
 
     description = (req.description or "").strip()[:MAX_TRANSACTION_DESCRIPTION_LENGTH]
     operation_type = operation_type_for(req, is_internal)
@@ -988,9 +881,7 @@ def _update_single(tx: CashFlowEntry, req: TransactionRequest) -> list[CashFlowE
     if category.is_internal:
         return _convert_single_to_internal_transfer(tx, req)
 
-    installments = 1 if req.is_recurring else max(1, req.installments)
-    monthly_amount = _monthly_amount_for(req.entry_amount, installments, req.calc_mode)
-    _validate_common_payload(req, monthly_amount, installments)
+    installments, monthly_amount = _parcelas_e_valor(req)
 
     account = FinancialAccount.objects.get(id=req.account_id)
     validate_month_not_closed(account, req.due_date)
@@ -1015,9 +906,7 @@ def _convert_single_to_internal_transfer(tx: CashFlowEntry, req: TransactionRequ
         raise ValueError("Conta destino inválida.") from exc
     account = FinancialAccount.objects.select_related("owner", "institution").get(id=req.account_id)
 
-    installments = 1 if req.is_recurring else max(1, req.installments)
-    monthly_amount = _monthly_amount_for(req.entry_amount, installments, req.calc_mode)
-    _validate_common_payload(req, monthly_amount, installments)
+    installments, monthly_amount = _parcelas_e_valor(req)
     validate_month_not_closed(account, req.due_date)
     validate_month_not_closed(counterparty_account, req.due_date)
 
@@ -1158,9 +1047,9 @@ def _update_installment_or_recurring(
     from reports.services import add_months
 
     operation_type = tx.operation_type or OPERATION_INSTALLMENT
-    installments = 1 if operation_type == OPERATION_RECURRING else max(1, req.installments)
-    monthly_amount = _monthly_amount_for(req.entry_amount, installments, req.calc_mode)
-    _validate_common_payload(req, monthly_amount, installments)
+    installments, monthly_amount = _parcelas_e_valor(
+        req, recorrente=operation_type == OPERATION_RECURRING
+    )
 
     ordered = sorted(scoped_entries(tx, entries, scope), key=lambda e: (e.current_installment or 1, e.due_date, e.id))
     if not ordered:
@@ -1196,9 +1085,7 @@ def _update_internal_transfer(
     if counterparty_account_id == req.account_id:
         raise ValueError("Conta destino deve ser diferente da conta de origem.")
 
-    installments = 1 if req.is_recurring else max(1, req.installments)
-    monthly_amount = _monthly_amount_for(req.entry_amount, installments, req.calc_mode)
-    _validate_common_payload(req, monthly_amount, installments)
+    installments, monthly_amount = _parcelas_e_valor(req)
 
     account = FinancialAccount.objects.select_related("owner", "institution").get(id=req.account_id)
     counterparty_account = FinancialAccount.objects.select_related("owner", "institution").get(

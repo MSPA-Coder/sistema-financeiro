@@ -16,6 +16,7 @@ from accounts.models import AccountOwner
 from accounts.services import accessible_owner_ids, hidden_account_ids
 from core.domain.finance import ENTRY_TYPE_EXPENSE, ENTRY_TYPE_INCOME, STATUS_REALIZED
 from core.htmx import quer_fragmento
+from core.permissions import permission_required
 from core.services import system_start_date
 from transactions.models import CashFlowEntry
 
@@ -52,6 +53,7 @@ def _month_label(year: int, month: int) -> str:
 
 
 @login_required
+@permission_required("dashboard.view")
 def dashboard_view(request):
 	"""Renderiza o dashboard completo ou parcial (HTMX)."""
 	today = date.today()
@@ -312,6 +314,7 @@ def dashboard_view(request):
 
 
 @login_required
+@permission_required("dashboard.view")
 def dashboard_content(request):
 	"""Alias para carregamento parcial via HTMX."""
 	return dashboard_view(request)
