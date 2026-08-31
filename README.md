@@ -52,6 +52,16 @@ docker compose --env-file .env.docker -f compose.yaml -f compose.dev.yaml up --b
 Não use `docker compose down -v` sem intenção explícita: essa opção remove os
 volumes persistentes do banco e dos comprovantes.
 
+Quem perde a senha é atendido por um administrador em **Segurança >
+Permissões**: o botão **Redefinir senha** sorteia uma senha temporária,
+mostrada uma única vez na tela de quem redefiniu, para ser entregue fora do
+sistema. Contas criadas por essa tela recebem o mesmo tratamento. Enquanto a
+troca estiver pendente, toda requisição da pessoa cai em `/change-password/` —
+só o logout, o login, o `/health` e os arquivos estáticos escapam. A troca
+exige a senha atual e recusa repetir a senha temporária. **Segurança > Alterar
+senha** também está sempre disponível, sem obrigação. O `createsuperuser` é a
+exceção: quem o roda escolheu a própria senha e não fica com troca pendente.
+
 ## Documentação
 
 - [Arquitetura](docs/architecture.md): componentes, responsabilidades e

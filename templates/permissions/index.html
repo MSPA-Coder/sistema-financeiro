@@ -26,6 +26,22 @@
 
 {% block content %}
 <div class="permissions-layout">
+    {% if senha_temporaria %}
+    {% comment %}
+    Bloco fixo, não mensagem de sessão: é a única cópia em texto claro da
+    senha, e `messages` a guardaria na sessão -- que é um cookie assinado,
+    não cifrado. Ver `_render_permissions` em `core/views.py`.
+    {% endcomment %}
+    <div class="section-card full-width senha-temporaria" role="status">
+        <h4>Senha temporária de {{ senha_de }}</h4>
+        <p><code class="senha-temporaria-valor">{{ senha_temporaria }}</code></p>
+        <p class="permissions-help">
+            Anote agora: ela não será mostrada de novo. Quem entrar com ela terá
+            de trocá-la antes de usar o sistema.
+        </p>
+    </div>
+    {% endif %}
+
     {% if not selected_user %}
     <div class="section-card full-width">
         <div class="empty-state">Cadastre pelo menos um usuário antes de configurar permissões.</div>
@@ -104,6 +120,22 @@
                                             data-sa-titulo="Excluir usuário"
                                             data-sa-severidade="error"
                                             data-sa-ok="Excluir">{% icon 'delete' %}<span>Excluir</span></button>
+                                </form>
+                                {% comment %}
+                                Sem campo de senha: quem administra não escolhe mais a senha
+                                de outra pessoa. O sistema sorteia, mostra uma única vez, e o
+                                dono é obrigado a trocar no primeiro acesso.
+                                {% endcomment %}
+                                <form method="post" class="inline-form">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="table" value="users">
+                                    <input type="hidden" name="action" value="reset_password">
+                                    <input type="hidden" name="id" value="{{ u.id }}">
+                                    <button type="submit" class="btn btn-secondary btn-sm"
+                                            data-sa-confirmar="Redefinir a senha de {{ u.username }}? O sistema vai gerar uma senha temporária, mostrada uma única vez."
+                                            data-sa-titulo="Redefinir senha"
+                                            data-sa-severidade="warning"
+                                            data-sa-ok="Redefinir"><span>Redefinir senha</span></button>
                                 </form>
                             </td>
                         </tr>

@@ -82,6 +82,11 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'django_htmx.middleware.HtmxMiddleware',
+    # Depois do HtmxMiddleware (que define `request.htmx`) e do
+    # AuthenticationMiddleware (que define `request.user`): a trava precisa dos
+    # dois. Antes das demais views, porque o desvio vale para toda requisicao,
+    # nao so para o login -- ver `accounts/middleware.py`.
+    'accounts.middleware.MustChangePasswordMiddleware',
     'core.htmx.HtmxAuthenticationMiddleware',
     'core.htmx.HtmxFlashMessagesMiddleware',
     # Depois do HtmxMiddleware, que e quem define `request.htmx`.

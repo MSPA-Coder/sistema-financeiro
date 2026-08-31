@@ -49,6 +49,21 @@ def _current_settings():
     }
 
 
+def current_min_length() -> int:
+    """Tamanho mínimo de senha em vigor, já com o piso aplicado.
+
+    Público porque a redefinição de senha precisa dele: o sorteio da senha
+    temporária tem de produzir algo que esta mesma política aceite. Sem isso, a
+    instalação que configurar 20 caracteres teria a redefinição recusando a
+    própria senha que acabou de sortear -- foi o que aconteceu no banco local,
+    configurado em 15 contra um sorteio de 12.
+    """
+    try:
+        return int(_current_settings()["min_length"])
+    except Exception:
+        return DEFAULT_MIN_LENGTH
+
+
 class ConfigurablePasswordPolicyValidator:
     """Substitui MinimumLengthValidator: lê a política de app_setting em tempo real."""
 

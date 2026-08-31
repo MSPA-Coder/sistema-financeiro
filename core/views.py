@@ -27,6 +27,7 @@ from accounts.services import (
     permission_catalog_sections,
     permission_summary,
     profile_permission_keys,
+    reset_managed_user_password,
     save_function_permissions,
     save_owner_access_matrix,
     update_managed_user,
@@ -150,6 +151,41 @@ def permissions_view(request):
                         selected_user = target_user
                     except ValueError as exc:
                         messages.error(request, str(exc))
+        elif action == 'reset_password':
+            if target_user is None:
+                messages.warning(request, "Usuário não encontrado para redefinição de senha.")
+            else:
+                block_message = user_mutation_block_message(
+                    'edit', request.user, target_user=target_user,
+                    requested_user_type=target_user.user_type,
+                )
+                if block_message:
+                    messages.warning(request, block_message)
+                else:
+                    old_values = _user_audit_snapshot(target_user)
+                    try:
+                        senha_temporaria = reset_managed_user_password(target_user)
+                    except ValueError as exc:
+                        messages.error(request, str(exc))
+                    else:
+                        # A senha NAO entra na auditoria, nem redigida: nao ha
+                        # pergunta que ela responda e ha muitas que ela abre.
+                        log_audit_event(
+                            "app_user", target_user.id, "password_reset",
+                            old_values=old_values,
+                            new_values=_user_audit_snapshot(target_user),
+                            user=request.user,
+                        )
+                        # Responde RENDERIZANDO, e nao com o redirect que as
+                        # demais acoes usam: a senha temporaria e a unica copia
+                        # em texto claro que vai existir, e um redirect a
+                        # perderia no caminho. Tambem nao vai por `messages`,
+                        # que a guardaria na sessao.
+                        return _render_permissions(
+                            request, users, target_user, can_manage_users,
+                            senha_temporaria=senha_temporaria,
+                            senha_de=target_user.username,
+                        )
         elif action == 'add':
             block_message = user_mutation_block_message('add', request.user, requested_user_type=requested_user_type)
             if block_message:
@@ -232,6 +268,15 @@ def permissions_view(request):
                 messages.success(request, f"Perfil rápido aplicado: {profile_label}.")
         return redirect(f"/permissions/?user_id={selected_user.id}")
 
+    return _render_permissions(request, users, selected_user, can_manage_users)
+
+
+def _render_permissions(request, users, selected_user, can_manage_users, **extra):
+    """Monta e renderiza a tela de permissões.
+
+    Extraída para que a redefinição de senha possa responder renderizando, em
+    vez do redirect que as demais ações usam -- ver o comentário lá.
+    """
     permission_groups = permission_catalog_grouped()
     context = {
         'users': users,
@@ -248,6 +293,7 @@ def permissions_view(request):
         'profile_definitions': PROFILE_DEFINITIONS,
         'user_type_options': list(USER_TYPE_LABELS.values()),
         'can_manage_users': can_manage_users,
+        **extra,
     }
     return render(request, "permissions/index.html", context)
 

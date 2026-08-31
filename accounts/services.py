@@ -7,6 +7,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db.models import ProtectedError
 from django.utils import timezone
+from sharedauth.passwords import TAMANHO_SENHA_TEMPORARIA, gerar_senha_temporaria
 
 from core.domain.identity import USER_TYPE_ADMINISTRATOR, USER_TYPE_SUPER_USER, normalize_user_type
 
@@ -18,6 +19,7 @@ from .models import (
     UserOwnerAccess,
     UserPermission,
 )
+from .password_validators import current_min_length
 
 # Catálogo de permissões funcionais em uso pela aplicação. Cada chave aqui
 # precisa existir como linha em AppPermission (ver migration
@@ -422,6 +424,43 @@ def update_managed_user(
     return user
 
 
+def reset_managed_user_password(user: AppUser) -> str:
+    """Sorteia a senha temporaria de outra conta e obriga a troca.
+
+    Quem administra nao escolhe mais a senha de outra pessoa: uma senha
+    escolhida por ele e uma senha que ele conhece e que tende a se repetir
+    entre contas. O sistema sorteia, mostra uma vez, e o dono e obrigado a
+    trocar no primeiro acesso -- `MustChangePasswordMiddleware` cobra isso em
+    toda requisicao, nao so no login.
+
+    O valor devolvido e a **unica copia em texto claro** que vai existir. Quem
+    chama mostra e descarta; nao vai para log, auditoria nem coluna.
+
+    O sorteio usa o alfabeto de `sharedauth.passwords`, que exclui `0/O` e
+    `1/l/I` -- a senha vai ser ditada -- e **nao tem caractere especial**. O
+    tamanho vem da politica em Configuracoes > Parametros, nunca do padrao da
+    biblioteca: uma instalacao com minimo de 15 recusaria os 12 do padrao, e a
+    redefinicao rejeitaria a propria senha que acabou de sortear. Ja exigencia
+    de caractere especial nao tem como o sorteio atender -- ai a recusa e dita
+    na hora, em vez de virar um erro obscuro.
+    """
+    senha = gerar_senha_temporaria(max(TAMANHO_SENHA_TEMPORARIA, current_min_length()))
+    try:
+        validate_password(senha, user=user)
+    except ValidationError as exc:
+        raise ValueError(
+            "A senha sorteada nao atende a politica configurada em "
+            "Configuracoes > Parametros (" + " ".join(exc.messages) + "). "
+            "Ajuste a politica ou defina a senha pela edicao do usuario."
+        ) from exc
+
+    user.set_password(senha)
+    user.password_updated_at = timezone.now()
+    user.must_change_password = True
+    user.save(update_fields=["password", "password_updated_at", "must_change_password", "updated_at"])
+    return senha
+
+
 def delete_managed_user(user: AppUser) -> None:
     user.delete()
 
@@ -580,6 +619,13 @@ def change_user_password(
         raise ValueError("Senha atual inválida.")
     if new_password != confirmation:
         raise ValueError("A confirmação de senha não confere.")
+    if new_password == current_password:
+        # O caso que motiva a regra é a senha temporária: quem foi obrigado a
+        # trocar redigita a que o administrador acabou de ditar, a marca se
+        # apaga, e a senha que um terceiro conhece continua valendo --
+        # exatamente o que a obrigação existia para impedir. Mesma regra de
+        # `sharedauth.passwords.validar_troca` nos três apps Flask.
+        raise ValueError("A nova senha deve ser diferente da senha atual.")
     try:
         validate_password(new_password or "", user=user)
     except ValidationError as exc:

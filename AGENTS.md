@@ -98,9 +98,18 @@ O piso de senha de oito caracteres aparece em
 `accounts/password_validators.py` e `core/services.py`; alterações nessa regra
 precisam manter os dois pontos coerentes.
 
-SharedAuth fornece constantes de segurança e formatação numérica. Ele não
-aplica middleware, não autentica usuários e não define permissões neste
-projeto. O token de leitura usado no build é secret do BuildKit e nunca deve
+SharedAuth fornece constantes de segurança, formatação numérica e o sorteio da
+senha temporária (`gerar_senha_temporaria`, política compartilhada com os três
+apps Flask). Ele não aplica middleware, não autentica usuários e não define
+permissões neste projeto — a trava de troca pendente é nativa
+(`accounts/middleware.py`).
+
+Senha redefinida por um administrador vale até o primeiro acesso:
+`must_change_password` é ligada pela criação de conta e pela redefinição, e
+`MustChangePasswordMiddleware` desvia **toda** requisição para
+`/change-password/` enquanto ela estiver ligada — não só o login. O tamanho da
+senha sorteada vem da política em Configurações > Parâmetros, nunca do padrão
+da biblioteca. O token de leitura usado no build é secret do BuildKit e nunca deve
 entrar em imagem, log ou commit.
 
 ## Validação proporcional
