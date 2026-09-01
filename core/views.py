@@ -27,6 +27,7 @@ from accounts.services import (
     permission_catalog_sections,
     permission_summary,
     profile_permission_keys,
+    reset_managed_user_password,
     save_function_permissions,
     save_owner_access_matrix,
     update_managed_user,
@@ -42,6 +43,7 @@ from core.domain.settings import (
 from core.permissions import permission_required
 from core.services import (
     audit_filter_options,
+    audit_request_context,
     available_inspection_tables,
     filtered_recent_audit_logs,
     format_last_optimize_info,
@@ -150,6 +152,41 @@ def permissions_view(request):
                         selected_user = target_user
                     except ValueError as exc:
                         messages.error(request, str(exc))
+        elif action == 'reset_password':
+            if target_user is None:
+                messages.warning(request, "Usuário não encontrado para redefinição de senha.")
+            else:
+                block_message = user_mutation_block_message(
+                    'edit', request.user, target_user=target_user,
+                    requested_user_type=target_user.user_type,
+                )
+                if block_message:
+                    messages.warning(request, block_message)
+                else:
+                    old_values = _user_audit_snapshot(target_user)
+                    try:
+                        senha_temporaria = reset_managed_user_password(target_user)
+                    except ValueError as exc:
+                        messages.error(request, str(exc))
+                    else:
+                        # A senha NAO entra na auditoria, nem redigida: nao ha
+                        # pergunta que ela responda e ha muitas que ela abre.
+                        log_audit_event(
+                            "app_user", target_user.id, "password_reset",
+                            old_values=old_values,
+                            new_values=_user_audit_snapshot(target_user),
+                            user=request.user,
+                        )
+                        # Responde RENDERIZANDO, e nao com o redirect que as
+                        # demais acoes usam: a senha temporaria e a unica copia
+                        # em texto claro que vai existir, e um redirect a
+                        # perderia no caminho. Tambem nao vai por `messages`,
+                        # que a guardaria na sessao.
+                        return _render_permissions(
+                            request, users, target_user, can_manage_users,
+                            senha_temporaria=senha_temporaria,
+                            senha_de=target_user.username,
+                        )
         elif action == 'add':
             block_message = user_mutation_block_message('add', request.user, requested_user_type=requested_user_type)
             if block_message:
@@ -232,6 +269,15 @@ def permissions_view(request):
                 messages.success(request, f"Perfil rápido aplicado: {profile_label}.")
         return redirect(f"/permissions/?user_id={selected_user.id}")
 
+    return _render_permissions(request, users, selected_user, can_manage_users)
+
+
+def _render_permissions(request, users, selected_user, can_manage_users, **extra):
+    """Monta e renderiza a tela de permissões.
+
+    Extraída para que a redefinição de senha possa responder renderizando, em
+    vez do redirect que as demais ações usam -- ver o comentário lá.
+    """
     permission_groups = permission_catalog_grouped()
     context = {
         'users': users,
@@ -248,6 +294,7 @@ def permissions_view(request):
         'profile_definitions': PROFILE_DEFINITIONS,
         'user_type_options': list(USER_TYPE_LABELS.values()),
         'can_manage_users': can_manage_users,
+        **extra,
     }
     return render(request, "permissions/index.html", context)
 
@@ -416,9 +463,24 @@ def settings_close_month_view(request):
             raise ValueError("Acesso negado: usuário sem permissão para fechar este mês.")
         _start, end_exclusive = month_bounds(year, month)
         closing_balance = decimal_balance_before([account.id], end_exclusive, VIEW_REALIZED)
-        closed = close_month(account, year, month, closing_balance, request.user)
+        closed = close_month(
+            account,
+            year,
+            month,
+            closing_balance,
+            request.user,
+            audit_context=audit_request_context(request),
+        )
         messages.success(request, f"Mês {closed.month:02d}/{closed.year} fechado para a conta #{closed.account_id}.")
     except (ValueError, TypeError, FinancialAccount.DoesNotExist) as exc:
+        log_audit_event(
+            "account_month_close",
+            request.POST.get("account_id"),
+            "close",
+            request_context=audit_request_context(request),
+            result="failure",
+            summary="Fechamento mensal recusado pela validação do servidor.",
+        )
         messages.error(request, str(exc) or "Dados inválidos para fechamento mensal.")
     return _monthly_close_redirect(request)
 
@@ -437,9 +499,24 @@ def settings_reopen_month_view(request):
         account = FinancialAccount.objects.get(id=account_id)
         if not can_access_account(request.user, account.id, "update"):
             raise ValueError("Acesso negado: usuário sem permissão para reabrir este mês.")
-        reopened = reopen_month(account, year, month, request.POST.get('reason', ''), request.user)
+        reopened = reopen_month(
+            account,
+            year,
+            month,
+            request.POST.get('reason', ''),
+            request.user,
+            audit_context=audit_request_context(request),
+        )
         messages.success(request, f"Mês {reopened.month:02d}/{reopened.year} reaberto para a conta #{reopened.account_id}.")
     except (ValueError, TypeError, FinancialAccount.DoesNotExist) as exc:
+        log_audit_event(
+            "account_month_close",
+            request.POST.get("account_id"),
+            "reopen",
+            request_context=audit_request_context(request),
+            result="failure",
+            summary="Reabertura mensal recusada pela validação do servidor.",
+        )
         messages.error(request, str(exc) or "Fechamento mensal inválido.")
     return _monthly_close_redirect(request)
 

@@ -9,6 +9,7 @@ from django.views.decorators.http import require_POST
 
 from core.htmx import quer_fragmento
 from core.permissions import permission_required
+from core.services import audit_request_context
 
 from . import reconciliation
 from .attachments import (
@@ -105,7 +106,10 @@ def reconcile_view(request):
     line_id = request.POST.get('line_id')
     try:
         reconciliation.reconcile_line_with_entry(
-            request.user, line_id=line_id, entry_id=request.POST.get('entry_id')
+            request.user,
+            line_id=line_id,
+            entry_id=request.POST.get('entry_id'),
+            audit_context=audit_request_context(request),
         )
         messages.success(request, "Linha conciliada e movimento marcado como realizado.")
     except ValueError as exc:
@@ -124,7 +128,10 @@ def create_entry_from_line_view(request):
     line_id = request.POST.get('line_id')
     try:
         reconciliation.create_entry_from_line(
-            request.user, line_id=line_id, category_id=request.POST.get('category_id')
+            request.user,
+            line_id=line_id,
+            category_id=request.POST.get('category_id'),
+            audit_context=audit_request_context(request),
         )
         messages.success(request, "Lançamento criado e conciliado com a linha do extrato.")
     except ValueError as exc:
@@ -145,13 +152,21 @@ def bulk_action_lines_view(request):
     if not line_ids:
         messages.warning(request, "Selecione ao menos uma linha do extrato.")
     elif action == 'reconcile':
-        reconciled, errors = reconciliation.bulk_reconcile_lines(request.user, line_ids=line_ids)
+        reconciled, errors = reconciliation.bulk_reconcile_lines(
+            request.user,
+            line_ids=line_ids,
+            audit_context=audit_request_context(request),
+        )
         if reconciled:
             messages.success(request, f"{reconciled} linha(s) conciliada(s).")
         if errors:
             messages.error(request, f"{len(errors)} linha(s) não puderam ser conciliadas: {errors[0][1]}")
     elif action == 'create':
-        created, errors = reconciliation.bulk_create_entries_from_lines(request.user, line_ids=line_ids)
+        created, errors = reconciliation.bulk_create_entries_from_lines(
+            request.user,
+            line_ids=line_ids,
+            audit_context=audit_request_context(request),
+        )
         if created:
             messages.success(request, f"{created} lançamento(s) criado(s) e conciliado(s).")
         if errors:

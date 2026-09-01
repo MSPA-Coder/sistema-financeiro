@@ -131,6 +131,7 @@ services:
       CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
       DEBUG: ${DEBUG:-False}
       USE_HTTPS: ${USE_HTTPS:-False}
+      AUDIT_TRUSTED_PROXY_CIDRS: ${AUDIT_TRUSTED_PROXY_CIDRS:-}
     ports:
       - "127.0.0.1:${APP_PORT:-5201}:8000"
     depends_on:

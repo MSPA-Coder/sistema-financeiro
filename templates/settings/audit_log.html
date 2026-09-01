@@ -69,6 +69,9 @@
                                 {% endfor %}
                             </select>
                         </th>
+                        <th>Resultado</th>
+                        <th>Origem</th>
+                        <th>Resumo</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -76,15 +79,18 @@
                     {% for log in recent_audit_logs %}
                     <tr>
                         <td>{{ log.created_at|date:"d/m/Y H:i:s" }}</td>
-                        <td>{{ log.user.username|default:"-" }}</td>
+                        <td>{% if log.actor_name %}{{ log.actor_name }}{% elif log.user %}{{ log.user.username }}{% else %}-{% endif %}{% if log.actor_id %} (#{{ log.actor_id }}){% endif %}</td>
                         <td>{{ log.entity_name }}</td>
                         <td>{{ log.entity_id|default:"-" }}</td>
                         <td>{{ log.action }}</td>
+                        <td>{{ log.result }}</td>
+                        <td title="Request ID: {{ log.request_id|default:'-' }}">{{ log.client_ip|default:"-" }}{% if log.proxy_ip %} via {{ log.proxy_ip }}{% endif %}</td>
+                        <td>{{ log.summary|default:"-" }}</td>
                     </tr>
                     {% endfor %}
                     {% else %}
                     <tr>
-                        <td colspan="5" class="empty-state">Nenhum evento recente de auditoria.</td>
+                        <td colspan="8" class="empty-state">Nenhum evento recente de auditoria.</td>
                     </tr>
                     {% endif %}
                 </tbody>

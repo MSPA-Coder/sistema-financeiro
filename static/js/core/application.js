@@ -14,8 +14,44 @@
         if (!row) return;
 
         var force = button.dataset.toggleForce;
-        var show = force === undefined ? row.classList.contains('is-collapsed') : force === 'true';
-        row.classList.toggle('is-collapsed', !show);
+        var show = force === undefined ? !row.classList.contains('is-editing') : force === 'true';
+        row.classList.toggle('is-editing', show);
+    });
+
+    /* As mensagens nativas de constraint validation seguem o idioma do
+       navegador, que pode divergir do pt-BR da aplicação. Mantemos as
+       próprias constraints (required/min/max etc.) e só fornecemos o texto
+       exibido ao usuário. */
+    function _validationMessagePtBr(field) {
+        var validity = field.validity;
+        if (validity.valueMissing) {
+            if (field.tagName === 'SELECT') return 'Selecione uma opção.';
+            if (field.type === 'file') return 'Selecione um arquivo.';
+            if (field.type === 'date' || field.type === 'month') return 'Informe uma data.';
+            return 'Preencha este campo.';
+        }
+        if (validity.typeMismatch) return 'Informe um valor válido.';
+        if (validity.rangeUnderflow) return 'Informe um valor igual ou maior que o mínimo permitido.';
+        if (validity.rangeOverflow) return 'Informe um valor igual ou menor que o máximo permitido.';
+        if (validity.stepMismatch) return 'Informe um valor válido para este campo.';
+        if (validity.patternMismatch) return 'Informe um valor no formato solicitado.';
+        return 'Corrija este campo antes de continuar.';
+    }
+
+    document.addEventListener('invalid', function (event) {
+        var field = event.target;
+        if (!field || typeof field.setCustomValidity !== 'function') return;
+        field.setCustomValidity('');
+        if (!field.validity.valid) field.setCustomValidity(_validationMessagePtBr(field));
+    }, true);
+
+    document.addEventListener('input', function (event) {
+        var field = event.target;
+        if (field && typeof field.setCustomValidity === 'function') field.setCustomValidity('');
+    });
+    document.addEventListener('change', function (event) {
+        var field = event.target;
+        if (field && typeof field.setCustomValidity === 'function') field.setCustomValidity('');
     });
 
     /* ============================================================
@@ -115,7 +151,10 @@
     };
 
     /* ============================================================
-       VALUES PRIVACY
+       MODO DISCRETO (PREFERÊNCIA VISUAL)
+
+       Esta preferência evita expor valores para quem está olhando a tela,
+       mas não é uma fronteira de autorização e não remove os dados do DOM.
        ============================================================ */
     var _valuesPrivacyKey = 'app_values_hidden';
     var _moneyMatchRe = /[+-]?\s*R\$\s*(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}/;
@@ -231,8 +270,8 @@
 
     function _updatePrivacyToggle(toggle, hidden) {
         toggle.setAttribute('aria-pressed', hidden ? 'true' : 'false');
-        toggle.setAttribute('aria-label', hidden ? 'Mostrar valores' : 'Ocultar valores');
-        toggle.setAttribute('title', hidden ? 'Mostrar valores' : 'Ocultar valores');
+        toggle.setAttribute('aria-label', hidden ? 'Desativar modo discreto' : 'Ativar modo discreto');
+        toggle.setAttribute('title', hidden ? 'Desativar modo discreto' : 'Ativar modo discreto');
 
         var visibleIcon = toggle.querySelector('[data-privacy-icon-visible]');
         var hiddenIcon = toggle.querySelector('[data-privacy-icon-hidden]');

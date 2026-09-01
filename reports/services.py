@@ -1199,41 +1199,21 @@ def projection_months_between(account_ids: list[int], start_month: date, end_mon
         if mk is not None:
             entries_by_month[mk].append(entry)
 
-    use_running_balance = view_mode == VIEW_REALIZED
-    if use_running_balance:
-        running_balance = decimal_balance_before(account_ids, first_month, view_mode)
-    else:
-        # `decimal_period_start_balance` por mês seria uma consulta agregada
-        # (duas, em modo A vencer/Vencidos) por mês do intervalo. Em vez
-        # disso, calcula o saldo do primeiro mês uma única vez e acumula com
-        # os totais mensais já agregados em `_signed_entries_totals_by_month`
-        # -- mesmo raciocínio: `decimal_balance_before` de um mês é o do mês
-        # anterior mais o total assinado daquele mês, então a soma
-        # incremental produz o mesmo valor que recomputar do zero a cada mês.
-        running_before_month = decimal_balance_before(account_ids, first_month, view_mode)
-        monthly_deltas = _signed_entries_totals_by_month(
-            account_ids, view_mode=view_mode, start_date=first_month, end_date=final_end
-        )
-        realized_in_period_by_month = (
-            _signed_entries_totals_by_month(
-                account_ids,
-                view_mode=VIEW_REALIZED,
-                start_date=max(first_month, system_start_date() or date.min),
-                end_date=final_end,
-            )
-            if view_mode in {VIEW_PROJECTED, VIEW_PENDING}
-            else {}
-        )
+    # O filtro de status define os buckets exibidos, não o saldo patrimonial.
+    # Sem uma base canônica, uma linha parcialmente decorrida podia exibir um
+    # saldo e alimentar o mês seguinte com outro. O saldo usa sempre o livro
+    # completo (realizados pela data de realização, demais pela de vencimento).
+    balance_entries_by_month: dict[date, list[CashFlowEntry]] = defaultdict(list)
+    for entry in entries_for_period(account_ids, first_month, final_end, VIEW_ALL):
+        mk = _entry_month_key(entry, VIEW_ALL)
+        if mk is not None:
+            balance_entries_by_month[mk].append(entry)
+    running_balance = decimal_balance_before(account_ids, first_month, VIEW_ALL)
 
     months: list[dict] = []
     month_start = first_month
     while month_start <= last_month:
-        if use_running_balance:
-            saldo_atual = running_balance
-        else:
-            saldo_atual = (
-                running_before_month + realized_in_period_by_month.get(month_start, Decimal("0.00"))
-            ).quantize(MONEY_QUANT)
+        saldo_atual = running_balance
 
         month = _empty_month(month_start, saldo_atual)
         month_entries = entries_by_month.get(month_start, [])
@@ -1241,14 +1221,15 @@ def projection_months_between(account_ids: list[int], start_month: date, end_mon
 
         for entry in month_entries:
             _add_entry_to_bucket(month, entry, view_mode)
-            if not (view_mode == STATUS_PROJECTED and entry.status == STATUS_REALIZED):
-                saldo_atual += _entry_signed_amount(entry, realized=_entry_is_realized_for_mode(entry, view_mode))
             if entry.status == STATUS_REALIZED:
                 month["total_realizados"] += 1
             elif entry.status == STATUS_PENDING:
                 month["total_atrasados"] += 1
             elif entry.status == STATUS_PROJECTED:
                 month["total_planejados"] += 1
+
+        for entry in balance_entries_by_month.get(month_start, []):
+            saldo_atual += _entry_signed_amount(entry, realized=_entry_is_realized_for_mode(entry, VIEW_ALL))
 
         month["geracao_realizada"] = month["receita_realizada"] - month["despesa_realizada"]
         month["geracao_atrasado"] = month["receita_atrasado"] - month["despesa_atrasado"]
@@ -1257,10 +1238,7 @@ def projection_months_between(account_ids: list[int], start_month: date, end_mon
         month["geracao"] = month["receita"] - month["despesa"]
         month["saldo"] = saldo_atual.quantize(MONEY_QUANT)
 
-        if use_running_balance:
-            running_balance = month["saldo"]
-        else:
-            running_before_month += monthly_deltas.get(month_start, Decimal("0.00"))
+        running_balance = month["saldo"]
 
         months.append(month)
         month_start = add_months(month_start, 1)
@@ -1293,6 +1271,7 @@ class AccountCashReportRow:
     account_name: str
     start_balance: Decimal
     cash_generation: Decimal
+    internal_transfers: Decimal
     end_balance: Decimal
 
 
@@ -1320,12 +1299,15 @@ def account_cash_report_rows(account_ids: list[int], start_month: date, end_mont
     start_by_account = decimal_period_start_balances_by_account(ordered_ids, first_month, first_month_end, view_mode)
     end_by_account = dict(decimal_period_start_balances_by_account(ordered_ids, last_month, final_end, view_mode))
     generation_by_account = {account_id: Decimal("0.00") for account_id in ordered_ids}
+    transfers_by_account = {account_id: Decimal("0.00") for account_id in ordered_ids}
 
     for entry in entries_for_period(ordered_ids, first_month, final_end, view_mode):
         realized = _entry_is_realized_for_mode(entry, view_mode)
         amount = _entry_amount(entry, realized=realized)
         is_internal = bool(entry.category and entry.category.is_internal)
-        if not is_internal:
+        if is_internal:
+            transfers_by_account[entry.account_id] += _entry_signed_amount(entry, realized=realized)
+        else:
             if entry.entry_type == ENTRY_TYPE_INCOME:
                 generation_by_account[entry.account_id] += amount
             else:
@@ -1342,6 +1324,7 @@ def account_cash_report_rows(account_ids: list[int], start_month: date, end_mont
             account_name=account.account_name,
             start_balance=start_by_account.get(account.id, Decimal("0.00")).quantize(MONEY_QUANT),
             cash_generation=generation_by_account.get(account.id, Decimal("0.00")).quantize(MONEY_QUANT),
+            internal_transfers=transfers_by_account.get(account.id, Decimal("0.00")).quantize(MONEY_QUANT),
             end_balance=end_by_account.get(account.id, Decimal("0.00")).quantize(MONEY_QUANT),
         )
         for account in accounts

@@ -83,6 +83,7 @@ def realize_transaction(
     entry: CashFlowEntry,
     realized_date: date | None = None,
     realized_amount: Decimal | None = None,
+    audit_context=None,
 ) -> CashFlowEntry:
     """Marca um lançamento como realizado.
 
@@ -130,6 +131,17 @@ def realize_transaction(
             id=entry.bank_operation_id,
             status__in=[STATUS_PROJECTED, STATUS_PENDING],
         ).update(status=STATUS_REALIZED)
+
+    if audit_context is not None:
+        from core.services import log_audit_event
+        for realized_entry in (entry, counterpart) if realize_counterpart else (entry,):
+            log_audit_event(
+                "cash_flow_entry",
+                realized_entry.id,
+                "realize",
+                request_context=audit_context,
+                summary="Lançamento marcado como realizado.",
+            )
 
     return entry
 
@@ -183,6 +195,7 @@ def close_month(
     month: int,
     closing_balance: Decimal,
     user,
+    audit_context=None,
 ) -> AccountMonthClose:
     """Fecha um mês para uma conta específica."""
     if not can_access_account(user, account.id, "update"):
@@ -201,8 +214,9 @@ def close_month(
     from core.services import log_audit_event
     log_audit_event(
         "account_month_close", month_close.id, "close",
-        new_values={"account_id": account.id, "year": year, "month": month, "closing_balance": str(closing_balance)},
         user=user,
+        request_context=audit_context,
+        summary=f"Fechamento mensal {month:02d}/{year} da conta #{account.id}.",
     )
     return month_close
 
@@ -214,6 +228,7 @@ def reopen_month(
     month: int,
     reason: str,
     user,
+    audit_context=None,
 ) -> AccountMonthClose:
     """Reabre um mês fechado."""
     if not can_access_account(user, account.id, "update"):
@@ -240,8 +255,9 @@ def reopen_month(
     from core.services import log_audit_event
     log_audit_event(
         "account_month_close", month_close.id, "reopen",
-        new_values={"active": False, "reopen_reason": month_close.reopen_reason},
         user=user,
+        request_context=audit_context,
+        summary=f"Fechamento mensal {month:02d}/{year} da conta #{account.id} reaberto.",
     )
     return month_close
 
@@ -351,20 +367,20 @@ def _account_label(account: FinancialAccount | None) -> str:
 
 
 def _monthly_amount_for(entry_amount: Decimal, installments: int, calc_mode: str) -> Decimal:
-    """Valor de UMA parcela.
-
-    No modo `CALC_DIVIDE` o valor sai do arredondamento simples da divisao, sem
-    redistribuir o residuo: R$100,00 em 3x da tres parcelas de R$33,33, que
-    somam R$99,99. E decisao registrada, nao descuido -- redistribuir exigiria
-    que os cinco caminhos abaixo soubessem qual parcela e a ultima, e
-    `current_future` reescreve um SUBCONJUNTO das parcelas, onde "ultima" nao
-    tem resposta obvia. A diferenca e de um ou dois centavos por operacao e o
-    mantenedor a considerou irrelevante para o uso deste sistema (29/08).
-    """
+    """Valor-base de uma parcela, usado também para validar o payload."""
     amount = entry_amount if isinstance(entry_amount, Decimal) else Decimal(str(entry_amount))
     if calc_mode == CALC_DIVIDE and installments > 1:
         return (amount / Decimal(installments)).quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
     return amount.quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
+
+
+def installment_amount_for(entry_amount: Decimal, installments: int, calc_mode: str, installment: int) -> Decimal:
+    """Devolve a parcela, concentrando na última o resíduo de arredondamento."""
+    amount = entry_amount if isinstance(entry_amount, Decimal) else Decimal(str(entry_amount))
+    base = _monthly_amount_for(amount, installments, calc_mode)
+    if calc_mode != CALC_DIVIDE or installments <= 1 or installment < installments:
+        return base
+    return (amount - (base * (installments - 1))).quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
 
 
 def _parcelas_e_valor(req: TransactionRequest, *, recorrente: bool | None = None) -> tuple[int, Decimal]:
@@ -443,6 +459,8 @@ def operation_entries(entry: CashFlowEntry) -> list[CashFlowEntry]:
 
 def scoped_entries(tx: CashFlowEntry, entries: list[CashFlowEntry], scope: str) -> list[CashFlowEntry]:
     """Filtra `entries` conforme o escopo escolhido (all/single/current_future)."""
+    if scope not in (OPERATION_SCOPE_ALL, OPERATION_SCOPE_SINGLE, OPERATION_SCOPE_CURRENT_FUTURE):
+        raise ValueError("Escopo de operação inválido.")
     if scope == OPERATION_SCOPE_ALL or not supports_operation_scope(tx):
         return list(entries)
     operation_type = tx.operation_type or OPERATION_SINGLE
@@ -626,7 +644,7 @@ def _validate_common_payload(req: TransactionRequest, monthly_amount: Decimal, i
 
 
 @db_transaction.atomic
-def create_transaction_batch(req: TransactionRequest) -> list[CashFlowEntry]:
+def create_transaction_batch(req: TransactionRequest, audit_context=None) -> list[CashFlowEntry]:
     """Cria um lote de lançamentos: único, parcelado ou recorrente, incluindo
     transferência interna quando a categoria informada é `is_internal`.
 
@@ -694,12 +712,15 @@ def create_transaction_batch(req: TransactionRequest) -> list[CashFlowEntry]:
         status = _normalize_open_entry_status(req.status, due_date)
         realized_date = req.realized_date if status == STATUS_REALIZED else None
         realized_amount = req.realized_amount if status == STATUS_REALIZED else None
+        installment_amount = installment_amount_for(
+            req.entry_amount, installments_total, req.calc_mode, current_installment
+        )
         original = CashFlowEntry.objects.create(
             account=account,
             category=category,
             entry_type=req.entry_type,
             description=original_description,
-            entry_amount=monthly_amount,
+            entry_amount=installment_amount,
             installments=installments_total,
             current_installment=current_installment,
             due_date=due_date,
@@ -717,7 +738,7 @@ def create_transaction_batch(req: TransactionRequest) -> list[CashFlowEntry]:
                 category=category,
                 entry_type=_opposite_entry_type(req.entry_type),
                 description=counterparty_description,
-                entry_amount=monthly_amount,
+                entry_amount=installment_amount,
                 installments=installments_total,
                 current_installment=current_installment,
                 due_date=due_date,
@@ -752,7 +773,13 @@ def create_transaction_batch(req: TransactionRequest) -> list[CashFlowEntry]:
         bank_operation.save(update_fields=["first_due_date", "last_due_date", "entry_count", "updated_at"])
 
     for entry in entries:
-        log_audit_event("cash_flow_entry", entry.id, "create", new_values=_snapshot_entry(entry))
+        log_audit_event(
+            "cash_flow_entry",
+            entry.id,
+            "create",
+            request_context=audit_context,
+            summary="Lançamento criado.",
+        )
 
     return entries
 
@@ -961,7 +988,6 @@ def _replace_current_future_block(
 ) -> list[CashFlowEntry]:
     """Substitui deterministicamente o bloco atual/futuro de uma operação
     (apaga e recria, já que os offsets de data mudam com o novo vencimento)."""
-    from core.services import log_audit_event
     from reports.services import add_months
 
     if not entries:
@@ -975,8 +1001,6 @@ def _replace_current_future_block(
     bank_operation = tx.bank_operation
 
     old_ids = [e.id for e in entries]
-    for entry in entries:
-        log_audit_event("cash_flow_entry", entry.id, "delete", old_values=_snapshot_entry(entry))
     CashFlowEntry.objects.filter(id__in=old_ids).delete()
 
     rebuilt: list[CashFlowEntry] = []
@@ -984,13 +1008,19 @@ def _replace_current_future_block(
         due_date = add_months(req.due_date, offset)
         validate_month_not_closed(account, due_date)
         current_installment = 1 if operation_type == OPERATION_RECURRING else start_installment + offset
+        entry_amount = installment_amount_for(
+            req.entry_amount,
+            installments,
+            req.calc_mode,
+            current_installment,
+        )
         status = _normalize_open_entry_status(req.status, due_date)
         new_entry = CashFlowEntry.objects.create(
             account=account,
             category_id=req.category_id,
             entry_type=req.entry_type,
             description=(req.description or "")[:255],
-            entry_amount=monthly_amount,
+            entry_amount=entry_amount,
             installments=installments,
             current_installment=current_installment,
             due_date=due_date,
@@ -1064,7 +1094,19 @@ def _update_installment_or_recurring(
         validate_month_not_closed(account, due_date)
         if scope == OPERATION_SCOPE_ALL:
             entry.current_installment = offset + 1 if operation_type == OPERATION_INSTALLMENT else 1
-        _apply_fields(entry, req, due_date=due_date, monthly_amount=monthly_amount, installments=installments)
+        entry_amount = installment_amount_for(
+            req.entry_amount,
+            installments,
+            req.calc_mode,
+            entry.current_installment or 1,
+        )
+        _apply_fields(
+            entry,
+            req,
+            due_date=due_date,
+            monthly_amount=entry_amount,
+            installments=installments,
+        )
         entry.operation_type = operation_type
         entry.save()
     return ordered
@@ -1117,14 +1159,20 @@ def _update_internal_transfer(
             current_installment = origin.current_installment or 1
         origin.current_installment = current_installment
         counterpart.current_installment = current_installment
+        entry_amount = installment_amount_for(
+            req.entry_amount,
+            installments,
+            req.calc_mode,
+            current_installment,
+        )
 
         _apply_fields(
-            origin, req, due_date=due_date, monthly_amount=monthly_amount, installments=installments,
+            origin, req, due_date=due_date, monthly_amount=entry_amount, installments=installments,
             description=original_description, entry_type=req.entry_type, account_id=account.id,
             clear_source_entry=True,
         )
         _apply_fields(
-            counterpart, req, due_date=due_date, monthly_amount=monthly_amount, installments=installments,
+            counterpart, req, due_date=due_date, monthly_amount=entry_amount, installments=installments,
             description=counterparty_description, entry_type=_opposite_entry_type(req.entry_type),
             account_id=counterparty_account.id, source_entry=origin,
         )
@@ -1149,6 +1197,7 @@ def _update_internal_transfer(
 def update_transaction_operation(
     tx: CashFlowEntry, req: TransactionRequest, operation_scope: str = OPERATION_SCOPE_ALL,
     current_future_confirmation_token: str | None = None,
+    audit_context=None,
 ) -> list[CashFlowEntry]:
     """Atualiza um lançamento (ou o grupo ao qual pertence) respeitando o
     escopo escolhido: `all`, `single` ou `current_future`."""
@@ -1159,7 +1208,6 @@ def update_transaction_operation(
         _assert_current_future_confirmation(tx.id, current_future_confirmation_token)
     for entry in scoped_entries(tx, entries, operation_scope):
         assert_entry_period_open(entry)
-    old_snapshots = {entry.id: _snapshot_entry(entry) for entry in entries}
     operation_type = tx.operation_type or OPERATION_SINGLE
 
     if operation_type == OPERATION_INTERNAL_TRANSFER:
@@ -1177,8 +1225,8 @@ def update_transaction_operation(
 
     for entry in updated:
         log_audit_event(
-            "cash_flow_entry", entry.id, "update",
-            old_values=old_snapshots.get(entry.id), new_values=_snapshot_entry(entry),
+            "cash_flow_entry", entry.id, "update", request_context=audit_context,
+            summary=f"Lançamento editado (escopo: {operation_scope}).",
         )
     return updated
 
@@ -1191,6 +1239,7 @@ def delete_transaction_or_operation(
     tx: CashFlowEntry,
     operation_scope: str = OPERATION_SCOPE_ALL,
     current_future_confirmation_token: str | None = None,
+    audit_context=None,
 ) -> int:
     """Exclui um lançamento (ou o grupo/bloco escolhido pelo escopo)."""
     from core.services import log_audit_event
@@ -1220,7 +1269,10 @@ def delete_transaction_or_operation(
 
     count = len(scoped)
     for entry in scoped:
-        log_audit_event("cash_flow_entry", entry.id, "delete", old_values=_snapshot_entry(entry))
+        log_audit_event(
+            "cash_flow_entry", entry.id, "delete", request_context=audit_context,
+            summary=f"Lançamento excluído (escopo: {operation_scope}).",
+        )
 
     bank_operation_id = tx.bank_operation_id
     if operation_type == OPERATION_INTERNAL_TRANSFER:
@@ -1451,6 +1503,19 @@ def build_transactions_view_context(user, get_params, session, *, request=None) 
     ctx = report_services.selected_context(user, get_params, request=request)
     options = report_services.context_options(user, ctx)
     account_ids = options.account_ids
+
+    # O índice de operações abre a lista sem um ``account_id`` explícito. Não
+    # pode herdar uma conta persistida em sessão para calcular saldo/resumo de
+    # linhas que pertencem a outra conta da mesma operação.
+    if operation_key and not ctx.account_id:
+        operation_account_ids = list(
+            CashFlowEntry.objects.filter(
+                bank_operation__operation_key=operation_key,
+                account_id__in=account_ids,
+            ).values_list("account_id", flat=True).distinct()
+        )
+        if operation_account_ids:
+            account_ids = operation_account_ids
 
     start_selected = report_services.enforce_system_start_month(date(year, month, 1))
     _month_start, _next_month_start = report_services.month_bounds(year, month)

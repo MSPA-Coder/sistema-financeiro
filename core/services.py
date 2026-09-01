@@ -6,7 +6,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from ipaddress import ip_address, ip_network
+from uuid import uuid4
 
+from django.conf import settings
 from django.db import connection
 
 from core.domain.settings import (
@@ -151,16 +154,92 @@ def filtered_recent_audit_logs(
     return logs, filters
 
 
-def log_audit_event(entity_name: str, entity_id, action: str, *, old_values=None, new_values=None, user=None):
+@dataclass(frozen=True)
+class AuditRequestContext:
+    """Dados nao sensiveis da requisicao, capturados na borda HTTP."""
+
+    user: object | None
+    client_ip: str | None
+    proxy_ip: str | None
+    request_id: str
+
+
+def _valid_ip(value: str | None) -> str | None:
+    try:
+        return str(ip_address((value or "").strip()))
+    except ValueError:
+        return None
+
+
+def _trusted_proxy(remote_addr: str | None) -> bool:
+    remote_ip = _valid_ip(remote_addr)
+    if remote_ip is None:
+        return False
+    for cidr in settings.AUDIT_TRUSTED_PROXY_CIDRS:
+        try:
+            if ip_address(remote_ip) in ip_network(cidr):
+                return True
+        except ValueError:
+            # Configuracao invalida nao pode tornar um cabecalho confiavel.
+            continue
+    return False
+
+
+def audit_request_context(request) -> AuditRequestContext:
+    """Extrai a origem sem confiar em cabecalhos enviados diretamente pelo cliente.
+
+    X-Forwarded-For so e aceito quando a conexao TCP vem de uma rede de proxy
+    explicitamente configurada. Sem essa configuracao, REMOTE_ADDR e o cliente.
+    """
+    remote_addr = _valid_ip(request.META.get("REMOTE_ADDR"))
+    client_ip = remote_addr
+    proxy_ip = None
+    if remote_addr and _trusted_proxy(remote_addr):
+        forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")
+        forwarded_ips = [_valid_ip(value) for value in forwarded]
+        if forwarded_ips and all(forwarded_ips):
+            client_ip = forwarded_ips[0]
+            proxy_ip = remote_addr
+
+    supplied_request_id = (request.META.get("HTTP_X_REQUEST_ID") or "").strip()
+    request_id = supplied_request_id if supplied_request_id.isascii() and 1 <= len(supplied_request_id) <= 64 else uuid4().hex
+    return AuditRequestContext(
+        user=getattr(request, "user", None),
+        client_ip=client_ip,
+        proxy_ip=proxy_ip,
+        request_id=request_id,
+    )
+
+
+def log_audit_event(
+    entity_name: str,
+    entity_id,
+    action: str,
+    *,
+    old_values=None,
+    new_values=None,
+    user=None,
+    request_context: AuditRequestContext | None = None,
+    result: str = "success",
+    summary: str = "",
+):
     from core.models import AuditLog
 
+    actor = request_context.user if request_context is not None else user
     return AuditLog.objects.create(
         entity_name=entity_name,
         entity_id=str(entity_id) if entity_id is not None else None,
         action=action,
         old_values_json=old_values,
         new_values_json=new_values,
-        user=user,
+        user=actor if getattr(actor, "is_authenticated", False) else None,
+        actor_id=getattr(actor, "id", None),
+        actor_name=(getattr(actor, "get_username", lambda: "")() or "")[:150],
+        client_ip=request_context.client_ip if request_context else None,
+        proxy_ip=request_context.proxy_ip if request_context else None,
+        request_id=request_context.request_id if request_context else "",
+        result=result,
+        summary=summary[:255],
     )
 
 

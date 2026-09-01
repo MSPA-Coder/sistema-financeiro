@@ -6,8 +6,7 @@
     .permissions-help { color:var(--muted); font-size:0.88rem; line-height:1.45; margin-top:0.25rem; }
     .section-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; border-bottom:1px solid var(--border); padding-bottom:0.5rem; }
     .add-form { display:flex; gap:0.5rem; flex-wrap:wrap; align-items:flex-end; margin-bottom:1rem; background:rgba(0,0,0,0.02); padding:0.55rem; border-radius:6px; }
-    /* .edit-row NAO tem equivalente em core/application.css (so existe .edit-row.is-editing la); mantido. */
-    .edit-row { display:none; background:rgba(0,0,0,0.02); }
+    .edit-row { background:rgba(0,0,0,0.02); }
     .edit-form { display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap; padding:0.5rem; }
     .edit-form .checkbox-label { display:inline-flex; align-items:center; gap:0.35rem; color:var(--muted); font-size:0.78rem; font-weight:600; }
     .add-form input[type="text"], .add-form input[type="password"], .edit-form input[type="text"], .edit-form input[type="password"] { flex:1 1 10rem !important; min-width:0; max-width:100%; }
@@ -47,4 +46,25 @@
         .permissions-paired-grid { grid-template-columns: 1fr; }
         .permission-menu-branch { margin-left:0.45rem; padding-left:0.55rem; }
         .permission-row-child td:first-child { padding-left:1rem; }
+    }
+
+    /* Senha temporaria devolvida pela redefinicao.
+     *
+     * Bloco fixo e nao mensagem de sessao: e a unica copia em texto claro que
+     * vai existir, e quem redefiniu precisa dela na tela o tempo que levar
+     * para anotar ou ditar. */
+    .senha-temporaria { border-left:4px solid var(--warning); }
+
+    /* Monoespacada e espacada: o valor vai ser lido em voz alta ou copiado a
+       mao, e e por isso que o alfabeto do sorteio ja exclui `0/O` e `1/l/I`. */
+    .senha-temporaria-valor {
+        background:var(--card);
+        border:1px solid var(--border);
+        border-radius:4px;
+        display:inline-block;
+        font-family:ui-monospace, "Cascadia Code", "Source Code Pro", monospace;
+        font-size:1.15rem;
+        letter-spacing:0.12em;
+        padding:0.25rem 0.5rem;
+        user-select:all;
     }

@@ -7,6 +7,7 @@ class ManagementTag(models.Model):
     """Tag livre para classificar movimentos sem alterar a categoria principal."""
     
     tag_name = models.CharField(max_length=80, unique=True)
+    active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -19,6 +20,7 @@ class ManagementTag(models.Model):
                 name='ck_management_tag_name_not_blank',
             ),
         ]
+        indexes = [models.Index(fields=['active'])]
     
     def __str__(self):
         return self.tag_name
@@ -131,6 +133,7 @@ class MonthlyBudget(models.Model):
     # `actual_amount_for_budget`. Guardar uma copia so criaria a chance de ela
     # divergir do que os lancamentos dizem.
     planned_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -157,6 +160,7 @@ class MonthlyBudget(models.Model):
         ]
         indexes = [
             models.Index(fields=['owner', 'year', 'month']),
+            models.Index(fields=['active']),
         ]
     
     def __str__(self):
@@ -166,4 +170,3 @@ class MonthlyBudget(models.Model):
         if self.pk:
             self.updated_at = timezone.now()
         super().save(*args, **kwargs)
-

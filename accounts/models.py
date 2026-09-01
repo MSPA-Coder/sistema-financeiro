@@ -1,6 +1,7 @@
 """Models de autenticação e usuários."""
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models.functions import Lower
 from django.utils import timezone
 
 from core.domain.identity import (
@@ -77,6 +78,9 @@ class AccountOwner(models.Model):
     class Meta:
         db_table = 'account_owner'
         ordering = ['name']
+        constraints = [
+            models.UniqueConstraint(Lower('name'), name='uq_account_owner_name_ci'),
+        ]
     
     def __str__(self):
         return self.name

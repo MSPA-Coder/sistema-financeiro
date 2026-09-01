@@ -71,3 +71,12 @@ controle usam timezone e são persistidas pelo PostgreSQL com suporte a fuso;
 As preferências pessoais de ocultação afetam somente os agregados do Dashboard
 e de Projeções. Uma conta explicitamente escolhida no filtro continua visível,
 assim como nos seletores e nas demais telas permitidas ao usuário.
+
+## Gestão gerencial: ciclo de vida
+
+Tags, projetos/centros de custo e orçamentos podem ser excluídos somente se
+não houver histórico dependente. Tag ou projeto com vínculo a lançamento é
+arquivado/desativado, preservando a classificação já registrada e impedindo
+novos vínculos. Orçamento com lançamento realizado no seu titular, categoria e
+mês é arquivado; sem realizado, pode ser excluído. Itens arquivados continuam
+visíveis no histórico, mas não aparecem nos seletores de novos vínculos.

@@ -45,8 +45,9 @@ _AMOUNT_FIELD: DecimalField = DecimalField(max_digits=14, decimal_places=2)
 # Tags
 # ---------------------------------------------------------------------------
 
-def list_tags():
-    return ManagementTag.objects.all()
+def list_tags(*, active_only: bool = False):
+    qs = ManagementTag.objects.all()
+    return qs.filter(active=True) if active_only else qs
 
 
 def create_tag(tag_name: str) -> ManagementTag:
@@ -61,6 +62,16 @@ def create_tag(tag_name: str) -> ManagementTag:
         return ManagementTag.objects.create(tag_name=clean_name)
     except IntegrityError as exc:
         raise ValueError("Já existe uma tag com esse nome.") from exc
+
+
+def retire_tag(tag_id) -> tuple[ManagementTag, str]:
+    tag = _resolve_tag(tag_id)
+    if tag.entry_links.exists():
+        tag.active = False
+        tag.save(update_fields=["active", "updated_at"])
+        return tag, "archived"
+    tag.delete()
+    return tag, "deleted"
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +100,16 @@ def create_project(project_name: str, description: str = "") -> ManagementProjec
         return ManagementProject.objects.create(project_name=clean_name, description=clean_description)
     except IntegrityError as exc:
         raise ValueError("Já existe um projeto com esse nome.") from exc
+
+
+def retire_project(project_id) -> tuple[ManagementProject, str]:
+    project = _resolve_project(project_id)
+    if project.entry_links.exists():
+        project.active = False
+        project.save(update_fields=["active", "updated_at"])
+        return project, "archived"
+    project.delete()
+    return project, "deleted"
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +152,8 @@ def _resolve_tag(tag_id) -> ManagementTag:
         tag = None
     if tag is None:
         raise ValueError("Tag não encontrada.")
+    if not tag.active:
+        raise ValueError("Tag arquivada não pode receber novos vínculos.")
     return tag
 
 
@@ -141,6 +164,8 @@ def _resolve_project(project_id) -> ManagementProject:
         project = None
     if project is None:
         raise ValueError("Projeto não encontrado.")
+    if not project.active:
+        raise ValueError("Projeto arquivado não pode receber novos vínculos.")
     return project
 
 
@@ -192,9 +217,31 @@ def save_budget(user, *, owner_id, category_id, year, month, planned_amount) -> 
         category_id=category_id_int,
         year=year_int,
         month=month_int,
-        defaults={"planned_amount": amount.quantize(MONEY_QUANT)},
+        defaults={"planned_amount": amount.quantize(MONEY_QUANT), "active": True},
     )
     return budget
+
+
+def retire_budget(budget_id) -> tuple[MonthlyBudget, str]:
+    try:
+        budget = MonthlyBudget.objects.select_related("owner", "category").get(id=int(budget_id))
+    except (MonthlyBudget.DoesNotExist, TypeError, ValueError):
+        raise ValueError("Orçamento não encontrado.") from None
+
+    start, end_exclusive = month_bounds(budget.year, budget.month)
+    has_history = CashFlowEntry.objects.filter(
+        account__owner_id=budget.owner_id,
+        category_id=budget.category_id,
+        status=STATUS_REALIZED,
+        realized_date__gte=start,
+        realized_date__lt=end_exclusive,
+    ).exists()
+    if has_history:
+        budget.active = False
+        budget.save(update_fields=["active", "updated_at"])
+        return budget, "archived"
+    budget.delete()
+    return budget, "deleted"
 
 
 def actual_amount_for_budget(owner_id: int, category_id: int, year: int, month: int) -> Decimal:

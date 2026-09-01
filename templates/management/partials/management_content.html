@@ -66,7 +66,7 @@
             <label class="top-filter-field">Tag
                 <select name="tag_id" required>
                     <option value="">Selecione...</option>
-                    {% for tag in tags %}
+                    {% for tag in active_tags %}
                     <option value="{{ tag.id }}">{{ tag.tag_name }}</option>
                     {% endfor %}
                 </select>
@@ -83,7 +83,7 @@
             <label class="top-filter-field">Projeto
                 <select name="project_id" required>
                     <option value="">Selecione...</option>
-                    {% for project in projects %}
+                    {% for project in active_projects %}
                     <option value="{{ project.id }}">{{ project.project_name }}</option>
                     {% endfor %}
                 </select>
@@ -91,6 +91,29 @@
             <div class="top-filter-actions"><button type="submit" class="btn btn-primary" data-sa-confirmar="Vincular este projeto ao movimento?" data-sa-titulo="Confirmar vínculo" data-sa-severidade="info" data-sa-ok="Vincular">Vincular</button></div>
         </form>
     </div>
+</div>
+{% endif %}
+
+{% if can_manage %}
+<div class="table-container" data-ui="mb-1">
+    <h3 data-ui="mb-075">Ciclo de vida</h3>
+    <p>Itens sem vínculos são excluídos. Itens com histórico são arquivados e deixam de aceitar novos vínculos.</p>
+    <table class="tx-table">
+        <thead><tr><th>Tipo</th><th>Nome / período</th><th>Status</th><th>Ação</th></tr></thead>
+        <tbody>
+            {% for tag in tags %}
+            <tr><td>Tag</td><td>{{ tag.tag_name }}</td><td>{% if tag.active %}Ativa{% else %}Arquivada{% endif %}</td><td>{% if tag.active %}<form method="post" action="{% url 'management:retire_tag' %}">{% csrf_token %}<input type="hidden" name="redirect_qs" value="{{ request.GET.urlencode }}"><input type="hidden" name="tag_id" value="{{ tag.id }}"><button class="btn btn-ghost btn-sm" data-sa-confirmar="Excluir esta tag sem histórico ou arquivá-la se houver vínculos?" data-sa-titulo="Confirmar ciclo de vida" data-sa-severidade="warning" data-sa-ok="Confirmar">Excluir / arquivar</button></form>{% else %}-{% endif %}</td></tr>
+            {% endfor %}
+            {% for project in projects %}
+            <tr><td>Projeto</td><td>{{ project.project_name }}</td><td>{% if project.active %}Ativo{% else %}Arquivado{% endif %}</td><td>{% if project.active %}<form method="post" action="{% url 'management:retire_project' %}">{% csrf_token %}<input type="hidden" name="redirect_qs" value="{{ request.GET.urlencode }}"><input type="hidden" name="project_id" value="{{ project.id }}"><button class="btn btn-ghost btn-sm" data-sa-confirmar="Excluir este projeto sem histórico ou arquivá-lo se houver vínculos?" data-sa-titulo="Confirmar ciclo de vida" data-sa-severidade="warning" data-sa-ok="Confirmar">Excluir / arquivar</button></form>{% else %}-{% endif %}</td></tr>
+            {% endfor %}
+            {% for row in budget_rows %}
+            <tr><td>Orçamento</td><td>{{ row.budget.category.category_name }} — {{ row.budget.month|stringformat:'02d' }}/{{ row.budget.year }}</td><td>{% if row.budget.active %}Ativo{% else %}Arquivado{% endif %}</td><td>{% if row.budget.active %}<form method="post" action="{% url 'management:retire_budget' %}">{% csrf_token %}<input type="hidden" name="redirect_qs" value="{{ request.GET.urlencode }}"><input type="hidden" name="budget_id" value="{{ row.budget.id }}"><button class="btn btn-ghost btn-sm" data-sa-confirmar="Excluir este orçamento sem realizado ou arquivá-lo se houver histórico?" data-sa-titulo="Confirmar ciclo de vida" data-sa-severidade="warning" data-sa-ok="Confirmar">Excluir / arquivar</button></form>{% else %}-{% endif %}</td></tr>
+            {% empty %}
+            <tr><td colspan="4" data-ui="empty-2">Nenhum item gerencial no período.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
 {% endif %}
 
@@ -125,7 +148,7 @@
                 <td>{{ entry.due_date|date:'d/m/Y' }}</td>
                 <td>{{ entry.account.owner.name }} / {{ entry.account.account_name }}</td>
                 <td>{{ entry.description|default:'-' }}</td>
-                <td class="amount {{ entry.entry_amount|amount_class }}">{{ entry.entry_amount|money_signed }}</td>
+                <td class="amount {% if entry.entry_type == 'despesa' %}amount-negative{% else %}{{ entry.entry_amount|amount_class }}{% endif %}">{% if entry.entry_type == 'despesa' %}{{ entry.entry_amount|neg|money_signed }}{% else %}{{ entry.entry_amount|money_signed }}{% endif %}</td>
                 <td>{% if entry.linked_project %}{{ entry.linked_project.project_name }}{% else %}-{% endif %}</td>
                 <td>
                     {% for tag in entry.linked_tags %}<span class="badge">{{ tag.tag_name }}</span>{% empty %}-{% endfor %}

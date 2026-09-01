@@ -52,7 +52,9 @@ def management_view(request):
         "system_start_date": system_start_date(),
         "categories": CashFlowCategory.objects.order_by("category_name"),
         "tags": services.list_tags(),
+        "active_tags": services.list_tags(active_only=True),
         "projects": services.list_projects(),
+        "active_projects": services.list_projects(active_only=True),
         "budget_rows": budget_rows,
         "recent_entries": recent_entries,
         "can_manage": request.user.has_perm("management.manage"),
@@ -85,6 +87,43 @@ def create_project_view(request):
             messages.success(request, "Projeto/centro de custo criado com sucesso.")
         except ValueError as exc:
             messages.error(request, str(exc))
+    return _redirect_to_panel(request)
+
+
+@login_required
+@permission_required("management.manage", fallback="management:management_view")
+@require_POST
+def retire_tag_view(request):
+    try:
+        tag, action = services.retire_tag(request.POST.get("tag_id"))
+        messages.success(request, f"Tag '{tag.tag_name}' {'arquivada por possuir histórico' if action == 'archived' else 'excluída'}.")
+    except ValueError as exc:
+        messages.error(request, str(exc))
+    return _redirect_to_panel(request)
+
+
+@login_required
+@permission_required("management.manage", fallback="management:management_view")
+@require_POST
+def retire_project_view(request):
+    try:
+        project, action = services.retire_project(request.POST.get("project_id"))
+        messages.success(request, f"Projeto '{project.project_name}' {'arquivado por possuir histórico' if action == 'archived' else 'excluído'}.")
+    except ValueError as exc:
+        messages.error(request, str(exc))
+    return _redirect_to_panel(request)
+
+
+@login_required
+@permission_required("management.manage", fallback="management:management_view")
+@require_POST
+def retire_budget_view(request):
+    try:
+        budget, action = services.retire_budget(request.POST.get("budget_id"))
+        label = f"{budget.category.category_name} - {budget.month:02d}/{budget.year}"
+        messages.success(request, f"Orçamento '{label}' {'arquivado por possuir realizado' if action == 'archived' else 'excluído'}.")
+    except ValueError as exc:
+        messages.error(request, str(exc))
     return _redirect_to_panel(request)
 
 

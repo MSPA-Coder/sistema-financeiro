@@ -70,7 +70,6 @@ function openDeleteModal(actionUrl, supportsScope, currentFutureToken) {
     var modal        = document.getElementById('confirmDeleteModal');
     var form         = document.getElementById('deleteForm');
     var scopeOptions = document.getElementById('deleteScopeOptions');
-    var scopeInput   = document.getElementById('deleteOperationScope');
     var scopeSelect  = document.getElementById('deleteScopeSelect');
     var confirmationToken = document.getElementById('deleteCurrentFutureConfirmationToken');
     if (!modal) return;
@@ -80,8 +79,10 @@ function openDeleteModal(actionUrl, supportsScope, currentFutureToken) {
     form.setAttribute('hx-swap', 'outerHTML');
     if (window.htmx) window.htmx.process(form);
     scopeOptions.classList.toggle('is-visible', supportsScope);
-    if (scopeSelect) scopeSelect.value = 'all';
-    if (scopeInput)  scopeInput.value  = 'all';
+    if (scopeSelect) {
+        scopeSelect.value = 'single';
+        scopeSelect.disabled = !supportsScope;
+    }
     if (confirmationToken) confirmationToken.value = '';
     if (scopeSelect) scopeSelect.dataset.currentFutureToken = currentFutureToken || '';
     modal.classList.add('is-open');
@@ -114,8 +115,6 @@ function _initTransactionModals() {
     if (ss && !ss._scopeBound) {
         ss._scopeBound = true;
         ss.addEventListener('change', function () {
-            var inp = document.getElementById('deleteOperationScope');
-            if (inp) inp.value = this.value;
             var token = document.getElementById('deleteCurrentFutureConfirmationToken');
             if (token) token.value = this.value === 'current_future' ? (this.dataset.currentFutureToken || '') : '';
         });
