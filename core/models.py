@@ -21,6 +21,15 @@ class AuditLog(models.Model):
         blank=True,
         related_name="audit_logs",
     )
+    # A FK pode ficar nula quando uma conta e removida. Estes campos preservam
+    # quem executou a acao sem depender do ciclo de vida do usuario.
+    actor_id = models.BigIntegerField(null=True, blank=True)
+    actor_name = models.CharField(max_length=150, blank=True)
+    client_ip = models.GenericIPAddressField(null=True, blank=True)
+    proxy_ip = models.GenericIPAddressField(null=True, blank=True)
+    request_id = models.CharField(max_length=64, blank=True)
+    result = models.CharField(max_length=16, default="success")
+    summary = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

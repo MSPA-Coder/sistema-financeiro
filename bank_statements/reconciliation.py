@@ -212,7 +212,7 @@ def reconciliation_view_data(user, target_line_id: int | None = None) -> dict:
 
 
 @db_transaction.atomic
-def reconcile_line_with_entry(user, *, line_id, entry_id) -> BankStatementLine:
+def reconcile_line_with_entry(user, *, line_id, entry_id, audit_context=None) -> BankStatementLine:
     """Concilia uma linha de extrato com um lançamento existente.
 
     Realiza o lançamento com a data e o valor da linha (a menos que já
@@ -269,7 +269,12 @@ def reconcile_line_with_entry(user, *, line_id, entry_id) -> BankStatementLine:
     line.save(update_fields=["matched_entry", "status", "updated_at"])
 
     if not already_realized_matching:
-        realize_transaction(entry, realized_date=line.statement_date, realized_amount=line_value)
+        realize_transaction(
+            entry,
+            realized_date=line.statement_date,
+            realized_amount=line_value,
+            audit_context=audit_context,
+        )
 
     return line
 
@@ -293,7 +298,7 @@ def undo_reconciliation(user, *, line_id) -> BankStatementLine:
 
 
 @db_transaction.atomic
-def create_entry_from_line(user, *, line_id, category_id) -> BankStatementLine:
+def create_entry_from_line(user, *, line_id, category_id, audit_context=None) -> BankStatementLine:
     """Cria um lançamento novo a partir de uma linha de extrato e já a
     concilia com ele.
 
@@ -336,7 +341,7 @@ def create_entry_from_line(user, *, line_id, category_id) -> BankStatementLine:
         realized_date=line.statement_date,
         realized_amount=value,
     )
-    entries = create_transaction_batch(req)
+    entries = create_transaction_batch(req, audit_context=audit_context)
 
     line.matched_entry = entries[0]
     line.status = LINE_STATUS_RECONCILED
@@ -354,7 +359,7 @@ def ignore_statement_line(user, *, line_id) -> BankStatementLine:
     return line
 
 
-def bulk_create_entries_from_lines(user, *, line_ids: Iterable) -> tuple[int, list[tuple[str, str]]]:
+def bulk_create_entries_from_lines(user, *, line_ids: Iterable, audit_context=None) -> tuple[int, list[tuple[str, str]]]:
     """Cria lançamentos para várias linhas de uma vez, cada uma com a
     categoria sugerida pelo prefixo do extrato (ver `suggested_category_for_line`)
     - não há seleção manual de categoria em lote. Cada linha é processada em
@@ -368,14 +373,14 @@ def bulk_create_entries_from_lines(user, *, line_ids: Iterable) -> tuple[int, li
             suggested = suggested_category_for_line(line)
             if suggested is None:
                 raise ValueError("Nenhuma categoria disponível para sugerir (nem 'Outros').")
-            create_entry_from_line(user, line_id=line_id, category_id=suggested.id)
+            create_entry_from_line(user, line_id=line_id, category_id=suggested.id, audit_context=audit_context)
             created += 1
         except ValueError as exc:
             errors.append((str(line_id), str(exc)))
     return created, errors
 
 
-def bulk_reconcile_lines(user, *, line_ids: Iterable) -> tuple[int, list[tuple[str, str]]]:
+def bulk_reconcile_lines(user, *, line_ids: Iterable, audit_context=None) -> tuple[int, list[tuple[str, str]]]:
     """Concilia várias linhas de uma vez, cada uma com seu único candidato
     (mesma conta, sinal e valor - ver `candidate_entries_for_line`).
 
@@ -393,7 +398,12 @@ def bulk_reconcile_lines(user, *, line_ids: Iterable) -> tuple[int, list[tuple[s
                 raise ValueError("Nenhum movimento candidato para conciliar.")
             if len(candidates) > 1:
                 raise ValueError("Mais de um movimento candidato - concilie manualmente.")
-            reconcile_line_with_entry(user, line_id=line_id, entry_id=candidates[0].id)
+            reconcile_line_with_entry(
+                user,
+                line_id=line_id,
+                entry_id=candidates[0].id,
+                audit_context=audit_context,
+            )
             reconciled += 1
         except ValueError as exc:
             errors.append((str(line_id), str(exc)))

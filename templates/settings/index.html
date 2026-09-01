@@ -25,7 +25,7 @@
             {% csrf_token %}
             <div class="form-group">
                 <label>Qtde mínima de caracteres</label>
-                <input type="number" name="min_length" class="form-control" min="15" max="256" value="{{ password_policy_settings.min_length }}" required>
+                <input type="number" name="min_length" class="form-control" min="8" max="256" value="{{ password_policy_settings.min_length }}" required>
             </div>
             <div class="form-group">
                 <label>Qtde de maiúsculas</label>

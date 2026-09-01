@@ -48,6 +48,14 @@ ALLOWED_HOSTS = os.environ.get(
     'localhost,127.0.0.1',
 ).split(',')
 
+# Cabecalhos X-Forwarded-* so entram na auditoria quando a conexao vem de um
+# proxy cuja rede foi configurada pelo operador. O padrao vazio evita spoofing.
+AUDIT_TRUSTED_PROXY_CIDRS = tuple(
+    value.strip()
+    for value in os.environ.get('AUDIT_TRUSTED_PROXY_CIDRS', '').split(',')
+    if value.strip()
+)
+
 # Application definition
 INSTALLED_APPS = [
     'django.contrib.admin',

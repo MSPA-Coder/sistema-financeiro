@@ -4,14 +4,14 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from core.domain.finance import (
     CALC_REPEAT,
-    OPERATION_SCOPE_ALL,
+    OPERATION_SCOPE_SINGLE,
     STATUS_FILTER_OPTIONS,
     STATUS_OPTIONS,
     STATUS_PROJECTED,
@@ -20,6 +20,7 @@ from core.domain.finance import (
 )
 from core.htmx import quer_fragmento
 from core.permissions import permission_required
+from core.services import audit_request_context, log_audit_event
 from transactions import access
 from transactions.models import CashFlowCategory, CashFlowEntry
 from transactions.operations import OPERATION_LABELS, operations_page_for_user
@@ -33,6 +34,7 @@ from transactions.services import (
     list_categories,
     possible_duplicates_for_created_entries,
     realize_transaction,
+    supports_operation_scope,
     transactions_query_params,
     update_category,
     update_transaction_operation,
@@ -64,8 +66,27 @@ def _parse_date(raw):
         return None
 
 
-def _normalize_operation_scope(raw) -> str:
-    return raw if raw in VALID_OPERATION_SCOPES else OPERATION_SCOPE_ALL
+def _operation_scope_from_request(tx: CashFlowEntry, raw: str | None) -> str:
+    """Valida o escopo antes de uma mutação de grupo.
+
+    Um lançamento simples não oferece seletor de escopo; nesse caso o único
+    comportamento explícito é operar sobre ele próprio. Para grupos, porém,
+    ausência ou valor desconhecido nunca pode virar ``all`` por fallback.
+    """
+    if raw in (None, ""):
+        if not supports_operation_scope(tx):
+            return OPERATION_SCOPE_SINGLE
+        raise ValueError("Escolha o escopo da operação antes de confirmar.")
+    if raw not in VALID_OPERATION_SCOPES:
+        raise ValueError("Escopo de operação inválido.")
+    if not supports_operation_scope(tx):
+        return OPERATION_SCOPE_SINGLE
+    return raw
+
+
+def _invalid_operation_scope_response(exc: ValueError) -> HttpResponseBadRequest:
+    """Falha fechada para uma intenção destrutiva ambígua ou adulterada."""
+    return HttpResponseBadRequest(str(exc))
 
 
 def _redirect_to_transactions(request, extra_params=None):
@@ -77,6 +98,18 @@ def _redirect_to_transactions(request, extra_params=None):
     if query:
         url = f"{url}?{query}"
     return redirect(url)
+
+
+def _log_failed_transaction_action(request, entry_id, action: str) -> None:
+    """Registra a tentativa sem armazenar a mensagem ou os dados enviados."""
+    log_audit_event(
+        "cash_flow_entry",
+        entry_id,
+        action,
+        request_context=audit_request_context(request),
+        result="failure",
+        summary="Operação recusada pela validação do servidor.",
+    )
 
 
 def _transaction_request_from_post(post) -> TransactionRequest:
@@ -159,9 +192,11 @@ def mark_realized(request, tx_id):
     """Marca uma transação (e a contraparte de uma transferência interna) como realizada."""
     entry = CashFlowEntry.objects.filter(id=tx_id).select_related("account", "source_entry").first()
     if entry is None:
+        _log_failed_transaction_action(request, tx_id, "realize")
         messages.warning(request, "Lançamento não encontrado.")
         return _redirect_to_transactions(request)
     if not access.can_access_entry(request.user, entry, "update"):
+        _log_failed_transaction_action(request, entry.id, "realize")
         messages.warning(request, "Acesso negado: usuário sem permissão para realizar este lançamento.")
         return _redirect_to_transactions(request)
 
@@ -169,13 +204,20 @@ def mark_realized(request, tx_id):
     try:
         realized_amount = _to_decimal(request.POST.get("realized_amount"))
     except ValueError as exc:
+        _log_failed_transaction_action(request, entry.id, "realize")
         messages.error(request, str(exc))
         return _redirect_to_transactions(request)
 
     try:
-        realize_transaction(entry, realized_date, realized_amount)
+        realize_transaction(
+            entry,
+            realized_date,
+            realized_amount,
+            audit_context=audit_request_context(request),
+        )
         messages.success(request, "Lançamento marcado como realizado.")
     except ValueError as e:
+        _log_failed_transaction_action(request, entry.id, "realize")
         messages.error(request, str(e))
 
     if quer_fragmento(request):
@@ -199,15 +241,17 @@ def _transaction_new_post(request):
     try:
         req = _transaction_request_from_post(request.POST)
     except ValueError as exc:
+        _log_failed_transaction_action(request, None, "create")
         messages.error(request, str(exc))
         return _redirect_to_transactions(request)
 
     if not access.can_access_account(request.user, req.account_id, "create"):
+        _log_failed_transaction_action(request, None, "create")
         messages.warning(request, "Acesso negado: usuário sem permissão para criar lançamentos nesta conta.")
         return _redirect_to_transactions(request)
 
     try:
-        entries = create_transaction_batch(req)
+        entries = create_transaction_batch(req, audit_context=audit_request_context(request))
         messages.success(request, "Lançamento(s) criado(s) com sucesso.")
         duplicates = possible_duplicates_for_created_entries(req, entries)
         if duplicates:
@@ -217,6 +261,7 @@ def _transaction_new_post(request):
                 f"Atenção: existem movimentos semelhantes na mesma conta, data e valor: {ids}.",
             )
     except ValueError as e:
+        _log_failed_transaction_action(request, None, "create")
         messages.error(request, str(e))
         return _redirect_to_transactions(request)
 
@@ -258,23 +303,31 @@ def _transaction_edit_post(request, tx):
     try:
         req = _transaction_request_from_post(request.POST)
     except ValueError as exc:
+        _log_failed_transaction_action(request, tx.id, "update")
         messages.error(request, str(exc))
         return _redirect_to_transactions(request)
 
     if not access.can_access_account(request.user, req.account_id, "update"):
+        _log_failed_transaction_action(request, tx.id, "update")
         messages.warning(request, "Acesso negado: usuário sem permissão para editar lançamentos nesta conta.")
         return _redirect_to_transactions(request)
 
-    scope = _normalize_operation_scope(request.POST.get("operation_scope"))
+    try:
+        scope = _operation_scope_from_request(tx, request.POST.get("operation_scope"))
+    except ValueError as exc:
+        _log_failed_transaction_action(request, tx.id, "update")
+        return _invalid_operation_scope_response(exc)
     try:
         update_transaction_operation(
             tx,
             req,
             scope,
             request.POST.get("current_future_confirmation_token"),
+            audit_context=audit_request_context(request),
         )
         messages.success(request, "Lançamento(s) atualizado(s) com sucesso.")
     except ValueError as e:
+        _log_failed_transaction_action(request, tx.id, "update")
         messages.error(request, str(e))
         return _redirect_to_transactions(request)
 
@@ -292,21 +345,29 @@ def transaction_delete(request, tx_id):
     """Exclui um lançamento (ou o grupo/bloco escolhido pelo escopo de operação)."""
     tx = CashFlowEntry.objects.filter(id=tx_id).select_related("account", "source_entry").first()
     if tx is None:
+        _log_failed_transaction_action(request, tx_id, "delete")
         messages.warning(request, "Lançamento não encontrado.")
         return _redirect_to_transactions(request)
     if not access.can_access_entry(request.user, tx, "delete"):
+        _log_failed_transaction_action(request, tx.id, "delete")
         messages.warning(request, "Acesso negado: usuário sem permissão para excluir lançamentos nesta conta.")
         return _redirect_to_transactions(request)
 
-    scope = _normalize_operation_scope(request.POST.get("operation_scope"))
+    try:
+        scope = _operation_scope_from_request(tx, request.POST.get("operation_scope"))
+    except ValueError as exc:
+        _log_failed_transaction_action(request, tx.id, "delete")
+        return _invalid_operation_scope_response(exc)
     try:
         delete_transaction_or_operation(
             tx,
             scope,
             request.POST.get("current_future_confirmation_token"),
+            audit_context=audit_request_context(request),
         )
         messages.success(request, "Lançamento excluído com sucesso.")
     except ValueError as e:
+        _log_failed_transaction_action(request, tx.id, "delete")
         messages.error(request, str(e))
 
     if quer_fragmento(request):

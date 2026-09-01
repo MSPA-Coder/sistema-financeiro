@@ -142,13 +142,12 @@
         <p class="modal-message">Tem certeza de que deseja excluir este lançamento? Esta ação não poderá ser desfeita.</p>
         <form id="deleteForm" method="POST" action="">
             {% csrf_token %}
-            <input type="hidden" name="operation_scope" id="deleteOperationScope" value="all">
             <input type="hidden" name="current_future_confirmation_token" id="deleteCurrentFutureConfirmationToken" value="">
             <div id="deleteScopeOptions" data-ui="delete-scope-hidden">
                 <label data-ui="delete-scope-label">Excluir</label>
-                <select id="deleteScopeSelect" class="form-control" aria-label="Escopo de exclusao">
+                <select id="deleteScopeSelect" name="operation_scope" class="form-control" aria-label="Escopo de exclusao" required disabled>
+                    <option value="single" selected>Somente este registro</option>
                     <option value="all">Todos os registros do grupo</option>
-                    <option value="single">Somente este registro</option>
                     <option value="current_future">Este registro e os próximos</option>
                 </select>
             </div>

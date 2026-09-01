@@ -125,7 +125,7 @@
                 <td>{{ entry.due_date|date:'d/m/Y' }}</td>
                 <td>{{ entry.account.owner.name }} / {{ entry.account.account_name }}</td>
                 <td>{{ entry.description|default:'-' }}</td>
-                <td class="amount {{ entry.entry_amount|amount_class }}">{{ entry.entry_amount|money_signed }}</td>
+                <td class="amount {% if entry.entry_type == 'despesa' %}amount-negative{% else %}{{ entry.entry_amount|amount_class }}{% endif %}">{% if entry.entry_type == 'despesa' %}{{ entry.entry_amount|neg|money_signed }}{% else %}{{ entry.entry_amount|money_signed }}{% endif %}</td>
                 <td>{% if entry.linked_project %}{{ entry.linked_project.project_name }}{% else %}-{% endif %}</td>
                 <td>
                     {% for tag in entry.linked_tags %}<span class="badge">{{ tag.tag_name }}</span>{% empty %}-{% endfor %}

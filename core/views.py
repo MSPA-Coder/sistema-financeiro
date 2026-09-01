@@ -43,6 +43,7 @@ from core.domain.settings import (
 from core.permissions import permission_required
 from core.services import (
     audit_filter_options,
+    audit_request_context,
     available_inspection_tables,
     filtered_recent_audit_logs,
     format_last_optimize_info,
@@ -462,9 +463,24 @@ def settings_close_month_view(request):
             raise ValueError("Acesso negado: usuário sem permissão para fechar este mês.")
         _start, end_exclusive = month_bounds(year, month)
         closing_balance = decimal_balance_before([account.id], end_exclusive, VIEW_REALIZED)
-        closed = close_month(account, year, month, closing_balance, request.user)
+        closed = close_month(
+            account,
+            year,
+            month,
+            closing_balance,
+            request.user,
+            audit_context=audit_request_context(request),
+        )
         messages.success(request, f"Mês {closed.month:02d}/{closed.year} fechado para a conta #{closed.account_id}.")
     except (ValueError, TypeError, FinancialAccount.DoesNotExist) as exc:
+        log_audit_event(
+            "account_month_close",
+            request.POST.get("account_id"),
+            "close",
+            request_context=audit_request_context(request),
+            result="failure",
+            summary="Fechamento mensal recusado pela validação do servidor.",
+        )
         messages.error(request, str(exc) or "Dados inválidos para fechamento mensal.")
     return _monthly_close_redirect(request)
 
@@ -483,9 +499,24 @@ def settings_reopen_month_view(request):
         account = FinancialAccount.objects.get(id=account_id)
         if not can_access_account(request.user, account.id, "update"):
             raise ValueError("Acesso negado: usuário sem permissão para reabrir este mês.")
-        reopened = reopen_month(account, year, month, request.POST.get('reason', ''), request.user)
+        reopened = reopen_month(
+            account,
+            year,
+            month,
+            request.POST.get('reason', ''),
+            request.user,
+            audit_context=audit_request_context(request),
+        )
         messages.success(request, f"Mês {reopened.month:02d}/{reopened.year} reaberto para a conta #{reopened.account_id}.")
     except (ValueError, TypeError, FinancialAccount.DoesNotExist) as exc:
+        log_audit_event(
+            "account_month_close",
+            request.POST.get("account_id"),
+            "reopen",
+            request_context=audit_request_context(request),
+            result="failure",
+            summary="Reabertura mensal recusada pela validação do servidor.",
+        )
         messages.error(request, str(exc) or "Fechamento mensal inválido.")
     return _monthly_close_redirect(request)
 

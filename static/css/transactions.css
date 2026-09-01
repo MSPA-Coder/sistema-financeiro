@@ -86,7 +86,7 @@ th {
 .tx-form .form-actions { display:flex; gap:0.45rem; justify-content:flex-end; }
 
 /* === EDIT ROW === */
-.edit-row { display:none; background:rgba(0,0,0,0.018); }
+.edit-row { background:rgba(0,0,0,0.018); }
 .edit-row td { padding:0.8rem; }
 
 /* === RESPONSIVE === */
@@ -94,4 +94,3 @@ th {
     .tx-form { grid-template-columns:1fr 1fr; }
     .tx-form .span-2, .tx-form .span-4 { grid-column:1 / -1; }
 }
-

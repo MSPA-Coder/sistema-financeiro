@@ -5,6 +5,7 @@ from typing import Final
 
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError
 from django.db.models import ProtectedError
 from django.utils import timezone
 from sharedauth.passwords import TAMANHO_SENHA_TEMPORARIA, gerar_senha_temporaria
@@ -586,12 +587,24 @@ def _clean_owner_name(name: str) -> str:
 
 
 def create_owner(name: str) -> AccountOwner:
-    return AccountOwner.objects.create(name=_clean_owner_name(name))
+    clean_name = _clean_owner_name(name)
+    if AccountOwner.objects.filter(name__iexact=clean_name).exists():
+        raise ValueError("Já existe um titular com esse nome.")
+    try:
+        return AccountOwner.objects.create(name=clean_name)
+    except IntegrityError as exc:
+        raise ValueError("Já existe um titular com esse nome.") from exc
 
 
 def update_owner(owner: AccountOwner, name: str) -> AccountOwner:
-    owner.name = _clean_owner_name(name)
-    owner.save(update_fields=["name", "updated_at"])
+    clean_name = _clean_owner_name(name)
+    if AccountOwner.objects.filter(name__iexact=clean_name).exclude(id=owner.id).exists():
+        raise ValueError("Já existe um titular com esse nome.")
+    owner.name = clean_name
+    try:
+        owner.save(update_fields=["name", "updated_at"])
+    except IntegrityError as exc:
+        raise ValueError("Já existe um titular com esse nome.") from exc
     return owner
 
 

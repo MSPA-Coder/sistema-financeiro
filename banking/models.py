@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models.functions import Lower
 from django.utils import timezone
 
 
@@ -30,6 +31,7 @@ class FinancialInstitution(models.Model):
         db_table = 'financial_institution'
         ordering = ['institution_name']
         constraints = [
+            models.UniqueConstraint(Lower('institution_name'), name='uq_financial_institution_name_ci'),
             models.CheckConstraint(
                 condition=models.Q(institution_name__regex=r'^\s*.+\s*$'),
                 name='ck_financial_institution_name_not_blank',

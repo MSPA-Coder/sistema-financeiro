@@ -137,6 +137,7 @@ def account_position_view(request):
         "report_rows": rows,
         "total_start": sum((row.start_balance for row in rows), Decimal("0.00")),
         "total_generation": sum((row.cash_generation for row in rows), Decimal("0.00")),
+        "total_transfers": sum((row.internal_transfers for row in rows), Decimal("0.00")),
         "total_end": sum((row.end_balance for row in rows), Decimal("0.00")),
         "selected_period": selected_period,
         "today_period": today_period,

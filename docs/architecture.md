@@ -56,8 +56,9 @@ termina com sucesso antes de `web` iniciar.
 - nomes de usuário são autenticados sem distinção de maiúsculas e minúsculas;
 - permissões funcionais e acesso por titular são verificados no servidor;
 - perfis agrupam permissões, mas não substituem as verificações efetivas;
-- preferências de ocultação no Dashboard e em Projeções não retiram acesso à
-  conta;
+- o **Modo discreto** mascara valores e esconde gráficos para quem está vendo
+  a tela compartilhada; é uma preferência visual local, não retira acesso nem
+  remove dados já presentes no DOM;
 - escritas usam proteção CSRF, inclusive quando iniciadas por HTMX;
 - a política CSP não permite scripts, estilos ou handlers inline;
 - cookies são `HttpOnly` e `SameSite=Lax`; `USE_HTTPS=True` ativa cookies

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 
+from django.db import IntegrityError
 from django.db.models import ProtectedError
 
 from accounts.services import accessible_owner_ids, can_access_owner
@@ -38,16 +39,26 @@ def _clean_institution_fields(name: str, institution_type: str) -> tuple[str, st
 
 def create_institution(name: str, institution_type: str) -> FinancialInstitution:
     clean_name, clean_type = _clean_institution_fields(name, institution_type)
-    return FinancialInstitution.objects.create(
-        institution_name=clean_name, institution_type=clean_type
-    )
+    if FinancialInstitution.objects.filter(institution_name__iexact=clean_name).exists():
+        raise ValueError("Já existe uma instituição com esse nome.")
+    try:
+        return FinancialInstitution.objects.create(
+            institution_name=clean_name, institution_type=clean_type
+        )
+    except IntegrityError as exc:
+        raise ValueError("Já existe uma instituição com esse nome.") from exc
 
 
 def update_institution(institution: FinancialInstitution, name: str, institution_type: str) -> FinancialInstitution:
     clean_name, clean_type = _clean_institution_fields(name, institution_type)
+    if FinancialInstitution.objects.filter(institution_name__iexact=clean_name).exclude(id=institution.id).exists():
+        raise ValueError("Já existe uma instituição com esse nome.")
     institution.institution_name = clean_name
     institution.institution_type = clean_type
-    institution.save(update_fields=["institution_name", "institution_type", "updated_at"])
+    try:
+        institution.save(update_fields=["institution_name", "institution_type", "updated_at"])
+    except IntegrityError as exc:
+        raise ValueError("Já existe uma instituição com esse nome.") from exc
     return institution
 
 

@@ -17,6 +17,21 @@ def test_privacy_reapplies_to_dynamic_content_and_masks_toasts():
     assert "_maskServerAvisos(document);\n        _initContentArea(document);" in script
 
 
+def test_discreet_mode_is_explicitly_visual_and_hides_charts():
+    script = (ROOT / "static" / "js" / "core" / "application.js").read_text()
+    stylesheet = (ROOT / "static" / "css" / "core" / "application.css").read_text()
+    navigation = (ROOT / "templates" / "components" / "navigation.html").read_text()
+    architecture = (ROOT / "docs" / "architecture.md").read_text()
+
+    assert "MODO DISCRETO (PREFERÊNCIA VISUAL)" in script
+    assert "não remove os dados do DOM" in script
+    assert "Ativar modo discreto" in navigation
+    assert "Modo discreto</span>" in navigation
+    assert "visibility: hidden;" in stylesheet
+    assert 'content: "Modo discreto ativo";' in stylesheet
+    assert "preferência visual local" in architecture
+
+
 def test_edit_toggles_are_delegated_for_ajax_replaced_content():
     core_script = (ROOT / "static" / "js" / "core" / "application.js").read_text()
     transactions_script = (ROOT / "static" / "js" / "transactions.js").read_text()
