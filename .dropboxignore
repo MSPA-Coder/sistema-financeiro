@@ -39,6 +39,7 @@ temp/
 .env.*
 !.env.example
 !.env.docker.example
+.secrets/
 .certs/
 migration_report.json
 .idea/

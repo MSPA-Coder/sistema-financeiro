@@ -1,6 +1,5 @@
 """URL configuration for financeiro project."""
 
-from django.contrib import admin
 from django.contrib.auth import logout
 from django.db import connection
 from django.http import JsonResponse
@@ -73,5 +72,4 @@ urlpatterns = [
     path('', include('bank_statements.urls')),
     path('', include('reports.urls')),
     path('', include('management.urls')),
-    path('admin/', admin.site.urls),
 ]

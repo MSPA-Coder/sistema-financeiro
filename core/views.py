@@ -35,7 +35,7 @@ from accounts.services import (
     user_mutation_block_message,
 )
 from core.context_processors import primeira_tela_permitida
-from core.domain.identity import USER_TYPE_LABELS
+from core.domain.identity import USER_TYPE_ADMINISTRATOR, USER_TYPE_LABELS
 from core.domain.settings import (
     APP_SETTING_LAST_OPTIMIZE_INFO,
     UI_THEME_LABELS,
@@ -207,6 +207,33 @@ def permissions_view(request):
         return redirect(f"/permissions/?user_id={selected_user.id}" if selected_user else "/permissions/")
 
     if request.method == 'POST' and selected_user:
+        # As tres acoes abaixo CONCEDEM privilegio -- permissao funcional,
+        # acesso por titular e o perfil rapido que grava as duas. Conceder
+        # privilegio e ato administrativo, entao exigem `administrator` e nao
+        # apenas `permissions.manage`.
+        #
+        # Sem esta trava, quem recebesse `permissions.manage` sem ser
+        # administrador se selecionava em `?user_id=<o proprio id>`, marcava
+        # todas as caixas e todos os titulares, e passava a enxergar e alterar
+        # o dado financeiro inteiro. A unica protecao que existia aqui e a de
+        # `save_function_permissions`, logo abaixo, e ela impede REMOVER a
+        # propria `permissions.manage` -- nao impede ACRESCENTAR o resto.
+        #
+        # A trava equivalente para o TIPO de usuario ja existia, em
+        # `accounts.services.user_mutation_block_message`: "somente
+        # administrator pode criar ou promover usuarios privilegiados". Esta e
+        # a metade que faltava, a do escopo de dados.
+        #
+        # `permissions.manage` continua valendo para ABRIR a tela e ler a
+        # matriz -- e o que a torna util para quem audita sem administrar.
+        if request.user.user_type != USER_TYPE_ADMINISTRATOR:
+            messages.warning(
+                request,
+                "Acesso negado: somente administrator pode alterar permissões "
+                "e acessos por titular.",
+            )
+            return redirect(f"/permissions/?user_id={selected_user.id}")
+
         action = request.POST.get('action')
         if action == 'save_function_permissions':
             old_keys = sorted(allowed_permission_keys(selected_user))
@@ -294,6 +321,12 @@ def _render_permissions(request, users, selected_user, can_manage_users, **extra
         'profile_definitions': PROFILE_DEFINITIONS,
         'user_type_options': list(USER_TYPE_LABELS.values()),
         'can_manage_users': can_manage_users,
+        # Esconde os tres botoes que CONCEDEM privilegio. E apresentacao: o
+        # controle esta na propria `permissions_view`, que recusa o POST. Existe
+        # para a tela nao oferecer um botao que o servidor vai negar -- quem tem
+        # `permissions.manage` sem ser administrador continua lendo a matriz,
+        # que e para o que a permissao serve agora.
+        'pode_conceder': request.user.user_type == USER_TYPE_ADMINISTRATOR,
         **extra,
     }
     return render(request, "permissions/index.html", context)

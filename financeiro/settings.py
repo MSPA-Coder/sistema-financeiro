@@ -58,7 +58,21 @@ AUDIT_TRUSTED_PROXY_CIDRS = tuple(
 
 # Application definition
 INSTALLED_APPS = [
-    'django.contrib.admin',
+    # `django.contrib.admin` NAO entra, de proposito. Nenhum modelo deste
+    # projeto e registrado nele (os oito `admin.py` do `startapp` eram stubs
+    # vazios e foram removidos), e nenhum fluxo do produto o usa -- a gestao de
+    # contas e permissoes tem tela propria, com auditoria e com as travas de
+    # `user_mutation_block_message`.
+    #
+    # O que o admin oferecia era superficie: `django.contrib.auth.admin`
+    # registra o modelo de usuario automaticamente, entao uma conta `is_staff`
+    # editaria contas, senhas e o proprio `is_superuser` por fora dessas travas
+    # e sem passar pela trilha de auditoria. E `/admin/login/` autenticava
+    # senha sem passar por `AppLoginView` -- portanto sem o `LoginLockout`, que
+    # e o principal controle antiforca-bruta do sistema.
+    #
+    # `django.contrib.auth` e `django.contrib.messages` continuam necessarios e
+    # nao dependem do admin.
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
@@ -132,7 +146,7 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': os.environ.get('POSTGRES_DB', 'controle_bancario'),
-        'USER': os.environ.get('POSTGRES_USER', 'postgres'),
+        'USER': os.environ.get('POSTGRES_USER', 'controle_bancario'),
         'PASSWORD': _read_required_secret('POSTGRES_PASSWORD'),
         'HOST': os.environ.get('POSTGRES_HOST', 'localhost'),
         'PORT': os.environ.get('POSTGRES_PORT', '5432'),
@@ -142,6 +156,19 @@ DATABASES = {
         },
     }
 }
+
+# A aplicacao nunca deve conectar como 'postgres': e o superusuario
+# administrativo do cluster, com privilegio sobre todo banco, nao so o
+# proprio. Mesma familia de validacao de boot que USE_HTTPS/CSRF_TRUSTED_ORIGINS
+# ja tem abaixo -- transforma uma configuracao perigosa em erro de subida, em
+# vez de um risco silencioso.
+if DATABASES['default']['USER'] == 'postgres':
+    raise RuntimeError(
+        "POSTGRES_USER nao pode ser 'postgres': e o superusuario "
+        "administrativo do cluster. Defina POSTGRES_USER com uma conta "
+        "dedicada da aplicacao (o compose.yaml ja usa 'controle_bancario' "
+        "como padrao)."
+    )
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators

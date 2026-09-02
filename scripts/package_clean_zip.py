@@ -16,6 +16,7 @@ DEFAULT_OUTPUT = PROJECT_ROOT.parent / f"{PROJECT_ROOT.name}_clean.zip"
 
 EXCLUDED_DIRS = {
     ".agents",
+    ".certs",
     ".codex",
     ".dropbox.cache",
     ".git",
@@ -28,6 +29,7 @@ EXCLUDED_DIRS = {
     ".pytype",
     ".ruff_cache",
     ".runtime-worktree",
+    ".secrets",
     ".tox",
     ".venv",
     "__pycache__",
