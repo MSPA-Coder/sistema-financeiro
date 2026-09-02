@@ -76,7 +76,7 @@
                 <input type="hidden" name="profile_key" value="{{ profile_key }}">
                 <h5>{{ profile.label }}</h5>
                 <p>{{ profile.description }}</p>
-                <button type="submit" class="btn btn-primary btn-sm" data-sa-confirmar="Aplicar o perfil {{ profile.label }} a este usuário?" data-sa-titulo="Confirmar perfil" data-sa-severidade="warning" data-sa-ok="Aplicar">Aplicar perfil {{ profile.label }}</button>
+                {% if pode_conceder %}<button type="submit" class="btn btn-primary btn-sm" data-sa-confirmar="Aplicar o perfil {{ profile.label }} a este usuário?" data-sa-titulo="Confirmar perfil" data-sa-severidade="warning" data-sa-ok="Aplicar">Aplicar perfil {{ profile.label }}</button>{% endif %}
             </form>
             {% endfor %}
         </div>
@@ -211,7 +211,7 @@
                     </table>
                 </div>
                 <div class="form-footer">
-                    <button type="submit" class="btn btn-primary" data-sa-confirmar="Salvar os acessos por titular?" data-sa-titulo="Confirmar permissões" data-sa-severidade="warning" data-sa-ok="Salvar">Salvar acessos por titular</button>
+                    {% if pode_conceder %}<button type="submit" class="btn btn-primary" data-sa-confirmar="Salvar os acessos por titular?" data-sa-titulo="Confirmar permissões" data-sa-severidade="warning" data-sa-ok="Salvar">Salvar acessos por titular</button>{% endif %}
                 </div>
             </form>
         </div>
@@ -294,7 +294,7 @@
                 {% endfor %}
             </div>
             <div class="form-footer">
-                <button type="submit" class="btn btn-primary" data-sa-confirmar="Salvar as permissões funcionais?" data-sa-titulo="Confirmar permissões" data-sa-severidade="warning" data-sa-ok="Salvar">Salvar permissões funcionais</button>
+                {% if pode_conceder %}<button type="submit" class="btn btn-primary" data-sa-confirmar="Salvar as permissões funcionais?" data-sa-titulo="Confirmar permissões" data-sa-severidade="warning" data-sa-ok="Salvar">Salvar permissões funcionais</button>{% endif %}
             </div>
         </form>
     </div>

@@ -57,7 +57,11 @@ VERIFICADAS_NO_CORPO: dict[str, str] = {
 }
 
 def _rotas():
-    """(padrao, view) de toda rota do projeto, menos o admin do Django."""
+    """(padrao, view) de TODA rota do projeto.
+
+    Nao ha mais excecao: `django.contrib.admin` saiu de `INSTALLED_APPS` e a
+    rota `admin/` saiu da URLconf, entao a varredura cobre o projeto inteiro.
+    """
 
     def caminhar(resolver, prefixo=""):
         for entrada in resolver.url_patterns:
@@ -67,10 +71,7 @@ def _rotas():
             else:
                 yield padrao, entrada.callback
 
-    for padrao, view in caminhar(get_resolver()):
-        # O admin e do Django e tem o proprio controle de acesso.
-        if not padrao.startswith("admin/"):
-            yield padrao, view
+    yield from caminhar(get_resolver())
 
 
 def _permissoes_do_menu(itens=None) -> set[str]:

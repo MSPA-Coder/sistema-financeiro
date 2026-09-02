@@ -6,6 +6,7 @@ divirja entre telas e para manter o markup legivel.
 from __future__ import annotations
 
 from django.template import Library
+from django.utils.html import escape
 from django.utils.safestring import mark_safe
 
 register = Library()
@@ -36,10 +37,15 @@ _ICONS = {
 
 @register.simple_tag
 def icon(name: str, label: str = "") -> str:
-    """Renderiza o SVG do icone `name`; string vazia se o nome nao existir."""
+    """Renderiza o SVG do icone `name`; string vazia se o nome nao existir.
+
+    `label` e escapado aqui dentro -- a categoria fica fechada no arquivo em
+    vez de depender de cada chamador lembrar de escapar antes de passar o
+    segundo parametro.
+    """
     svg = _ICONS.get(name, "")
     if not svg:
         return ""
     if label:
-        return mark_safe(f"{svg}<span>{label}</span>")
+        return mark_safe(f"{svg}<span>{escape(label)}</span>")
     return mark_safe(svg)

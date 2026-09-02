@@ -62,6 +62,16 @@ exige a senha atual e recusa repetir a senha temporária. **Segurança > Alterar
 senha** também está sempre disponível, sem obrigação. O `createsuperuser` é a
 exceção: quem o roda escolheu a própria senha e não fica com troca pendente.
 
+## Logs
+
+Mensagens de log que carregam texto de fora (login digitado, parâmetro de
+requisição, exceção de biblioteca) passam por
+`sharedauth.logs.sanitizar_log`. Ela é rede, não garantia: redige por
+reconhecimento de padrão e não substitui a disciplina de nunca colocar um
+segredo na mensagem em primeiro lugar — ver `sharedauth.secrets`, cujas
+exceções nunca carregam o valor lido. Um rótulo novo a reconhecer entra em
+`sharedauth.logs.CHAVES_SENSIVEIS`, na biblioteca, nunca numa cópia local.
+
 ## Documentação
 
 - [Arquitetura](docs/architecture.md): componentes, responsabilidades e

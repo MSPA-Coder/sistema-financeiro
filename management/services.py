@@ -222,11 +222,43 @@ def save_budget(user, *, owner_id, category_id, year, month, planned_amount) -> 
     return budget
 
 
-def retire_budget(budget_id) -> tuple[MonthlyBudget, str]:
+def retire_budget(user, budget_id) -> tuple[MonthlyBudget, str]:
+    """Arquiva o orçamento que já tem realizado no período, ou o remove.
+
+    Recebe `user` e confere o escopo por titular, como `save_budget` faz logo
+    acima. Sem essa checagem, a permissão funcional `management.manage` bastava
+    para remover orçamento de um titular que a pessoa nem enxerga na tela: a
+    listagem já sai filtrada por `accessible_owner_ids` (ver `management_view`),
+    então o único caminho era o POST direto -- e ele passava.
+
+    A recusa reaproveita a MESMA mensagem do orçamento inexistente, de
+    propósito: distinguir os dois casos diria a quem tenta quais ids existem
+    sob titulares alheios.
+    """
+    nao_encontrado = "Orçamento não encontrado."
     try:
         budget = MonthlyBudget.objects.select_related("owner", "category").get(id=int(budget_id))
     except (MonthlyBudget.DoesNotExist, TypeError, ValueError):
-        raise ValueError("Orçamento não encontrado.") from None
+        raise ValueError(nao_encontrado) from None
+
+    # A ação é `delete`, não `update`: `UserOwnerAccess` tem uma coluna por
+    # verbo, e quem só recebeu escrita não deveria ganhar remoção de brinde.
+    # Administrador e super usuário continuam passando, por
+    # `_has_broad_owner_access` dentro de `accessible_owner_ids`.
+    if budget.owner_id not in set(accessible_owner_ids(user, "delete")):
+        raise ValueError(nao_encontrado)
+
+    # Lido ANTES da exclusão: `Model.delete()` do Django zera a chave primária
+    # da instância, e depois dele `budget.id` é None -- registrar a auditoria
+    # com o id em mãos é o motivo de ela morar aqui, e não na view.
+    identificador = budget.id
+    anterior = {
+        "owner": budget.owner.name,
+        "category": budget.category.category_name,
+        "year": budget.year,
+        "month": budget.month,
+        "planned_amount": str(budget.planned_amount),
+    }
 
     start, end_exclusive = month_bounds(budget.year, budget.month)
     has_history = CashFlowEntry.objects.filter(
@@ -239,9 +271,17 @@ def retire_budget(budget_id) -> tuple[MonthlyBudget, str]:
     if has_history:
         budget.active = False
         budget.save(update_fields=["active", "updated_at"])
-        return budget, "archived"
-    budget.delete()
-    return budget, "deleted"
+        acao = "archived"
+    else:
+        budget.delete()
+        acao = "deleted"
+
+    # Import local, como em `transactions/services.py`: a trilha de auditoria
+    # das escritas financeiras é registrada na camada de serviço.
+    from core.services import log_audit_event
+
+    log_audit_event("monthly_budget", identificador, acao, old_values=anterior, user=user)
+    return budget, acao
 
 
 def actual_amount_for_budget(owner_id: int, category_id: int, year: int, month: int) -> Decimal:

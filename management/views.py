@@ -119,7 +119,7 @@ def retire_project_view(request):
 @require_POST
 def retire_budget_view(request):
     try:
-        budget, action = services.retire_budget(request.POST.get("budget_id"))
+        budget, action = services.retire_budget(request.user, request.POST.get("budget_id"))
         label = f"{budget.category.category_name} - {budget.month:02d}/{budget.year}"
         messages.success(request, f"Orçamento '{label}' {'arquivado por possuir realizado' if action == 'archived' else 'excluído'}.")
     except ValueError as exc:

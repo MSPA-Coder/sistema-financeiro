@@ -99,6 +99,59 @@ def test_settings_aceita_variaveis_diretas_apenas_no_modo_local():
     assert resultado.returncode == 0
 
 
+def test_settings_recusa_conectar_como_postgres(tmp_path):
+    """POSTGRES_USER=postgres é o superusuário do cluster, não uma conta de app (CB-05)."""
+    senha = tmp_path / "postgres_password"
+    senha.write_text("senha-de-teste", encoding="utf-8")
+    ambiente = os.environ.copy()
+    ambiente["POSTGRES_USER"] = "postgres"
+    ambiente.pop("POSTGRES_PASSWORD", None)
+    ambiente["POSTGRES_PASSWORD_FILE"] = str(senha)
+    ambiente["REQUIRE_FILE_SECRETS"] = "true"
+
+    resultado = _import_settings(ambiente)
+
+    assert resultado.returncode != 0
+    assert "postgres" in resultado.stderr
+    assert "POSTGRES_USER" in resultado.stderr
+
+
+def test_settings_aceita_postgres_user_dedicado(tmp_path):
+    senha = tmp_path / "postgres_password"
+    senha.write_text("senha-de-teste", encoding="utf-8")
+    ambiente = os.environ.copy()
+    ambiente["POSTGRES_USER"] = "controle_bancario"
+    ambiente.pop("POSTGRES_PASSWORD", None)
+    ambiente["POSTGRES_PASSWORD_FILE"] = str(senha)
+    ambiente["REQUIRE_FILE_SECRETS"] = "true"
+
+    resultado = _import_settings(ambiente)
+
+    assert resultado.returncode == 0
+
+
+def test_default_de_postgres_user_nao_e_o_superusuario():
+    """Sem a variável definida, o padrão não pode voltar a ser 'postgres'."""
+    ambiente = os.environ.copy()
+    ambiente.pop("POSTGRES_USER", None)
+    ambiente.pop("POSTGRES_PASSWORD", None)
+    ambiente["POSTGRES_PASSWORD"] = "senha-de-teste"
+    ambiente["REQUIRE_FILE_SECRETS"] = "false"
+
+    resultado = _import_settings(
+        ambiente, "from financeiro.settings import DATABASES; print(DATABASES['default']['USER'])"
+    )
+
+    assert resultado.returncode == 0
+    assert resultado.stdout.strip() == "controle_bancario"
+
+
+def test_compose_nao_usa_postgres_como_padrao_de_postgres_user():
+    conteudo = COMPOSE.read_text(encoding="utf-8")
+    assert "POSTGRES_USER:-postgres}" not in conteudo
+    assert conteudo.count("POSTGRES_USER:-controle_bancario}") == 3
+
+
 def test_compose_exige_os_segredos_operacionais():
     """O caminho suportado monta arquivos e não passa segredos no ambiente."""
     conteudo = COMPOSE.read_text(encoding="utf-8")
