@@ -47,10 +47,10 @@
                 <tr class="annual-summary-row annual-summary-row-{{ forloop.counter }}">
                     <th scope="row">{{ row.label }}</th>
                     {% for value in row.owner_values %}
-                    <td class="annual-value-column annual-owner-column {{ value|amount_class }}">{{ value|money_signed }}</td>
+                    <td class="annual-value-column annual-owner-column {{ value|amount_class }}" data-sensitive-value="true">{{ value|money_signed }}</td>
                     {% endfor %}
                     {% for month in row.months %}
-                    <td class="annual-value-column{% if month.is_current %} is-current{% endif %} {{ month.value|amount_class }}">{{ month.value|money_signed }}</td>
+                    <td class="annual-value-column{% if month.is_current %} is-current{% endif %} {{ month.value|amount_class }}" data-sensitive-value="true">{{ month.value|money_signed }}</td>
                     {% endfor %}
                 </tr>
                 {% endfor %}
@@ -72,12 +72,12 @@
                         {% endif %}
                     </th>
                     {% for value in row.owner_values %}
-                    <td class="annual-value-column annual-owner-column {{ value|amount_class }}">{{ value|money_signed }}</td>
+                    <td class="annual-value-column annual-owner-column {{ value|amount_class }}" data-sensitive-value="true">{{ value|money_signed }}</td>
                     {% empty %}
                     {% for owner in report.owner_columns %}<td class="annual-value-column annual-owner-column text-muted">—</td>{% endfor %}
                     {% endfor %}
                     {% for month in row.months %}
-                    <td class="annual-value-column{% if month.is_current %} is-current{% endif %} {{ month.value|amount_class }}">{{ month.value|money_signed }}</td>
+                    <td class="annual-value-column{% if month.is_current %} is-current{% endif %} {{ month.value|amount_class }}" data-sensitive-value="true">{{ month.value|money_signed }}</td>
                     {% empty %}
                     {% for month in report.months %}<td class="annual-value-column text-muted">—</td>{% endfor %}
                     {% endfor %}
@@ -90,8 +90,8 @@
             <tfoot>
                 <tr class="annual-total-row">
                     <th scope="row">TOTAL</th>
-                    {% for value in report.totals.owner_values %}<td class="annual-value-column annual-owner-column {{ value|amount_class }}">{{ value|money_signed }}</td>{% endfor %}
-                    {% for month in report.totals.months %}<td class="annual-value-column{% if month.is_current %} is-current{% endif %} {{ month.value|amount_class }}">{{ month.value|money_signed }}</td>{% endfor %}
+                    {% for value in report.totals.owner_values %}<td class="annual-value-column annual-owner-column {{ value|amount_class }}" data-sensitive-value="true">{{ value|money_signed }}</td>{% endfor %}
+                    {% for month in report.totals.months %}<td class="annual-value-column{% if month.is_current %} is-current{% endif %} {{ month.value|amount_class }}" data-sensitive-value="true">{{ month.value|money_signed }}</td>{% endfor %}
                 </tr>
             </tfoot>
             {% endif %}

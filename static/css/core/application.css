@@ -675,6 +675,17 @@ input[data-sensitive-input="true"] {
     font-variant-numeric: tabular-nums;
 }
 
+/*
+ * `theme-init.js` conhece a preferencia antes de o CSS e o conteudo serem
+ * pintados. Enquanto application.js ainda prepara os marcadores individuais,
+ * manter a area de conteudo fora da pintura evita qualquer quadro com valores
+ * crus em paginas que usem texto monetario sem um seletor explicito.
+ */
+html[data-values-hidden="true"]:not([data-values-privacy-ready="true"]) .app-content,
+html[data-values-hidden="true"][data-values-privacy-pending="true"] #appMain {
+    visibility: hidden;
+}
+
 html[data-values-hidden="true"] input[data-sensitive-input="true"],
 html[data-values-hidden="true"] input[name="entry_amount"],
 html[data-values-hidden="true"] input[name="realized_amount"],
@@ -809,19 +820,17 @@ td.amount, th.amount { text-align: right; white-space: nowrap; font-variant-nume
     font-variant-numeric: tabular-nums;
 }
 
+/*
+ * Os quatro seletores de classe tambem sao usados pelo JS para identificar
+ * valores sensiveis. Eles precisam estar aqui porque, na primeira pintura e
+ * antes de um swap HTMX ser processado, o JS ainda nao teve tempo de incluir
+ * `data-sensitive-value`. Sem esta lista o valor cru aparece por um instante.
+ */
+html[data-values-hidden="true"] [data-sensitive-value="true"]:not(option):not(input),
 html[data-values-hidden="true"] td.amount,
-html[data-values-hidden="true"] .value-col,
-html[data-values-hidden="true"] .card-value {
-    color: transparent !important;
-    text-shadow: none !important;
-}
-
+html[data-values-hidden="true"] td.value-col,
+html[data-values-hidden="true"] .card-value,
 html[data-values-hidden="true"] .health-metric-value {
-    color: transparent !important;
-    text-shadow: none !important;
-}
-
-html[data-values-hidden="true"] .sensitive-value {
     color: transparent !important;
     text-shadow: none !important;
 }
@@ -832,6 +841,16 @@ html[data-values-hidden="true"] .sensitive-value::after {
     inset: 0;
     color: var(--muted);
     text-align: inherit;
+    letter-spacing: 0.06em;
+}
+
+html[data-values-hidden="true"] [data-sensitive-value="true"]:not(.sensitive-value):not(option):not(input)::after,
+html[data-values-hidden="true"] td.amount:not([data-sensitive-value="true"])::after,
+html[data-values-hidden="true"] td.value-col:not([data-sensitive-value="true"])::after,
+html[data-values-hidden="true"] .card-value:not([data-sensitive-value="true"])::after,
+html[data-values-hidden="true"] .health-metric-value:not([data-sensitive-value="true"])::after {
+    content: "****";
+    color: var(--muted);
     letter-spacing: 0.06em;
 }
 
@@ -881,7 +900,7 @@ html[data-values-hidden="true"] .health-chart-row canvas {
 
 html[data-values-hidden="true"] .chart-card:has(canvas)::after,
 html[data-values-hidden="true"] .health-chart-row:has(canvas)::after {
-    content: "Modo discreto ativo";
+    content: "Valores ocultos (****)";
     position: absolute;
     inset: 50% auto auto 50%;
     transform: translate(-50%, -50%);

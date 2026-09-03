@@ -198,11 +198,7 @@ def annual_planning_view(request):
     owners = list(
         services.AccountOwner.objects.filter(id__in=allowed_owner_ids).order_by("name", "id")
     )
-    accounts = list(
-        services.FinancialAccount.objects.select_related("owner", "institution")
-        .filter(owner_id__in=selected_owner_ids)
-        .order_by("owner__name", "institution__institution_name", "account_name", "id")
-    )
+    accounts = services.annual_planning_account_options(request.user, selected_owner_ids)
     allowed_account_ids = {account.id for account in accounts}
     selected_account_ids = (
         sorted(allowed_account_ids)
