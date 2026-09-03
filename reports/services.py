@@ -425,10 +425,24 @@ def _authorized_planning_accounts(
     queryset = FinancialAccount.objects.select_related("owner").filter(
         owner_id__in=selected_owner_ids,
     )
+    hidden_ids = hidden_account_ids(user, "projections")
+    if hidden_ids:
+        queryset = queryset.exclude(id__in=hidden_ids)
     if requested_account_ids is not None:
         queryset = queryset.filter(id__in=requested_account_ids)
     accounts = list(queryset.order_by("owner__name", "account_name", "id"))
     return accounts, [account.id for account in accounts]
+
+
+def annual_planning_account_options(user, owner_ids: Iterable[int] | None = None) -> list[FinancialAccount]:
+    """Lista as contas elegíveis para o filtro do Planejamento anual.
+
+    A lista usa a mesma resolução de autorização e ocultação do relatório.
+    Assim, a opção não aparece no dropdown e também não pode ser reintroduzida
+    por um ``account_ids`` antigo ou montado manualmente.
+    """
+    accounts, _ = _authorized_planning_accounts(user, owner_ids, None)
+    return accounts
 
 
 def _planning_add_category(bucket: dict, entry: CashFlowEntry, amount: Decimal) -> None:

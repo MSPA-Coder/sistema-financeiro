@@ -162,7 +162,7 @@
     var _sensitiveInputNameRe = /(^|_)(amount|balance|value|valor|saldo)(_|$)/;
     var _sensitiveElementSelector = [
         '[data-sensitive-value]',
-        'td.amount', 'th.amount', '.value-col', '.card-value',
+        'td.amount', 'td.value-col', '.card-value',
         '.health-metric-value'
     ].join(', ');
 
@@ -281,6 +281,11 @@
 
     function _applyValuesPrivacy(hidden, root) {
         document.documentElement.setAttribute('data-values-hidden', hidden ? 'true' : 'false');
+        if (hidden) {
+            document.documentElement.setAttribute('data-values-privacy-ready', 'false');
+        } else {
+            document.documentElement.removeAttribute('data-values-privacy-ready');
+        }
         if (document.body) document.body.setAttribute('data-values-hidden', hidden ? 'true' : 'false');
 
         var scope = root || document;
@@ -293,6 +298,11 @@
         document.querySelectorAll('[data-privacy-toggle]').forEach(function (toggle) {
             _updatePrivacyToggle(toggle, hidden);
         });
+
+        if (hidden) {
+            document.documentElement.setAttribute('data-values-privacy-ready', 'true');
+        }
+        document.documentElement.removeAttribute('data-values-privacy-pending');
     }
 
     function _initPrivacyToggles(root) {
@@ -343,13 +353,23 @@
        entre requisicoes -- e a chave certa para deduplicar. */
     var _ultimaTroca = null;
 
+    document.addEventListener('htmx:beforeSwap', function () {
+        if (_readValuesPrivacyPreference()) {
+            document.documentElement.setAttribute('data-values-privacy-pending', 'true');
+        }
+    });
+
     document.addEventListener('htmx:afterSwap', function (ev) {
         var alvo = (ev.detail && ev.detail.target) || ev.target;
         var xhr = ev.detail && ev.detail.xhr;
         if (xhr && xhr === _ultimaTroca) return;
         _ultimaTroca = xhr;
 
-        if (alvo && alvo.nodeType === Node.ELEMENT_NODE) _initContentArea(alvo);
+        if (alvo && alvo.nodeType === Node.ELEMENT_NODE) {
+            _initContentArea(alvo);
+            _initPrivacyToggles(alvo);
+            _applyValuesPrivacy(_readValuesPrivacyPreference(), alvo);
+        }
         _updateTableOverflow();
 
         var principal = document.getElementById('appMain');
@@ -408,18 +428,6 @@
     document.addEventListener('htmx:oobAfterSwap', function (ev) {
         if (ev.target && ev.target.id === 'flashMessages') _announceServerAvisos();
         _applyValuesPrivacy(_readValuesPrivacyPreference(), ev.target || document);
-    });
-
-    document.addEventListener('htmx:afterSwap', function (ev) {
-        var root = ev.detail && ev.detail.elt ? ev.detail.elt : (ev.target || document);
-        _initPrivacyToggles(root);
-        _applyValuesPrivacy(_readValuesPrivacyPreference(), root);
-    });
-
-    document.addEventListener('htmx:load', function (ev) {
-        var root = ev.detail && ev.detail.elt ? ev.detail.elt : (ev.target || document);
-        _initPrivacyToggles(root);
-        _applyValuesPrivacy(_readValuesPrivacyPreference(), root);
     });
 
     function _observeDynamicPrivacyContent() {
@@ -525,8 +533,6 @@
         _initSelectAllCheckboxes(root);
         _updateFilterSelects(root);
         _initTableScrollWrappers(root);
-        _initPrivacyToggles(root);
-        _applyValuesPrivacy(_readValuesPrivacyPreference(), root || document);
     }
 
     /* ============================================================
@@ -614,6 +620,8 @@
         /* -- Init da area de conteudo -- */
         _maskServerAvisos(document);
         _initContentArea(document);
+        _initPrivacyToggles(document);
+        _applyValuesPrivacy(_readValuesPrivacyPreference(), document);
         _observeDynamicPrivacyContent();
     });
 

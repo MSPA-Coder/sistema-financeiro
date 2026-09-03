@@ -107,7 +107,7 @@
                 <tr>
                     <td>{{ close.account.owner.name }} / {{ close.account.institution.institution_name }} / {{ close.account.account_name }}</td>
                     <td>{{ close.month|stringformat:"02d" }}/{{ close.year }}</td>
-                    <td>{{ close.closing_balance|money }}</td>
+                    <td data-sensitive-value="true">{{ close.closing_balance|money }}</td>
                     <td>{% if close.active %}Fechado{% else %}Reaberto{% endif %}</td>
                     <td>
                         {% if close.active %}
