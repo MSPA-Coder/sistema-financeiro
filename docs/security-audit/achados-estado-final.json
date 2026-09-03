@@ -1,0 +1,353 @@
+{
+  "projeto": "ControleBancario",
+  "data": "Auditoria e remediação — 1 de setembro de 2026",
+  "escopo": "Repositório ControleBancario na íntegra: as 8 apps Django (`core`, `accounts`, `banking`, `bank_statements`, `transactions`, `management`, `reports`, `dashboard`), todas as views e URLconfs, as camadas de serviço (≈5.000 linhas), os modelos e as 20 migrações, os 40+ templates, o JavaScript de `static/js/`, `financeiro/settings.py`, `Dockerfile`, `compose.yaml`, `deploy/nginx/`, os arquivos de ambiente (versionados e não versionados), o workflow de CI e o histórico completo do Git.",
+  "stack": {
+    "Linguagem": "Python 3.13",
+    "Framework": "Django 6 (8 apps, com camada de serviço separada das views)",
+    "ORM / query builder": "Django ORM; migrações nativas",
+    "Banco": "PostgreSQL",
+    "Mecanismo de auth": "Django auth com `AppUser` próprio, mais DOIS backends — `CaseInsensitiveUsernameBackend` (autenticação) e `AppPermissionBackend` (autorização funcional contra o catálogo `AppPermission`/`UserPermission`); bloqueio de tentativas persistente em `LoginLockout`",
+    "Isolamento de dados": "Mecanismo PRÓPRIO e real: `UserOwnerAccess` concede view/create/update/delete por TITULAR (`AccountOwner`), e as contas herdam o escopo do titular (`banking.services.accessible_account_ids`)",
+    "Frontend": "Templates Django + HTMX (vendorizado) e Chart.js; CSP estrita por middleware próprio, sem `unsafe-inline`",
+    "Deploy": "Docker Compose (gunicorn, WhiteNoise com manifesto), Nginx com TLS no VPS Oracle"
+  },
+  "nota_metodologica": "Este é o único dos quatro aplicativos com isolamento de dados de verdade — `UserOwnerAccess`, por titular, com quatro verbos. Por isso a categoria 1 pôde ser auditada na sua forma plena: para CADA consulta de listagem, busca, agregação, relatório e exportação, foi verificado se ela passa por `accessible_owner_ids` ou `accessible_account_ids` antes de tocar o banco. A categoria 3 (IDOR) foi auditada percorrendo TODOS os handlers que recebem ID, em todas as 8 apps, e não uma amostra — foi essa varredura exaustiva que produziu o achado CB-01, num serviço que é a única exceção num conjunto de dezenas de funções corretas.",
+  "metodologia": [
+    {
+      "categoria": "1. Banco sem tranca (isolamento de inquilino/dono)",
+      "mapeamento": "O mecanismo é `UserOwnerAccess` (por titular) mais a herança de escopo das contas. Auditadas todas as consultas que produzem lista, agregado, relatório ou exportação, em `reports/services.py` (1.615 linhas), `transactions/services.py` (1.631), `bank_statements/`, `banking/`, `management/` e `dashboard/`, confirmando a passagem por `accessible_owner_ids`/`accessible_account_ids`."
+    },
+    {
+      "categoria": "2. Permissão definida no navegador",
+      "mapeamento": "Cruzamento de cada `can_*` passado ao template com o decorator `@permission_required` da rota correspondente, e varredura da URLconf inteira pelo atributo `permissao_exigida` que o decorator grava na view. Auditado também o caminho de escalonamento: quem tem `permissions.manage` consegue elevar a si mesmo?"
+    },
+    {
+      "categoria": "3. IDOR",
+      "mapeamento": "Percorridos TODOS os handlers das 8 apps que recebem ID em caminho, query ou corpo — lançamento, anexo, linha de extrato, lote de importação, conta, titular, categoria, tag, projeto, orçamento e usuário —, verificando em cada um a existência da checagem de escopo por titular."
+    },
+    {
+      "categoria": "4. Chaves expostas (hardcode)",
+      "mapeamento": "Varredura de código, templates, `settings.py`, `compose.yaml`, `Dockerfile`, scripts PowerShell, workflow de CI, documentação, arquivos `.env` (inclusive os NÃO versionados) e do histórico completo do Git. Atenção específica aos defaults `${VAR:-valor}` do Compose e à ausência de validação de boot que os recuse."
+    },
+    {
+      "categoria": "5. Inputs sem tratamento (XSS)",
+      "mapeamento": "Frontend: varredura de `static/js/` por `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `eval`, `new Function` e `document.write`. Backend: busca por `|safe`, `mark_safe`, `format_html` e `{% autoescape off %}` em todos os templates e templatetags — com leitura de cada `mark_safe` encontrado para verificar a procedência do que ele marca."
+    }
+  ],
+  "resumo": "Terceira leitura do mesmo relatório, depois de duas rodadas de remediação. Das seis constatações da auditoria, as três de severidade média foram corrigidas na primeira rodada (1 de setembro) e as três restantes — duas baixas e uma informativa — foram fechadas nesta segunda rodada. Nenhuma delas era defeito de lógica: `.env.docker` tinha os dois segredos operacionais duplicados em texto claro (já provisionados em `.secrets/`) e `scripts/package_clean_zip.py` não excluía `.secrets/` nem `.certs/` do ZIP de distribuição; o default de `POSTGRES_USER` caía no superusuário `postgres` do cluster quando a variável faltasse; e a templatetag `icon` marcava um rótulo livre como seguro sem escapá-lo. As seis constatações da auditoria estão corrigidas e verificadas por teste. A suíte de qualidade do projeto ficou verde: Ruff sem apontamento e 265 testes.",
+  "pontos_fortes": [
+    {
+      "titulo": "Escopo por titular herdado corretamente pelas contas",
+      "detalhe": "`accessible_account_ids` deriva de `accessible_owner_ids`, e `can_access_account` resolve o titular da conta antes de decidir. Esse é o helper central, e é ele que os módulos de Bancos, Transações e Cadastros usam — não uma cópia por app.",
+      "evidencia": "banking/services.py:76-98 e accounts/services.py:546-568"
+    },
+    {
+      "titulo": "Choke point dos relatórios valida o filtro vindo da URL",
+      "detalhe": "`selected_context` recusa `owner_id` fora dos permitidos e resolve `account_id` com `filter(pk=..., owner_id__in=allowed_owner_ids)`. Um ID de outro titular na query string é descartado — e ainda é ANOTADO na requisição, para o middleware limpar a barra de endereços e o filtro morto não voltar num F5 ou num favorito.",
+      "evidencia": "reports/services.py:209-233"
+    },
+    {
+      "titulo": "Planejamento anual faz interseção, não confiança",
+      "detalhe": "`owner_ids` e `account_ids` vindos da query passam por `allowed_owner_ids.intersection(...)` e `allowed_account_ids.intersection(...)`. Pedir o titular de outra pessoa não devolve erro nem dado: devolve conjunto vazio.",
+      "evidencia": "reports/views.py:190-210"
+    },
+    {
+      "titulo": "Conciliação bancária escopada em todos os pontos",
+      "detalhe": "`_get_line_in_scope` resolve a linha e confere `can_access_account`; `reconcile_line_with_entry` confere o lançamento SEPARADAMENTE, com ação `update`, e ainda exige que linha e lançamento pertençam à mesma conta. As listagens de pendentes e conciliadas filtram por `accessible_account_ids`.",
+      "evidencia": "bank_statements/reconciliation.py:158-168, 215-241, 46-66"
+    },
+    {
+      "titulo": "Download de anexo verifica o escopo do lançamento, não só a permissão funcional",
+      "detalhe": "`attachment_for_download` resolve o anexo por ID e devolve `None` quando `can_access_entry` recusa — a view trata `None` como 'não encontrado'. Não há caminho para baixar comprovante de conta fora do escopo.",
+      "evidencia": "bank_statements/attachments.py:156-165 e 86-87"
+    },
+    {
+      "titulo": "Transferência interna com autorização resolvida pela ponta de origem",
+      "detalhe": "Uma transferência pode sair de uma conta acessível para uma de outro titular. `_authorization_entry` resolve a autorização sempre pela ponta de origem, de modo que a contraparte é exibida e atualizada junto sem que isso conceda acesso geral à conta de destino.",
+      "evidencia": "transactions/access.py:18-32"
+    },
+    {
+      "titulo": "Autorização funcional declarativa, com varredura da URLconf que a cobra",
+      "detalhe": "O decorator grava `permissao_exigida` na view, e existe um teste que percorre a URLconf lendo esse atributo. O comentário registra o motivo: foi assim que quatro telas ficaram com chave no catálogo e nenhuma verificação, por tempo indeterminado.",
+      "evidencia": "core/permissions.py:47-52 e tests/test_permissoes_por_rota.py"
+    },
+    {
+      "titulo": "Escopo de DADOS deliberadamente separado da permissão FUNCIONAL",
+      "detalhe": "`_has_broad_owner_access` dá visão ampla a administrador e super usuário, mas isso NÃO lhes concede o direito de gerir permissões — a distinção está escrita no docstring e implementada em duas funções diferentes.",
+      "evidencia": "accounts/services.py:535-544 e 102-118"
+    },
+    {
+      "titulo": "Confirmação de alteração 'este e os próximos' assinada pelo servidor",
+      "detalhe": "O token vem de `django.core.signing.dumps`, é vinculado ao ID do lançamento e ao escopo, e expira em 10 minutos. Um POST direto sem a confirmação concluída é recusado pelo service — a confirmação não depende do JavaScript.",
+      "evidencia": "transactions/services.py:1038-1060"
+    },
+    {
+      "titulo": "Upload de anexo e de extrato com nome saneado e assinatura conferida",
+      "detalhe": "`_sanitize_filename` remove separador de caminho e reduz a um allowlist, então um nome enviado não escapa do diretório de destino; e `_validate_attachment_signature` confere os bytes iniciais contra a extensão. Tetos de 5 MB (extrato), 5.000 linhas e 10 MB (anexo) vêm de settings.",
+      "evidencia": "bank_statements/services.py:27-36 e attachments.py:52-71"
+    },
+    {
+      "titulo": "Nenhum XSS: zero `|safe`, e cada `mark_safe` marca constante literal",
+      "detalhe": "Varredura completa dos templates e templatetags: nenhum `|safe`, nenhum `{% autoescape off %}`. Os quatro `mark_safe` foram lidos um a um — dois em `icons.py` (SVG de um dicionário fechado), um em `navegacao.py` (constante literal, com `noqa` explicando) e um em `sharedauth_tags.py` (o ícone da biblioteca). O único dado do cliente vai por `json_script`, que não é executável.",
+      "evidencia": "core/templatetags/*.py e templates/dashboard/_content.html:58"
+    },
+    {
+      "titulo": "CSP estrita, aplicada em desenvolvimento e produção",
+      "detalhe": "Middleware próprio sobre os valores do SharedAuth, sem nonce e sem `unsafe-inline`, com o raciocínio registrado: um nonce exigiria `<style>` embutido, o HTMX o perderia na troca de tela, e expor o nonce num `<meta>` entregaria ao DOM justamente o segredo que ele é.",
+      "evidencia": "core/security.py:72-105"
+    },
+    {
+      "titulo": "`Vary` correto para HTMX: `HX-Request` E `HX-Target`",
+      "detalhe": "A mesma URL responde página inteira ou fragmento conforme o ALVO da troca, não só conforme o cabeçalho. Declarar apenas `HX-Request` deixaria um cache servir o fragmento a quem pediu a página. O comentário registra que a recomendação original da auditoria anterior ficou desatualizada com a migração para HTMX.",
+      "evidencia": "core/security.py:28-46"
+    },
+    {
+      "titulo": "Segredo obrigatório e `DEBUG` desligado por padrão",
+      "detalhe": "`_read_required_secret` levanta se o segredo não existe, e `REQUIRE_FILE_SECRETS=true` no Compose recusa a forma direta por variável. `DEBUG` só liga quando pedido explicitamente. `USE_HTTPS=True` exige `CSRF_TRUSTED_ORIGINS` não vazio e só com origens HTTPS, ou a aplicação não sobe.",
+      "evidencia": "financeiro/settings.py:17-44 e 240-247"
+    },
+    {
+      "titulo": "Bloqueio de tentativas de login persistente, por conta e origem",
+      "detalhe": "`LoginLockout` guarda contagem e prazo no banco (não em memória do processo), chaveado por usuário normalizado mais endereço. Sobrevive a reinício e vale entre os workers do gunicorn.",
+      "evidencia": "accounts/login_lockout.py:27-77 e accounts/views.py:107-131"
+    },
+    {
+      "titulo": "Log de autenticação sanitizado contra forja de linha",
+      "detalhe": "O nome de usuário digitado passa por `sharedauth.logs.sanitizar_log` antes de ir ao log, com o comentário explicando que `.strip()` tira espaço das pontas mas não a quebra de linha do meio — e é a do meio que forja um registro falso indistinguível de um verdadeiro.",
+      "evidencia": "accounts/auth_backends.py:37-60"
+    },
+    {
+      "titulo": "Sem segredo no histórico do Git",
+      "detalhe": "Nenhum arquivo `.env`, `.pem` ou de segredo jamais foi adicionado ao repositório. O único arquivo com 'secret' no nome é o script de provisionamento, que gera valor em vez de contê-lo. O PAT do build entra por BuildKit secret com `umask 077`.",
+      "evidencia": "git log --all --diff-filter=A e .github/workflows/ci.yml:45-47"
+    },
+    {
+      "titulo": "Escopo por titular também na remoção de orçamento",
+      "detalhe": "A única exceção que a auditoria encontrou no isolamento por titular foi fechada: a remoção confere `accessible_owner_ids(user, 'delete')` antes de tocar o registro, e o titular fora do escopo recebe a resposta de inexistente.",
+      "evidencia": "management/services.py:248 · tests/test_management_lifecycle.py:99"
+    },
+    {
+      "titulo": "Concessão de privilégio restrita a `administrator`",
+      "detalhe": "As três ações que concedem perfil, permissão funcional e acesso por titular exigem o tipo de usuário, e não apenas a permissão funcional `permissions.manage` — que ficou sendo permissão de leitura da tela.",
+      "evidencia": "core/views.py:229 · tests/test_authorization.py:98"
+    },
+    {
+      "titulo": "Sem painel administrativo paralelo",
+      "detalhe": "Não existe mais um segundo caminho de administração de contas por fora de `user_mutation_block_message`, da regra do último administrador e do `log_audit_event`, nem uma rota que verifique senha sem passar pelo `LoginLockout`.",
+      "evidencia": "financeiro/settings.py:61-75 · tests/test_rotas_orfas_removidas.py:64"
+    },
+    {
+      "titulo": "As três correções de configuração fecham default silencioso, não configuração em uso",
+      "detalhe": "Em nenhum dos três casos (CB-03, CB-05, CB-06) a implantação real precisou mudar: `.env.docker.example` e `.env.vps.example` já declaravam `POSTGRES_USER=controle_bancario` explicitamente, e nenhum template chama `{% icon %}` com um segundo argumento hoje. As três correções fecham o que aconteceria se alguém esquecesse a variável ou escrevesse um call site novo — não um incidente em curso.",
+      "evidencia": "compose.yaml:22,78,88; financeiro/settings.py (checagem de boot logo após DATABASES); core/templatetags/icons.py:38-48; scripts/package_clean_zip.py (EXCLUDED_DIRS)"
+    }
+  ],
+  "pontos_fracos": [
+    "O isolamento por titular é aplicado dezenas de vezes e falha em um ponto: `retire_budget` arquiva ou apaga um orçamento mensal pelo ID, sem receber o usuário e sem consultar `accessible_owner_ids` — enquanto `save_budget`, na mesma camada, faz exatamente essa checagem. É a assimetria que caracteriza um IDOR real, não uma decisão de projeto. FECHADO em 01/09: a função passou a receber o usuário e a conferir `accessible_owner_ids`, com dois testes fixando o comportamento.",
+    "A trava contra escalonamento existe para o TIPO de usuário e não para o ESCOPO de dados. `user_mutation_block_message` impede um não-administrador de promover alguém a `super_user`; nada impede que a mesma pessoa, tendo `permissions.manage`, marque para si todas as permissões funcionais e todos os titulares na matriz de acesso. FECHADO em 01/09: as três ações de concessão passaram a exigir `administrator`, e `permissions.manage` virou permissão de leitura.",
+    "O `/admin/` do Django está habilitado e roteado, e a conta `Admin` tem `is_staff` e `is_superuser` em produção — verificado no banco. `django.contrib.auth.admin` registra o modelo de usuário sozinho, então esse caminho edita contas, senhas e papéis por fora de `user_mutation_block_message`, da regra do último administrador e da trilha de auditoria. E `/admin/login/` verifica senha sem passar por `AppLoginView`, portanto sem o `LoginLockout`. FECHADO em 01/09: o app do admin e a rota foram removidos, e as marcas `is_staff` e `is_superuser` da conta `Admin` foram zeradas em produção.",
+    "`.env.docker` guarda a senha do PostgreSQL e a `DJANGO_SECRET_KEY` em texto claro, com os mesmos valores que já estão em `.secrets/` — duplicação que é o desenho do script de provisionamento, não um acidente. Não houve exposição, e o `REQUIRE_FILE_SECRETS` faz o contêiner recusar a forma direta; o que sobra é superfície. FECHADO nesta rodada: os dois valores foram esvaziados do arquivo, e `package_clean_zip.py` passou a excluir `.secrets/` e `.certs/` do ZIP de distribuição."
+  ],
+  "nao_aplicaveis": [],
+  "achados": [
+    {
+      "id": "CB-01",
+      "categoria": "3. IDOR",
+      "severidade": "media",
+      "titulo": "`retire_budget` apaga orçamento de qualquer titular, sem checar escopo",
+      "arquivo": "management/services.py:225-244 + management/views.py:117-122",
+      "descricao": "`retire_budget(budget_id)` recebe apenas o ID: não recebe o usuário e não consulta `accessible_owner_ids`. Ela resolve o `MonthlyBudget`, decide entre arquivar (se há lançamento realizado no mês/categoria/titular) ou apagar de vez, e executa. A view que a chama exige `management.manage` — a permissão FUNCIONAL — e nada mais.",
+      "trecho": "def retire_budget(budget_id) -> tuple[MonthlyBudget, str]:\n    try:\n        budget = MonthlyBudget.objects.select_related(\"owner\", \"category\").get(id=int(budget_id))\n    except (MonthlyBudget.DoesNotExist, TypeError, ValueError):\n        raise ValueError(\"Orcamento nao encontrado.\") from None\n    ...\n    budget.delete()\n    return budget, \"deleted\"",
+      "porque": "A assimetria é a prova. `save_budget`, na MESMA camada e a 25 linhas de distância, faz a checagem correta: `if owner_id_int not in set(accessible_owner_ids(user, \"update\")): raise ValueError(\"Acesso negado...\")`. E a listagem da própria tela também está escopada — `management_view` monta `budget_rows_for_period` a partir de `options.owners`, que sai de `context_options` e já veio filtrado. Ou seja: a pessoa não VÊ o orçamento de outro titular na tela, não pode CRIAR nem EDITAR orçamento de outro titular, e pode APAGAR o de qualquer um. Basta um POST direto: `POST /management/budget/retire/` com `budget_id=<id de outro titular>` e o token CSRF da própria sessão.",
+      "impacto": "Escrita destrutiva atravessando a fronteira de titular, que é o mecanismo de isolamento deste sistema. O dado perdido é de planejamento (valor orçado por categoria/mês), não do razão — o que limita o estrago —, mas a exclusão é definitiva quando não há lançamento realizado no período, e não há tela que a desfaça. O evento também não entra na trilha de auditoria: `retire_budget_view` não chama `log_audit_event`.",
+      "condicoes": "Exige uma conta autenticada com a permissão funcional `management.manage` e que exista mais de um titular no sistema, com acessos distintos. Administradores e super usuários têm acesso amplo por regra (`_has_broad_owner_access`), então para eles o comportamento é o mesmo com ou sem o defeito — o alvo é a conta de tipo `user` com escopo restrito.",
+      "criterios": [],
+      "situacao": "corrigido",
+      "correcao": "`retire_budget` passou a receber `user` e a exigir `accessible_owner_ids(user, 'delete')` sobre `budget.owner_id`, no mesmo formato que `save_budget` já usava 25 linhas acima (management/services.py:225-248); a view repassa `request.user` (management/views.py:122). O orçamento de titular fora do escopo passa a responder a mesma mensagem de inexistente, sem revelar que o registro existe. A auditoria que faltava foi acrescentada em services.py:283.",
+      "verificacao": "Dois testes novos em tests/test_management_lifecycle.py:86 e :99 — o caminho legítimo com registro de auditoria, e o orçamento de outro titular, que permanece no banco."
+    },
+    {
+      "id": "CB-02",
+      "categoria": "2. Autorização e autenticação no servidor",
+      "severidade": "media",
+      "titulo": "`permissions.manage` permite auto-concessão de todo o escopo de dados",
+      "arquivo": "core/views.py:102-105, 211-244 + accounts/services.py:499-527",
+      "descricao": "A tela de Permissões exige apenas `permissions.manage`. O usuário-alvo vem de `request.GET/POST['user_id']`, resolvido sobre `list_manageable_users()`, que devolve TODOS os usuários — inclusive quem está operando. Duas ações da mesma tela não têm trava de auto-elevação: `save_function_permissions` grava o conjunto inteiro de permissões funcionais no alvo, e `save_owner_access` grava a matriz completa de view/create/update/delete sobre TODOS os titulares.",
+      "trecho": "selected_user = users.filter(id=selected_user_id).first() if selected_user_id else users.first()\n...\nif selected_user.id == request.user.id and 'permissions.manage' not in allowed_keys:\n    allowed_keys.add('permissions.manage')\n    messages.warning(request, \"Protecao aplicada: voce nao pode remover o proprio acesso...\")",
+      "porque": "A única proteção contra manipular a própria conta é o oposto do que seria preciso: ela impede a pessoa de REMOVER a própria `permissions.manage`, e não de ACRESCENTAR o resto. Um usuário de tipo `user`, com escopo restrito a um titular e com `permissions.manage` concedida, seleciona a si mesmo, marca todas as caixas de permissão funcional e todas as linhas da matriz de titulares, salva — e passa a ver e alterar todo o dado financeiro do sistema. O contraste mostra que a preocupação com escalonamento existe e parou no lugar errado: `user_mutation_block_message` (accounts/services.py:356-360) bloqueia explicitamente 'somente administrator pode criar ou promover usuários privilegiados', cobrindo o `user_type` — e nada equivalente cobre o escopo de dados.",
+      "impacto": "Escalonamento de privilégio horizontal e vertical dentro do modelo de permissões: acesso completo aos dados de todos os titulares e a todas as funções, sem passar por `tables.users.manage` nem virar `administrator`. A ação FICA registrada na trilha de auditoria (`log_audit_event` é chamado nas duas), o que ajuda a detectar, mas não impede.",
+      "condicoes": "Exige que `permissions.manage` tenha sido concedida a uma conta não administradora. Se ela só existe em contas `administrator`, não há escalonamento — o administrador já tem tudo por regra do sistema (`has_function_permission` devolve `True` para esse tipo). O risco nasce no momento em que alguém delega a gestão de permissões sem delegar o resto, que é exatamente o caso de uso que a permissão existe para atender.",
+      "criterios": [],
+      "situacao": "corrigido",
+      "correcao": "As três ações que concedem privilégio na tela de Permissões passaram a exigir `user_type == administrator` (core/views.py:229); `permissions.manage` virou permissão de leitura da tela. A interface deixou de oferecer os três botões de gravação a quem não é administrador (`pode_conceder`, core/views.py:329 e templates/permissions/index.html:79, 214 e 297) — mas quem recusa é o servidor.",
+      "verificacao": "tests/test_authorization.py:98, parametrizado nas três ações; :115 garante que o administrador continua concedendo; :132 confere que os botões somem."
+    },
+    {
+      "id": "CB-03",
+      "categoria": "4. Chaves expostas",
+      "severidade": "baixa",
+      "titulo": "Segredos duplicados em texto claro em `.env.docker`",
+      "arquivo": ".env.docker:3,6 (não versionado)",
+      "descricao": "O arquivo `.env.docker` guarda `POSTGRES_PASSWORD=CB_local_2026_7fD9xQ2mK8vR4sT6` e `DJANGO_SECRET_KEY=rW8zWWxZ…t6tE` em texto claro — os mesmos valores que já estão em `.secrets/postgres_password` e `.secrets/django_secret_key`, confirmado por comparação de hash. O script de provisionamento COPIA do `.env` para `.secrets/`, então a duplicação é o desenho do fluxo, não um acidente.",
+      "trecho": "POSTGRES_PASSWORD=CB_local_2026_7fD9xQ2mK8vR4sT6\nDJANGO_SECRET_KEY=rW8zWWxZcItT9rswKGHACk8A6tdZHg6CZDwGnnUHZds5QLkMnluxQZ5aOsT8t6tE",
+      "porque": "Não é exposição, e vale registrar o que foi verificado: o `.gitignore` recusa o arquivo (confirmado por `git check-ignore`); o histórico completo do Git não tem nenhum arquivo de segredo; o `.dropboxignore` já excluía `.env` da sincronização de nuvem ANTES desta auditoria (conferido em `git show HEAD:.dropboxignore`); e a pasta `.secrets/` foi verificada em dropbox.com, inclusive na lixeira — nunca subiu. Este projeto tem ainda a mitigação mais forte dos quatro: o `compose.yaml` liga `REQUIRE_FILE_SECRETS: \"true\"`, e `_read_required_secret` (`financeiro/settings.py:29-34`) então RECUSA a forma direta por variável. O contêiner operacional não consegue usar esses valores nem por engano. O que resta é superfície: o mesmo segredo em dois arquivos, e a `DJANGO_SECRET_KEY` assina três coisas neste projeto — cookie de sessão, token CSRF e o token de confirmação de 'este e os próximos' de `transactions/services.py`.",
+      "impacto": "Nenhum comprometimento conhecido. O custo é de higiene: cada cópia adicional é mais um lugar de onde o segredo pode escapar por um caminho não previsto — e este repositório tem um `scripts/package_clean_zip.py`, que é exatamente o tipo de ferramenta em que um arquivo a mais na raiz costuma entrar sem ninguém notar.",
+      "condicoes": "`REQUIRE_FILE_SECRETS=true` no `compose.yaml` faz o contêiner recusar a forma direta. A cópia do `.env.docker` só vale para o script de provisionamento e para comandos locais fora do Compose.",
+      "criterios": [],
+      "situacao": "corrigido",
+      "correcao": "`.env.docker` teve `POSTGRES_PASSWORD` e `DJANGO_SECRET_KEY` esvaziados — os dois já estavam em `.secrets/`, confirmados por hash, e o arquivo é local e não versionado (nunca passa por commit). `scripts/package_clean_zip.py` ganhou `.certs` e `.secrets` em `EXCLUDED_DIRS`: antes desta correção, um ZIP \"limpo\" gerado pelo script incluiria os dois diretórios de segredo por inteiro — `.gitignore`/`.dropboxignore` não cobrem esse caminho, que mantém a própria lista de exclusão, independente das outras duas.",
+      "verificacao": "tests/test_package_clean_zip.py (novo): test_secrets_directory_e_excluida, test_certs_directory_e_excluida, test_env_docker_continua_excluido (regressão) e test_arquivo_comum_do_projeto_nao_e_excluido (sanidade, contra exclusão ampla demais)."
+    },
+    {
+      "id": "CB-04",
+      "categoria": "2. Autorização e autenticação no servidor",
+      "severidade": "media",
+      "titulo": "`/admin/` do Django dá acesso real ao modelo de usuário e contorna o bloqueio de tentativas",
+      "arquivo": "financeiro/settings.py:61 + financeiro/urls.py:76 + accounts/views.py:107-114",
+      "descricao": "`django.contrib.admin` está em `INSTALLED_APPS` e `path('admin/', admin.site.urls)` está roteado. Nenhum `admin.py` do projeto registra modelo — os oito são stubs vazios do `startapp` —, mas `django.contrib.auth.admin` registra o modelo de usuário SOZINHO, e o modelo registrado é o substituído (`AppUser`). E o bloqueio de tentativas de login existe apenas em `AppLoginView.post`, que serve `/login`.",
+      "trecho": "class AppLoginView(LoginView):\n    def post(self, request, *args, **kwargs):\n        remote_addr = request.META.get('REMOTE_ADDR')\n        try:\n            assert_login_not_throttled(request.POST.get('username'), remote_addr)\n        except LoginThrottledError as exc:\n            ...",
+      "porque": "São duas coisas, e a consulta ao banco de produção em 01/09/2026 confirmou que ambas estão ao alcance: a conta `Admin` tem `is_staff=True` e `is_superuser=True`. PRIMEIRA — com essa conta, `/admin/` edita `AppUser` diretamente: criar conta, trocar senha, alterar `user_type`, ligar `is_superuser`. Tudo por fora de `user_mutation_block_message` (que impede promover usuário privilegiado sem ser administrador), por fora da regra do último administrador, por fora da obrigação de trocar senha temporária e — o que mais importa numa investigação — SEM registrar nada em `log_audit_event`. SEGUNDA — `AdminAuthenticationForm` chama `authenticate()` antes de recusar por falta de `is_staff`, então `/admin/login/` verifica a senha de QUALQUER conta sem passar por `assert_login_not_throttled` e sem chamar `register_failed_login_attempt`. O `LoginLockout`, principal controle antiforça-bruta do sistema e o único que sobrevive a reinício, fica contornado por essa rota.",
+      "impacto": "Um caminho paralelo de administração de contas, sem as travas da aplicação e sem trilha de auditoria, disponível a quem obtiver a senha da conta `Admin`. Somado a isso, adivinhação de senha ilimitada contra qualquer conta conhecida, sem acionar o bloqueio e sem deixar o rastro que `register_failed_login_attempt` deixaria. O sistema tem hoje quatro contas, duas delas do tipo `user` — não é um cenário de usuário único.",
+      "condicoes": "Verificado no banco de produção em 01/09/2026: `is_staff=True` e `is_superuser=True` na conta `Admin` (último login em 30/08). A conta de trabalho do mantenedor é `mspa`, que NÃO tem essas marcas. O caminho `/admin/` é o padrão do Django e não precisa ser descoberto; o Nginx faz proxy dele junto com o resto.",
+      "criterios": [],
+      "situacao": "corrigido",
+      "correcao": "`django.contrib.admin` saiu de `INSTALLED_APPS`, com o motivo registrado no lugar dele (financeiro/settings.py:61-75), e `path('admin/', admin.site.urls)` saiu da URLconf; os oito `admin.py` vazios do `startapp` foram apagados, para que ninguém leia neles a promessa de um painel que não existe. Depois disso o mantenedor zerou `is_staff` e `is_superuser` da conta `Admin` (id 5) no banco de produção, preservando `is_active` — a conta continua existindo e a regra do último administrador segue valendo.",
+      "verificacao": "tests/test_rotas_orfas_removidas.py:54 e :64 — `/admin/` e `/admin/login/` respondem 404, e não 302: um 302 significaria que a URLconf ainda casa o caminho. tests/test_permissoes_por_rota.py deixou de abrir exceção para `admin/` e voltou a varrer a URLconf inteira."
+    },
+    {
+      "id": "CB-05",
+      "categoria": "4. Chaves expostas",
+      "severidade": "baixa",
+      "titulo": "`POSTGRES_USER` cai no superusuário `postgres` quando a variável não é informada",
+      "arquivo": "compose.yaml:22, 78, 88",
+      "descricao": "Os três pontos do Compose que nomeiam o usuário do banco usam `${POSTGRES_USER:-postgres}`. Ausente a variável, o serviço do PostgreSQL é inicializado com o papel `postgres` — o superusuário do cluster — e a aplicação conecta com ele.",
+      "trecho": "POSTGRES_USER: ${POSTGRES_USER:-postgres}",
+      "porque": "O default escolhido é o mais privilegiado possível, e não o mínimo necessário. Uma implantação que esqueça de informar a variável passa a rodar a aplicação como superusuário do banco em vez do papel dedicado — o que significa que uma injeção de SQL, um `pg_read_file` ou qualquer defeito de escrita deixa de ser 'estrago dentro do schema da aplicação' e vira 'estrago no cluster inteiro'.",
+      "impacto": "Amplia o raio de qualquer outra falha. Não é explorável por si só — é a diferença entre um incidente contido e um incidente total.",
+      "condicoes": "Não ocorre nas configurações atuais: `.env.docker.example` e `.env.vps.example` definem `POSTGRES_USER=controle_bancario`. O achado é sobre a escolha do default e sobre não haver validação que recuse `postgres` como usuário da aplicação.",
+      "criterios": [],
+      "situacao": "corrigido",
+      "correcao": "O default de `POSTGRES_USER` nos três pontos do `compose.yaml` (linhas 22, 78, 88) mudou de `postgres` para `controle_bancario`. `financeiro/settings.py` ganhou uma checagem de boot logo depois de montar `DATABASES`: se `DATABASES['default']['USER'] == 'postgres'`, levanta `RuntimeError` nomeando a variável — mesma família de validação que `USE_HTTPS`/`CSRF_TRUSTED_ORIGINS` já tinha. `.env.docker(.example)` e `.env.vps.example` já declaravam `POSTGRES_USER=controle_bancario` explicitamente, então nenhuma implantação real muda de comportamento — o que fecha é o default silencioso, não a configuração em uso.",
+      "verificacao": "tests/test_operational_configuration.py (novos): test_settings_recusa_conectar_como_postgres, test_settings_aceita_postgres_user_dedicado, test_default_de_postgres_user_nao_e_o_superusuario (importa financeiro.settings sem a variável definida e confere que DATABASES['default']['USER'] == 'controle_bancario') e test_compose_nao_usa_postgres_como_padrao_de_postgres_user."
+    },
+    {
+      "id": "CB-06",
+      "categoria": "5. Inputs sem tratamento",
+      "severidade": "informativa",
+      "titulo": "A templatetag `icon` marca o rótulo como seguro sem escapá-lo",
+      "arquivo": "core/templatetags/icons.py:38-45",
+      "descricao": "`icon(name, label='')` interpola `label` num `<span>` e devolve o resultado por `mark_safe`, sem passar por `escape()`. O SVG vem de um dicionário fechado e é seguro; o `label` é um parâmetro livre de template.",
+      "trecho": "@register.simple_tag\ndef icon(name: str, label: str = \"\") -> str:\n    svg = _ICONS.get(name, \"\")\n    if not svg:\n        return \"\"\n    if label:\n        return mark_safe(f\"{svg}<span>{label}</span>\")\n    return mark_safe(svg)",
+      "porque": "Hoje não é explorável: a varredura de todos os templates encontrou apenas chamadas da forma `{% icon 'nome' %}`, sem segundo argumento — nenhum call site passa `label`, e muito menos um valor vindo do usuário. O que existe é um contrato que convida ao erro: o dia em que alguém escrever `{% icon 'edit' conta.nome %}`, o nome da conta entra no HTML sem escape e a CSP estrita passa a ser a única linha de defesa.",
+      "impacto": "Nenhum hoje. Registrado porque a correção custa uma linha e elimina a categoria inteira do arquivo, em vez de depender de ninguém nunca usar o segundo parâmetro.",
+      "condicoes": "Exige que um call site futuro passe `label` com valor controlado pelo usuário.",
+      "criterios": [],
+      "situacao": "corrigido",
+      "correcao": "`icon(name, label='')` em `core/templatetags/icons.py` passou a escapar `label` com `django.utils.html.escape` antes de interpolar no `<span>`, dentro do próprio `mark_safe` — fecha a categoria no arquivo, sem depender de nenhum call site futuro lembrar de escapar antes de passar o segundo parâmetro.",
+      "verificacao": "tests/test_icons_templatetag.py (novo): test_label_com_html_e_escapado (prova que `<script>` vira `&lt;script&gt;`), test_label_comum_continua_visivel (regressão do caminho feliz), test_sem_label_nao_acrescenta_span e test_nome_desconhecido_devolve_vazio."
+    }
+  ],
+  "recomendacoes": [
+    {
+      "prioridade": "P1",
+      "texto": "Corrigir `retire_budget` para receber o usuário e exigir `accessible_owner_ids(user, 'delete')` sobre `budget.owner_id`, no mesmo formato que `save_budget` já usa 25 linhas acima. Acrescentar `log_audit_event` na view, que hoje é a única das ações de Gestão sem registro de auditoria.",
+      "achados": [
+        "CB-01"
+      ],
+      "situacao": "concluida"
+    },
+    {
+      "prioridade": "P1",
+      "texto": "Fechar a auto-elevação por `permissions.manage`: quando `selected_user.id == request.user.id`, recusar a concessão de permissão funcional ou de acesso a titular que a própria pessoa ainda não tenha — mantendo a proteção atual, que impede remover a própria `permissions.manage`. Alternativa mais simples e igualmente defensável: exigir `user_type == administrator` para as duas ações, já que administrar permissões alheias é privilégio administrativo por natureza.",
+      "achados": [
+        "CB-02"
+      ],
+      "situacao": "concluida"
+    },
+    {
+      "prioridade": "P3",
+      "texto": "Limpar `POSTGRES_PASSWORD` e `DJANGO_SECRET_KEY` de `.env.docker` depois de provisionar, e conferir se `scripts/package_clean_zip.py` exclui `.env*`, `.secrets/` e `.certs/`. Rotacionar não é necessário: os valores não vazaram.",
+      "achados": [
+        "CB-03"
+      ],
+      "situacao": "concluida"
+    },
+    {
+      "prioridade": "P1",
+      "texto": "Remover `django.contrib.admin` de `INSTALLED_APPS` e a rota `admin/` da URLconf, junto dos oito `admin.py` vazios. Nenhum modelo do projeto está registrado e nenhum fluxo usa o painel; o que resta dele é um caminho de administração de contas sem as travas e sem a auditoria da aplicação, mais uma porta de autenticação que contorna o bloqueio de tentativas. Depois disso, zerar `is_staff` e `is_superuser` da conta `Admin` em produção.",
+      "achados": [
+        "CB-04"
+      ],
+      "situacao": "concluida"
+    },
+    {
+      "prioridade": "P3",
+      "texto": "Trocar o default de `POSTGRES_USER` de `postgres` para o nome dedicado da aplicação, e acrescentar a `settings.py` uma checagem que recuse subir conectando como `postgres` — a mesma família de validação de boot que `USE_HTTPS`/`CSRF_TRUSTED_ORIGINS` já tem.",
+      "achados": [
+        "CB-05"
+      ],
+      "situacao": "concluida"
+    },
+    {
+      "prioridade": "P3",
+      "texto": "Escapar o `label` em `icons.py` com `django.utils.html.escape` antes de interpolar, fechando a categoria no arquivo em vez de depender de ninguém usar o segundo parâmetro.",
+      "achados": [
+        "CB-06"
+      ],
+      "situacao": "concluida"
+    }
+  ],
+  "issues": [
+    {
+      "n": 1,
+      "severidade": "media",
+      "titulo": "[Segurança] IDOR em `retire_budget`: apaga orçamento de qualquer titular",
+      "labels": "security, severity:media, idor, isolamento",
+      "corpo": "## Problema\n\n`retire_budget(budget_id)` recebe apenas o ID: não recebe o usuário e não\nconsulta `accessible_owner_ids`. Ela resolve o `MonthlyBudget`, decide entre\narquivar (se há lançamento realizado no mês/categoria/titular) ou apagar de\nvez, e executa.\n\nA view que a chama exige `management.manage` — a permissão FUNCIONAL — e nada\nmais.\n\n### Por que é explorável\n\nA assimetria é a prova de que é defeito, e não decisão. `save_budget`, na MESMA\ncamada e a 25 linhas de distância, faz a checagem correta. A listagem da própria\ntela também está escopada: `management_view` monta `budget_rows_for_period` a\npartir de `options.owners`, que vem de `context_options` já filtrado.\n\nOu seja: a pessoa **não vê** o orçamento de outro titular na tela, **não pode\ncriar nem editar** orçamento de outro titular — e **pode apagar** o de qualquer\num. Basta um POST direto, com o token CSRF da própria sessão:\n\n```\nPOST /management/budget/retire/\nContent-Type: application/x-www-form-urlencoded\n\ncsrfmiddlewaretoken=<token da propria sessao>&budget_id=<id de outro titular>\n```\n\nO ID não precisa ser adivinhado com precisão: é uma chave sequencial, e a\nresposta distingue \"Orçamento não encontrado\" de sucesso.\n\n## Evidência\n\n**O defeito** — `management/services.py:225-244`\n\n```python\ndef retire_budget(budget_id) -> tuple[MonthlyBudget, str]:\n    try:\n        budget = MonthlyBudget.objects.select_related(\"owner\", \"category\").get(id=int(budget_id))\n    except (MonthlyBudget.DoesNotExist, TypeError, ValueError):\n        raise ValueError(\"Orcamento nao encontrado.\") from None\n\n    start, end_exclusive = month_bounds(budget.year, budget.month)\n    has_history = CashFlowEntry.objects.filter(...).exists()\n    if has_history:\n        budget.active = False\n        budget.save(update_fields=[\"active\", \"updated_at\"])\n        return budget, \"archived\"\n    budget.delete()\n    return budget, \"deleted\"\n```\n\n**O padrão correto, na mesma camada** — `management/services.py:200-201`\n\n```python\n    if owner_id_int not in set(accessible_owner_ids(user, \"update\")):\n        raise ValueError(\"Acesso negado: voce nao pode gerenciar orcamento deste titular.\")\n```\n\n**A view** — `management/views.py:117-122`\n\n```python\n@login_required\n@permission_required(\"management.manage\", fallback=\"management:management_view\")\n@require_POST\ndef retire_budget_view(request):\n    try:\n        budget, action = services.retire_budget(request.POST.get(\"budget_id\"))\n```\n\n## Impacto\n\nEscrita destrutiva atravessando a fronteira de titular, que é o mecanismo de\nisolamento deste sistema. O dado perdido é de planejamento (valor orçado por\ncategoria/mês), não do razão — o que limita o estrago —, mas a exclusão é\ndefinitiva quando não há lançamento realizado no período, e não há tela que a\ndesfaça.\n\nO evento **também não entra na trilha de auditoria**: `retire_budget_view` é a\núnica ação de Gestão que não chama `log_audit_event`.\n\n**Condição de explorabilidade:** conta autenticada com `management.manage`, e\nmais de um titular no sistema com acessos distintos. Para `administrator` e\n`super_user` o comportamento é o mesmo com ou sem o defeito, porque\n`_has_broad_owner_access` já lhes dá escopo amplo — o alvo é a conta de tipo\n`user` com escopo restrito.\n\n## Sugestão de correção\n\n```python\ndef retire_budget(user, budget_id) -> tuple[MonthlyBudget, str]:\n    try:\n        budget = MonthlyBudget.objects.select_related(\"owner\", \"category\").get(id=int(budget_id))\n    except (MonthlyBudget.DoesNotExist, TypeError, ValueError):\n        raise ValueError(\"Orcamento nao encontrado.\") from None\n\n    # Mesmo escopo de `save_budget`: `delete` e a acao correspondente a esta.\n    if budget.owner_id not in set(accessible_owner_ids(user, \"delete\")):\n        raise ValueError(\"Acesso negado: voce nao pode remover orcamento deste titular.\")\n    ...\n```\n\nE na view, o registro que falta:\n\n```python\n    budget, action = services.retire_budget(request.user, request.POST.get(\"budget_id\"))\n    log_audit_event(\"monthly_budget\", budget.id, action, user=request.user)\n```\n\n## Critérios de aceite\n\n- [ ] `retire_budget` recebe o usuário e recusa titular fora de `accessible_owner_ids(user, \"delete\")`\n- [ ] A mensagem de recusa não revela se o orçamento existe\n- [ ] Teste: usuário com acesso ao titular A recebe recusa ao remover orçamento do titular B\n- [ ] Teste: usuário com acesso ao titular A continua removendo orçamento de A\n- [ ] Teste: `administrator` continua removendo qualquer orçamento\n- [ ] `retire_budget_view` registra `log_audit_event` no sucesso\n- [ ] Uma varredura da camada `management/services.py` confirma que nenhuma outra função de escrita ficou sem escopo",
+      "situacao": "resolvida"
+    },
+    {
+      "n": 2,
+      "severidade": "media",
+      "titulo": "[Segurança] `permissions.manage` permite auto-concessão de todo o escopo de dados",
+      "labels": "security, severity:media, escalonamento, autorizacao",
+      "corpo": "## Problema\n\nA tela de Permissões exige apenas `permissions.manage`. O usuário-alvo vem de\n`request.GET/POST['user_id']`, resolvido sobre `list_manageable_users()`, que\ndevolve TODOS os usuários — inclusive quem está operando.\n\nDuas ações dessa tela não têm trava de auto-elevação:\n\n- `save_function_permissions` grava o conjunto inteiro de permissões funcionais\n  no alvo;\n- `save_owner_access` grava a matriz completa de view/create/update/delete sobre\n  **todos** os titulares.\n\n### Por que é explorável\n\nA única proteção contra manipular a própria conta é o oposto do que seria\npreciso: impede REMOVER a própria `permissions.manage`, e não ACRESCENTAR o\nresto.\n\nUm usuário de tipo `user`, com escopo restrito a um titular e com\n`permissions.manage` concedida:\n\n1. abre `/permissions/?user_id=<o proprio id>`;\n2. marca todas as caixas de permissão funcional, salva;\n3. marca todas as linhas da matriz de titulares, salva;\n4. passa a ver e alterar todo o dado financeiro do sistema.\n\nO contraste mostra que a preocupação com escalonamento existe e parou no lugar\nerrado: `user_mutation_block_message` bloqueia explicitamente a promoção de\n`user_type` por quem não é administrador; nada equivalente cobre o escopo de\ndados.\n\n## Evidência\n\n`core/views.py:102-105`\n\n```python\n@login_required\n@permission_required('permissions.manage')\ndef permissions_view(request):\n    users = list_manageable_users()\n    selected_user_id = request.GET.get('user_id') or request.POST.get('user_id')\n    selected_user = users.filter(id=selected_user_id).first() if selected_user_id else users.first()\n```\n\n`core/views.py:211-220` — a \"proteção\", que só impede a remoção:\n\n```python\n        if action == 'save_function_permissions':\n            allowed_keys = {\n                key for key in PERMISSION_DEFINITIONS\n                if request.POST.get(f'permission_{key}') == 'on'\n            }\n            if selected_user.id == request.user.id and 'permissions.manage' not in allowed_keys:\n                allowed_keys.add('permissions.manage')\n                messages.warning(request, \"Protecao aplicada: voce nao pode remover o proprio acesso...\")\n            save_function_permissions(selected_user, allowed_keys)\n```\n\n`core/views.py:228-241` — a matriz de titulares, sem trava alguma:\n\n```python\n        elif action == 'save_owner_access':\n            owner_flags: dict[int, dict[str, bool]] = {}\n            for owner in AccountOwner.objects.all():\n                owner_flags[owner.id] = {\n                    'view': request.POST.get(f'owner_{owner.id}_view') == 'on',\n                    ...\n                }\n            save_owner_access_matrix(selected_user, owner_flags)\n```\n\n`accounts/services.py:356-360` — a trava que existe, para `user_type`:\n\n```python\n    if action in (\"add\", \"edit\") and _is_elevated_user_type(requested_user_type) \\\n            and current_user.user_type != USER_TYPE_ADMINISTRATOR:\n        return \"Acesso negado: somente administrator pode criar ou promover usuarios privilegiados.\"\n```\n\n## Impacto\n\nEscalonamento de privilégio dentro do modelo de permissões: acesso completo aos\ndados de todos os titulares e a todas as funções, sem passar por\n`tables.users.manage` e sem virar `administrator`.\n\nA ação **fica registrada** na trilha de auditoria — `log_audit_event` é chamado\nnas duas —, o que ajuda a detectar, mas não impede.\n\n**Condição:** exige que `permissions.manage` tenha sido concedida a uma conta\nnão administradora. Se ela só existe em contas `administrator`, não há\nescalonamento (o administrador já tem tudo por regra). O risco nasce no momento\nem que alguém delega a gestão de permissões sem delegar o resto — que é\nexatamente o caso de uso que a permissão existe para atender.\n\n## Sugestão de correção\n\nDuas saídas, ambas defensáveis. A primeira preserva a delegação:\n\n```python\ndef _recusar_auto_elevacao(request, selected_user, allowed_keys):\n    \"\"\"Ninguem concede a si mesmo o que ainda nao tem.\"\"\"\n    if selected_user.id != request.user.id:\n        return allowed_keys\n    atuais = allowed_permission_keys(request.user)\n    return {k for k in allowed_keys if k in atuais} | {'permissions.manage'}\n```\n\ne o equivalente para `owner_flags`, cortando pela interseção com\n`owner_access_map(request.user)`.\n\nA segunda é mais simples e igualmente defensável: exigir\n`user_type == administrator` para as duas ações, já que administrar permissões\nalheias é privilégio administrativo por natureza. Nesse caso\n`permissions.manage` passa a ser, na prática, uma permissão de LEITURA da tela.\n\n## Critérios de aceite\n\n- [ ] Um usuário não administrador com `permissions.manage` não consegue conceder a si mesmo permissão funcional que já não tenha\n- [ ] O mesmo usuário não consegue conceder a si mesmo acesso a titular que já não tenha\n- [ ] A proteção atual (não remover a própria `permissions.manage`) continua valendo\n- [ ] `administrator` continua gerindo tudo, inclusive a própria conta\n- [ ] Teste por caso: auto-concessão de permissão funcional, auto-concessão de titular, e os dois caminhos para administrador\n- [ ] A recusa aparece como mensagem na tela, não como erro 500\n- [ ] `docs/architecture.md` registra o que `permissions.manage` passa a significar",
+      "situacao": "resolvida"
+    },
+    {
+      "n": 3,
+      "severidade": "baixa",
+      "titulo": "[Segurança] Segredos duplicados em texto claro em `.env.docker`",
+      "labels": "security, severity:baixa, segredos, higiene",
+      "corpo": "## Problema\n\n`.env.docker` guarda `POSTGRES_PASSWORD` e `DJANGO_SECRET_KEY` em texto claro —\nos mesmos valores que já estão em `.secrets/postgres_password` e\n`.secrets/django_secret_key`, confirmado por comparação de hash.\n\nA duplicação é o desenho do fluxo, não um acidente:\n`scripts/provision_compose_secrets.ps1:39-43` **copia** do `.env` para\n`.secrets/`, e falha se a variável não estiver lá.\n\n### O que NAO e\n\nNão houve exposição. O que foi verificado:\n\n- `.gitignore:35` recusa `.env.*`, confirmado por `git check-ignore`;\n- o histórico completo do Git não tem nenhum arquivo de segredo;\n- `.dropboxignore:38-39` ja excluia `.env` e `.env.*` da sincronizacao de nuvem\n  ANTES desta auditoria — conferido em `git show HEAD:.dropboxignore`;\n- a pasta `.secrets/` foi verificada em dropbox.com, inclusive na lixeira:\n  nunca subiu.\n\nE este projeto tem a mitigação mais forte dos quatro: `REQUIRE_FILE_SECRETS`\nfaz o contêiner **recusar** a forma direta por variável.\n\n### Por que ainda vale corrigir\n\nSuperfície. O mesmo segredo existe em dois arquivos, e a `DJANGO_SECRET_KEY`\nassina três coisas aqui: cookie de sessão, token CSRF e o token de confirmação\nde \"este e os próximos\" de `transactions/services.py`.\n\nE há um detalhe específico deste repositório: existe um\n`scripts/package_clean_zip.py`. Ferramenta de empacotamento é exatamente onde\num arquivo a mais na raiz costuma entrar sem ninguém notar — vale conferir a\nlista de exclusão dele.\n\n## Evidência\n\n`financeiro/settings.py:29-34` — a mitigação que já existe:\n\n```python\n    require_file = os.environ.get(\"REQUIRE_FILE_SECRETS\", \"false\").lower() == \"true\"\n    return resolver_segredo(\n        name,\n        aceitar_variavel=not require_file,\n        obrigatorio=True,\n    )\n```\n\n`compose.yaml:25-26`:\n\n```yaml\n  DJANGO_SECRET_KEY_FILE: /run/secrets/django_secret_key\n  REQUIRE_FILE_SECRETS: \"true\"\n```\n\n## Impacto\n\nNenhum comprometimento conhecido. Custo de higiene e de raio de alcance.\n\n## Sugestão de correção\n\nO fluxo atual exige o valor no `.env` para provisionar. Duas saídas:\n\n1. **Mínima:** depois de rodar `provision_compose_secrets.ps1`, limpar as duas\n   linhas do `.env.docker` — o Compose não precisa delas, e o `-Force` só é\n   necessário numa rotação deliberada;\n2. **Melhor:** fazer o script GERAR os valores quando ausentes (como o do\n   MegaSena faz) em vez de exigir que estejam no `.env`, e nunca gravá-los lá.\n\nConferir também `scripts/package_clean_zip.py`: `.env*`, `.secrets/` e\n`.certs/` devem estar na exclusão.\n\nRotacionar não é necessário: os valores não vazaram.\n\n## Critérios de aceite\n\n- [ ] `.env.docker` não contém mais `POSTGRES_PASSWORD` nem `DJANGO_SECRET_KEY`\n- [ ] A pilha sobe normalmente com os segredos vindos de `/run/secrets`\n- [ ] `REQUIRE_FILE_SECRETS=true` continua no `compose.yaml` (regressão: é ele que recusa a forma direta)\n- [ ] `scripts/package_clean_zip.py` exclui `.env*`, `.secrets/` e `.certs/`, com teste\n- [ ] `.dropboxignore` mantém `.env.*`, `.secrets/` e `.certs/` (regressão)",
+      "situacao": "resolvida"
+    },
+    {
+      "n": 4,
+      "severidade": "media",
+      "titulo": "[Segurança] `/admin/` do Django administra contas por fora das travas e do bloqueio de tentativas",
+      "labels": "security, severity:media, autenticacao, autorizacao",
+      "corpo": "## Problema\n\n`django.contrib.admin` está em `INSTALLED_APPS` e `path('admin/', admin.site.urls)`\nestá roteado.\n\nNenhum `admin.py` do projeto registra modelo — os oito são stubs vazios do\n`startapp`. Mas `django.contrib.auth.admin` **registra o modelo de usuário\nsozinho**, e o modelo registrado é o substituído: `AppUser`.\n\n### Por que é explorável\n\nA consulta ao banco de produção em 01/09/2026 fecha a questão:\n\n```\nmspa      tipo=administrator  staff=False super=False   <- conta de trabalho\nClaudia   tipo=user           staff=False super=False\nEsther    tipo=user           staff=False super=False\nAdmin     tipo=administrator  staff=True  super=True    <- alcanca /admin/\n```\n\nSão dois problemas distintos:\n\n**1. Administração de contas por fora das travas.** Com a conta `Admin`, o\n`/admin/` edita `AppUser` diretamente — criar conta, trocar senha, alterar\n`user_type`, ligar `is_superuser`. Tudo por fora de\n`user_mutation_block_message` (que impede promover usuário privilegiado sem ser\nadministrador), por fora da regra do último administrador, por fora da\nobrigação de trocar senha temporária, e **sem registrar nada em\n`log_audit_event`**.\n\n**2. O bloqueio de tentativas é contornado.** `AdminAuthenticationForm` chama\n`authenticate()` — e portanto verifica a senha — antes de recusar por falta de\n`is_staff`. Um POST em `/admin/login/` não passa por\n`assert_login_not_throttled`, não chama `register_failed_login_attempt` e não\ntem limite de taxa.\n\n## Evidência\n\n`financeiro/settings.py:60-61` e `financeiro/urls.py:76`\n\n```python\nINSTALLED_APPS = [\n    'django.contrib.admin',\n...\n    path('admin/', admin.site.urls),\n```\n\n`accounts/views.py:107-114` — onde o bloqueio existe, e só ali:\n\n```python\nclass AppLoginView(LoginView):\n    def post(self, request, *args, **kwargs):\n        remote_addr = request.META.get('REMOTE_ADDR')\n        try:\n            assert_login_not_throttled(request.POST.get('username'), remote_addr)\n        except LoginThrottledError as exc:\n            messages.error(request, str(exc))\n            return self.render_to_response(self.get_context_data())\n        return super().post(request, *args, **kwargs)\n```\n\n## Impacto\n\nUm caminho paralelo de administração de contas, sem as travas da aplicação e\nsem trilha de auditoria, disponível a quem obtiver a senha da conta `Admin`.\nSomado a isso, adivinhação de senha ilimitada contra qualquer conta conhecida.\n\nO sistema tem quatro contas, duas delas do tipo `user` — não é cenário de\nusuário único.\n\n## Sugestão de correção\n\nRemover o que não é usado. `django.contrib.auth` e `django.contrib.messages`\ncontinuam necessários e não dependem do admin:\n\n```python\n# financeiro/settings.py\nINSTALLED_APPS = [\n    # 'django.contrib.admin',   <- nenhum modelo do projeto registrado\n    'django.contrib.auth',\n    ...\n\n# financeiro/urls.py\n    # path('admin/', admin.site.urls),\n```\n\nOs oito `admin.py` vazios saem junto: sem o app instalado eles nunca são\nimportados, e um arquivo chamado `admin.py` sugere ao próximo leitor um painel\nque não existe.\n\n**Depois disso**, tirar as marcas da conta `Admin` em produção — com o app\nremovido elas ficam inertes, mas continuam sendo privilégio declarado sem uso:\n\n```python\nAppUser.objects.filter(username=\"Admin\").update(is_staff=False, is_superuser=False)\n```\n\nSe a conta `Admin` não for usada por ninguém (o último login é anterior ao da\nconta de trabalho), avaliar desativá-la — a regra do último administrador\nprotege contra o auto-lockout, e `mspa` já é `administrator`.\n\n## Critérios de aceite\n\n- [ ] `GET /admin/` e `POST /admin/login/` respondem **404** (e não 302: um 302 significaria que a URLconf ainda casa o caminho)\n- [ ] A aplicação sobe e a suíte passa sem `django.contrib.admin`\n- [ ] `collectstatic` continua funcionando (o build da imagem o executa)\n- [ ] Nenhum template referencia `admin/` (verificado por varredura)\n- [ ] Os oito `admin.py` vazios foram removidos\n- [ ] `tests/test_permissoes_por_rota.py` deixa de abrir exceção para `admin/` e volta a varrer a URLconf inteira\n- [ ] `is_staff` e `is_superuser` da conta `Admin` foram zerados em produção\n- [ ] `/login` continua sendo a única rota que verifica senha, e o `LoginLockout` continua funcionando",
+      "situacao": "resolvida"
+    },
+    {
+      "n": 5,
+      "severidade": "baixa",
+      "titulo": "[Segurança] Defaults do Compose e escape do rótulo em `icons.py`",
+      "labels": "security, severity:baixa, endurecimento",
+      "corpo": "## Problema\n\nDois pontos pequenos e independentes, agrupados numa issue só porque ambos são\nde endurecimento e cada um cabe em poucas linhas.\n\n### 1. `POSTGRES_USER` cai no superusuário do cluster\n\nOs três pontos do Compose que nomeiam o usuário do banco usam\n`${POSTGRES_USER:-postgres}`. Ausente a variável, o PostgreSQL é inicializado\ncom o papel `postgres` — o superusuário — e a aplicação conecta com ele.\n\nO default escolhido é o mais privilegiado possível, e não o mínimo necessário.\nUma implantação que esqueça a variável passa a rodar a aplicação como\nsuperusuário do banco: uma injeção de SQL, um `pg_read_file` ou qualquer defeito\nde escrita deixa de ser \"estrago dentro do schema da aplicação\" e vira \"estrago\nno cluster inteiro\".\n\n**Condição:** não ocorre nas configurações atuais — `.env.docker.example` e\n`.env.vps.example` definem `POSTGRES_USER=controle_bancario`. O achado é sobre a\nescolha do default e sobre não haver validação que recuse `postgres`.\n\n### 2. `icon()` marca o rótulo como seguro sem escapá-lo\n\n`icon(name, label='')` interpola `label` num `<span>` e devolve o resultado por\n`mark_safe`, sem passar por `escape()`.\n\nHoje **não é explorável**: a varredura de todos os templates encontrou apenas\nchamadas da forma `{% icon 'nome' %}`, sem segundo argumento. O que existe é um\ncontrato que convida ao erro — o dia em que alguém escrever\n`{% icon 'edit' conta.nome %}`, o nome da conta entra no HTML sem escape, e a\nCSP estrita passa a ser a única linha de defesa.\n\n## Evidência\n\n`compose.yaml:22`, `:78` e `:88`\n\n```yaml\n  POSTGRES_USER: ${POSTGRES_USER:-postgres}\n```\n\n`core/templatetags/icons.py:38-45`\n\n```python\n@register.simple_tag\ndef icon(name: str, label: str = \"\") -> str:\n    \"\"\"Renderiza o SVG do icone `name`; string vazia se o nome nao existir.\"\"\"\n    svg = _ICONS.get(name, \"\")\n    if not svg:\n        return \"\"\n    if label:\n        return mark_safe(f\"{svg}<span>{label}</span>\")\n    return mark_safe(svg)\n```\n\n## Impacto\n\nNenhum dos dois é explorável na configuração e no código atuais. O primeiro\namplia o raio de qualquer outra falha; o segundo deixa uma armadilha para quem\nusar o segundo parâmetro no futuro.\n\n## Sugestão de correção\n\n**1.** Trocar o default e recusar `postgres` no boot, na mesma família de\nvalidação que `USE_HTTPS`/`CSRF_TRUSTED_ORIGINS` já tem:\n\n```yaml\n  POSTGRES_USER: ${POSTGRES_USER:-controle_bancario}\n```\n\n```python\n# financeiro/settings.py\nif DATABASES['default']['USER'] == 'postgres':\n    raise RuntimeError(\n        'A aplicacao nao deve conectar como superusuario do cluster. '\n        'Defina POSTGRES_USER com o papel dedicado.'\n    )\n```\n\n**2.** Escapar o rótulo:\n\n```python\nfrom django.utils.html import escape\n...\n    if label:\n        return mark_safe(f\"{svg}<span>{escape(label)}</span>\")\n```\n\n## Critérios de aceite\n\n- [ ] O default de `POSTGRES_USER` no `compose.yaml` não é mais `postgres`, nos três pontos\n- [ ] Subir com `POSTGRES_USER=postgres` levanta erro nomeando a variável\n- [ ] A pilha sobe normalmente com o papel dedicado (teste manual de `docker compose up`)\n- [ ] `icon()` escapa o `label` antes de interpolar\n- [ ] Teste: `icon('edit', '<script>x</script>')` devolve o texto escapado, não a tag\n- [ ] Teste: `icon('edit')` continua devolvendo o SVG intacto\n- [ ] Todas as telas continuam renderizando os ícones (verificado na tela)",
+      "situacao": "resolvida"
+    }
+  ],
+  "subtitulo": "Estado final, depois da remediação",
+  "rodape": "Auditoria de Segurança (estado final) — ControleBancario",
+  "remediacao": {
+    "texto": "As seis constatações da auditoria estão corrigidas em duas rodadas. As três primeiras (1 de setembro) foram feitas em árvore de trabalho, sem commit; as três desta rodada seguem o mesmo regime — nada commitado, cada uma com o teste que a fixa. Duas decisões de projeto continuam merecendo registro porque não são óbvias no diff, mais uma nova desta rodada.",
+    "linhas": [
+      "O registro de auditoria da remoção de orçamento ficou no SERVIÇO, e não na view como nas demais ações de Gestão: `Model.delete()` do Django zera a chave primária do objeto em memória, então o identificador precisa ser lido antes da exclusão.",
+      "Na tela de Permissões, esconder os botões foi consequência e não solução: a trava que vale é a verificação no servidor.",
+      "A limpeza de `.env.docker` (CB-03) é a única das seis correções que não aparece no diff do Git: o arquivo é local e ignorado de propósito. A evidência de que ela aconteceu é o próprio conteúdo do arquivo hoje, não um commit."
+    ]
+  }
+}
