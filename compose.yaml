@@ -181,7 +181,7 @@ secrets:
   local_ca:
     file: .certs/local-root-ca.crt
   # PAT de acesso restrito (somente-leitura, so no repositorio SharedAuth) --
-  # usado apenas durante o build, para o `pip install` do requirements.txt
+  # usado apenas durante o build, para o `pip install` do pyproject.toml
   # baixar a dependencia Git privada. Nunca vira variavel de ambiente do
   # runtime nem fica na imagem final. Mesmo token ja usado nos tres apps
   # Flask; aqui o pacote entra sem o extra `[flask]`.

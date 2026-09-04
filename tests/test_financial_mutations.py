@@ -259,8 +259,8 @@ def test_htmx_expired_session_redirects_to_login_page():
 
 def test_persist_buttons_have_visual_confirmation():
     root = Path(__file__).resolve().parents[1]
-    reconciliation = (root / "templates/banking/_reconciliation_tables.html").read_text()
-    monthly_close = (root / "templates/settings/monthly_close.html").read_text()
+    reconciliation = (root / "templates/banking/_reconciliation_tables.html").read_text(encoding="utf-8")
+    monthly_close = (root / "templates/settings/monthly_close.html").read_text(encoding="utf-8")
 
     assert reconciliation.count("data-sa-confirmar=") >= 5
     assert monthly_close.count("data-sa-confirmar=") == 2
@@ -268,13 +268,13 @@ def test_persist_buttons_have_visual_confirmation():
 
 
 def test_transaction_scope_confirmation_covers_submit_and_fail_closed_path():
-    script = (Path(__file__).resolve().parents[1] / "static/js/transactions.js").read_text()
+    script = (Path(__file__).resolve().parents[1] / "static/js/transactions.js").read_text(encoding="utf-8")
     assert "form.addEventListener('submit'" in script
     assert "form.checkValidity()" in script
     assert "confirmationBypassed" in script
     assert "A confirmação visual é necessária" in (
         Path(__file__).resolve().parents[1] / "templates/transactions/_fields.html"
-    ).read_text()
+    ).read_text(encoding="utf-8")
 
 
 @override_settings(AUDIT_TRUSTED_PROXY_CIDRS=())

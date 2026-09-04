@@ -1,8 +1,78 @@
-# Configuracao de ferramentas do ControleBancario.
+# Metadados e configuracao de ferramentas do ControleBancario.
 #
-# A secao [tool.ruff] e comum aos quatro projetos do mantenedor; so
-# `target-version` e `known-first-party` variam, porque dependem da versao de
-# Python da imagem e do layout de pacotes. Mantenha o resto em sincronia.
+# As dependencias vivem aqui, em `[project]`, e nao em `requirements*.txt`:
+# uma unica fonte serve ao `pip install .` da imagem e ao `pip install -e
+# ".[dev]"` do venv de desenvolvimento. Os projetos irmaos seguem esta mesma
+# forma.
+
+[build-system]
+requires = ["hatchling>=1.26,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "controle-bancario"
+version = "2.2.0"
+description = "Controle bancario e fluxo de caixa em Django."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+  "Django>=5.2,<6",
+  "psycopg[binary]>=3.2,<4",
+  "gunicorn>=26.0.0,<27",
+  "whitenoise>=6.12.0,<7",
+  "django-htmx>=1.18,<2",
+  "pdfplumber>=0.11,<1",
+  # Cabecalhos de seguranca e formatacao de numeros em pt-BR compartilhados com
+  # os outros aplicativos do mantenedor. A tag e fixada manualmente e nunca
+  # aponta para branch.
+  #
+  # **Sem o extra `[flask]`**, de proposito: o nucleo do pacote e Python puro e
+  # nao tem dependencia nenhuma. Pedir o extra traria Flask, Flask-WTF e
+  # Flask-Limiter para dentro de uma imagem Django, que nao usa nada disso.
+  "sharedauth @ git+https://github.com/MSPA-Coder/SharedAuth.git@v0.10.0",
+]
+
+[project.optional-dependencies]
+# Instaladas apenas no estagio `quality` da imagem e no venv local, nunca no
+# `runtime`. Vem sobre as de execucao, nao no lugar delas: a suite exercita a
+# aplicacao real -- cabecalhos, CSRF e autorizacao passam pelo cliente de teste
+# do proprio Django, sem duble.
+dev = [
+  "ruff>=0.12,<1",
+  "pytest>=8.3,<10",
+  "pytest-django>=4.9,<5",
+  # Auditoria de CVE das dependencias instaladas. Piso na minor atual, teto na
+  # proxima major -- politica de faixa do mantenedor.
+  "pip-audit>=2.10,<3",
+]
+
+# Ao contrario dos irmaos Flask, que tem um unico pacote `app`, aqui a
+# distribuicao sao os proprios aplicativos Django do projeto, no layout plano
+# que o `startapp` produz. `financeiro` e o pacote de configuracao (settings,
+# urls, wsgi); os demais sao aplicativos de dominio. `manage.py`, `templates/`
+# e `static/` ficam de fora: sao usados a partir do diretorio de trabalho, nao
+# importados como modulo.
+[tool.hatch.build.targets.wheel]
+packages = [
+  "accounts",
+  "bank_statements",
+  "banking",
+  "core",
+  "dashboard",
+  "financeiro",
+  "management",
+  "reports",
+  "transactions",
+]
+
+# `sharedauth` e referencia direta a um repositorio Git (nao a um indice PyPI):
+# Hatchling recusa isso por padrao e exige este opt-in explicito.
+[tool.hatch.metadata]
+allow-direct-references = true
+
+# A secao [tool.ruff] e comum aos projetos irmaos; so `target-version` e
+# `known-first-party` variam, porque dependem da versao de Python da imagem e do
+# layout de pacotes. Mantenha o resto em sincronia.
 
 [tool.ruff]
 target-version = "py314"

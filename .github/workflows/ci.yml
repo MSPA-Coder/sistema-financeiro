@@ -39,7 +39,8 @@ jobs:
           printf '%s\n' 'ci-postgres-password-not-for-production' > .secrets/postgres_password
       - name: Escrever o token de leitura do SharedAuth
         # PAT de acesso restrito, somente-leitura, só no repositório
-        # SharedAuth -- usado apenas para o `pip install` do requirements.txt
+        # SharedAuth -- usado apenas para o `pip install` das dependencias
+        # declaradas no pyproject.toml
         # baixar essa dependência privada durante o build da imagem.
         run: |
           umask 077
@@ -144,10 +145,9 @@ jobs:
             require_writable /workspace/logs
             require_writable /workspace/staticfiles
             require_writable /workspace/media
-            test ! -e /workspace/requirements-dev.txt || {
-              echo "requirements-dev.txt encontrado no runtime." >&2
-              exit 1
-            }
+            require_absent ruff
+            require_absent pytest
+            require_absent pip-audit
             require_absent curl
             require_absent pg_dump
             require_absent gcc
@@ -158,7 +158,7 @@ jobs:
 
           runtime_container="$(docker create "$runtime_image")"
           trap 'docker rm -f "$runtime_container" >/dev/null' EXIT
-          if docker export "$runtime_container" | tar -t | grep -E '(^|/)workspace/(\.secrets(/|$)|\.env(\..*)?$|requirements-dev\.txt$|.*\.(key|pem|crt)$)'; then
+          if docker export "$runtime_container" | tar -t | grep -E '(^|/)workspace/(\.secrets(/|$)|\.env(\..*)?$|.*\.(key|pem|crt)$)'; then
             echo "Arquivo local, segredo ou dependencia de desenvolvimento encontrado no runtime." >&2
             exit 1
           fi

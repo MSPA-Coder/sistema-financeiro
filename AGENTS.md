@@ -47,6 +47,48 @@ ele, a validação roda a versão anterior do código e passa em verde.
 `collectstatic` antes de `web`; `quality` executa as verificações. Não há
 serviço `app`.
 
+### Loop rápido no host
+
+O portão `quality` custa dezenas de segundos por rodada -- caro demais para o
+ciclo de edição. Para isso existe um venv por projeto:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+
+$env:DJANGO_SECRET_KEY = "dev-only-nao-usada-em-producao"
+$env:POSTGRES_PASSWORD = "dev-only"
+.\.venv\Scripts\python.exe manage.py collectstatic --noinput
+
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m ruff check .
+```
+
+A suíte não toca o banco (ver o docstring de `tests/conftest.py`), então ela
+roda no host sem PostgreSQL algum. As duas variáveis são exigidas mesmo assim:
+`financeiro/settings.py` recusa subir sem elas, e é ele que o `conftest.py`
+importa. Os valores são de desenvolvimento, como os que o `Dockerfile` usa no
+`collectstatic` do build.
+
+O `collectstatic` é necessário uma vez (e de novo a cada mudança em `static/`):
+sem o manifesto, qualquer template com `{% static %}` estoura com "Missing
+staticfiles manifest entry" e a tela de login fica sem como ser exercitada.
+`staticfiles/` já é ignorado pelo Git.
+
+O `.venv/` é uma pasta do projeto, já ignorada pelo Git: não altera o Python
+do sistema nem o PATH, e apagar a pasta desfaz a instalação por inteiro. A
+proibição que vale é outra, e continua de pé -- nada de instalar dependências
+do projeto no Python global do Windows.
+
+`sharedauth` vem de repositório privado: o `git` precisa estar autenticado,
+ou instale do clone local na tag que `pyproject.toml` fixa. Aqui ele é
+instalado **sem** o extra `[flask]`, de propósito.
+
+Os dois ambientes acham defeitos diferentes, então nenhum substitui o outro.
+O venv é Windows; o contêiner é Linux e é o único lugar com `ruff` e
+`pip-audit` na versão que a CI usa. Itere no venv e passe pelo `quality`
+antes de commitar.
+
 ## Dados e ações destrutivas
 
 PostgreSQL é a fonte de verdade relacional. Bancos novos nascem por
@@ -140,7 +182,7 @@ edite, faça commit ou merge no VPS. Consulte `docs/operations.md` antes de
 qualquer operação de produção.
 
 As versões suportadas são Python 3.14, PostgreSQL 17 e Django 5.2; faixas
-completas ficam em `requirements*.txt`. Não há lock de dependências nem patch
+completas ficam em `pyproject.toml`. Não há lock de dependências nem patch
 de imagem fixado, portanto um build pode resolver patches mais novos.
 
 Ao atualizar dependências, alargue o teto e preserve o piso compatível já
