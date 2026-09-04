@@ -37,14 +37,14 @@ def test_name_duplicates_also_have_database_constraints():
 
 
 def test_management_template_displays_expense_with_negative_sign():
-    template = (Path(__file__).resolve().parents[1] / "templates/management/partials/management_content.html").read_text()
+    template = (Path(__file__).resolve().parents[1] / "templates/management/partials/management_content.html").read_text(encoding="utf-8")
 
     assert "entry.entry_type == 'despesa'" in template
     assert "entry.entry_amount|neg|money_signed" in template
 
 
 def test_password_minimum_input_uses_domain_floor_not_current_value():
-    template = (Path(__file__).resolve().parents[1] / "templates/settings/index.html").read_text()
+    template = (Path(__file__).resolve().parents[1] / "templates/settings/index.html").read_text(encoding="utf-8")
 
     assert 'name="min_length"' in template
     assert 'min="8"' in template
@@ -52,7 +52,7 @@ def test_password_minimum_input_uses_domain_floor_not_current_value():
 
 
 def test_native_constraint_messages_are_overridden_in_portuguese():
-    script = (Path(__file__).resolve().parents[1] / "static/js/core/application.js").read_text()
+    script = (Path(__file__).resolve().parents[1] / "static/js/core/application.js").read_text(encoding="utf-8")
 
     assert "setCustomValidity" in script
     assert "Preencha este campo." in script
@@ -60,7 +60,7 @@ def test_native_constraint_messages_are_overridden_in_portuguese():
 
 
 def test_audit_template_handles_legacy_rows_without_a_user():
-    template = (Path(__file__).resolve().parents[1] / "templates/settings/audit_log.html").read_text()
+    template = (Path(__file__).resolve().parents[1] / "templates/settings/audit_log.html").read_text(encoding="utf-8")
 
     assert "{% elif log.user %}{{ log.user.username }}" in template
     assert "default:log.user.username" not in template

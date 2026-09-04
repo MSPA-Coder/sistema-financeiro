@@ -55,12 +55,25 @@ ciclo de edição. Para isso existe um venv por projeto:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+
+$env:DJANGO_SECRET_KEY = "dev-only-nao-usada-em-producao"
+$env:POSTGRES_PASSWORD = "dev-only"
+.\.venv\Scripts\python.exe manage.py collectstatic --noinput
+
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m ruff check .
 ```
 
 A suíte não toca o banco (ver o docstring de `tests/conftest.py`), então ela
-roda no host sem PostgreSQL algum.
+roda no host sem PostgreSQL algum. As duas variáveis são exigidas mesmo assim:
+`financeiro/settings.py` recusa subir sem elas, e é ele que o `conftest.py`
+importa. Os valores são de desenvolvimento, como os que o `Dockerfile` usa no
+`collectstatic` do build.
+
+O `collectstatic` é necessário uma vez (e de novo a cada mudança em `static/`):
+sem o manifesto, qualquer template com `{% static %}` estoura com "Missing
+staticfiles manifest entry" e a tela de login fica sem como ser exercitada.
+`staticfiles/` já é ignorado pelo Git.
 
 O `.venv/` é uma pasta do projeto, já ignorada pelo Git: não altera o Python
 do sistema nem o PATH, e apagar a pasta desfaz a instalação por inteiro. A

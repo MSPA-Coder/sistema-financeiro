@@ -103,7 +103,15 @@ def test_settings_recusa_conectar_como_postgres(tmp_path):
     """POSTGRES_USER=postgres é o superusuário do cluster, não uma conta de app (CB-05)."""
     senha = tmp_path / "postgres_password"
     senha.write_text("senha-de-teste", encoding="utf-8")
+    # `REQUIRE_FILE_SECRETS` recusa a chave vinda de variavel, entao o
+    # arquivo tem de ser fornecido aqui. Sem isso o processo morre na
+    # chave secreta e nunca chega a verificar o POSTGRES_USER, que e o
+    # assunto do teste -- passava so onde o ambiente ja tinha a variavel.
+    chave = tmp_path / "django_secret_key"
+    chave.write_text("chave-de-teste", encoding="utf-8")
     ambiente = os.environ.copy()
+    ambiente.pop("DJANGO_SECRET_KEY", None)
+    ambiente["DJANGO_SECRET_KEY_FILE"] = str(chave)
     ambiente["POSTGRES_USER"] = "postgres"
     ambiente.pop("POSTGRES_PASSWORD", None)
     ambiente["POSTGRES_PASSWORD_FILE"] = str(senha)
@@ -119,7 +127,15 @@ def test_settings_recusa_conectar_como_postgres(tmp_path):
 def test_settings_aceita_postgres_user_dedicado(tmp_path):
     senha = tmp_path / "postgres_password"
     senha.write_text("senha-de-teste", encoding="utf-8")
+    # `REQUIRE_FILE_SECRETS` recusa a chave vinda de variavel, entao o
+    # arquivo tem de ser fornecido aqui. Sem isso o processo morre na
+    # chave secreta e nunca chega a verificar o POSTGRES_USER, que e o
+    # assunto do teste -- passava so onde o ambiente ja tinha a variavel.
+    chave = tmp_path / "django_secret_key"
+    chave.write_text("chave-de-teste", encoding="utf-8")
     ambiente = os.environ.copy()
+    ambiente.pop("DJANGO_SECRET_KEY", None)
+    ambiente["DJANGO_SECRET_KEY_FILE"] = str(chave)
     ambiente["POSTGRES_USER"] = "controle_bancario"
     ambiente.pop("POSTGRES_PASSWORD", None)
     ambiente["POSTGRES_PASSWORD_FILE"] = str(senha)
