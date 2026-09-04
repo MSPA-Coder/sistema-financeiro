@@ -32,7 +32,7 @@ RUN apt-get update \
 # publicado: `compose.yaml` usa `runtime` para migrate e web.
 FROM base AS quality
 
-# `requirements.txt` inclui `sharedauth` de um repositorio Git privado
+# `pyproject.toml` inclui `sharedauth` de um repositorio Git privado
 # (github.com/MSPA-Coder/SharedAuth) -- pip precisa de `git` no PATH e de
 # credencial para HTTPS. O secret `github_token` (BuildKit, nunca vira camada
 # da imagem) autentica so para o RUN que instala; `git config --unset` na
@@ -45,13 +45,17 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt requirements-dev.txt ./
-
-RUN --mount=type=secret,id=github_token \
-    git config --global url."https://x-access-token:$(cat /run/secrets/github_token)@github.com/".insteadOf "https://github.com/" \
-    && python -m pip install --no-cache-dir -r requirements-dev.txt \
-    && git config --global --unset url."https://x-access-token:$(cat /run/secrets/github_token)@github.com/".insteadOf
+# O codigo vem antes do `pip install`, que instala o proprio projeto a partir
+# do `pyproject.toml` -- fonte unica das dependencias. Isso faz a camada ser
+# refeita a cada edicao, entao o `pip` usa `--mount=type=cache`: a camada e
+# refeita, mas nada e baixado de novo. O cache e do BuildKit e nao vira
+# camada da imagem.
 COPY . .
+
+RUN --mount=type=cache,target=/root/.cache/pip --mount=type=secret,id=github_token \
+    git config --global url."https://x-access-token:$(cat /run/secrets/github_token)@github.com/".insteadOf "https://github.com/" \
+    && python -m pip install ".[dev]" \
+    && git config --global --unset url."https://x-access-token:$(cat /run/secrets/github_token)@github.com/".insteadOf
 
 # `logs/` e estado local e fica fora do contexto de build. O estagio de
 # qualidade ainda precisa do diretorio para configurar o handler Django.
@@ -84,11 +88,16 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./
+# O codigo vem antes do `pip install`, que instala o proprio projeto a partir
+# do `pyproject.toml` -- fonte unica das dependencias. Isso faz a camada ser
+# refeita a cada edicao, entao o `pip` usa `--mount=type=cache`: a camada e
+# refeita, mas nada e baixado de novo. O cache e do BuildKit e nao vira
+# camada da imagem.
+COPY . .
 
-RUN --mount=type=secret,id=github_token \
+RUN --mount=type=cache,target=/root/.cache/pip --mount=type=secret,id=github_token \
     git config --global url."https://x-access-token:$(cat /run/secrets/github_token)@github.com/".insteadOf "https://github.com/" \
-    && python -m pip install --no-cache-dir --prefix=/install -r requirements.txt \
+    && python -m pip install --prefix=/install . \
     && git config --global --unset url."https://x-access-token:$(cat /run/secrets/github_token)@github.com/".insteadOf
 
 

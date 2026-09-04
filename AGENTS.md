@@ -140,7 +140,7 @@ edite, faça commit ou merge no VPS. Consulte `docs/operations.md` antes de
 qualquer operação de produção.
 
 As versões suportadas são Python 3.14, PostgreSQL 17 e Django 5.2; faixas
-completas ficam em `requirements*.txt`. Não há lock de dependências nem patch
+completas ficam em `pyproject.toml`. Não há lock de dependências nem patch
 de imagem fixado, portanto um build pode resolver patches mais novos.
 
 Ao atualizar dependências, alargue o teto e preserve o piso compatível já
