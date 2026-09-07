@@ -32,7 +32,8 @@ RUN apt-get update \
 # publicado: `compose.yaml` usa `runtime` para migrate e web.
 FROM base AS quality
 
-# `pyproject.toml` inclui `sharedauth` de um repositorio Git privado
+# `pyproject.toml` inclui `sharedauth` de um repositorio Git PUBLICO
+# -- o token abaixo e heranca de quando ele era privado e hoje nao e exigido
 # (github.com/MSPA-Coder/SharedAuth) -- pip precisa de `git` no PATH e de
 # credencial para HTTPS. O secret `github_token` (BuildKit, nunca vira camada
 # da imagem) autentica so para o RUN que instala; `git config --unset` na
