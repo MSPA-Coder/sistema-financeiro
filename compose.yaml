@@ -157,6 +157,52 @@ services:
   # `docker compose --profile quality run --build --rm quality`.
   # O `--build` é necessário: este serviço não monta o código do host, e
   # `docker compose run` reutiliza a imagem existente sem reconstruí-la.
+  # Banco EFÊMERO da suíte.
+  #
+  # Não é o `postgres` de cima, e isso é deliberado: a suíte não pode ter
+  # caminho até o volume com dados reais, nem por engano. O runner do Django
+  # cria e destrói `test_controle_bancario` sozinho, mas ele faz isso NO
+  # SERVIDOR que a configuração apontar -- e um `DROP DATABASE` sempre executa
+  # onde mandaram, não onde era seguro.
+  #
+  # Sem volume nomeado: os dados vivem em tmpfs e somem com o contêiner. Além
+  # de fechar a porta acima, deixa a suíte mais rápida, porque nada toca disco.
+  postgres-teste:
+    <<: *postgres-hardening
+    image: postgres:17-alpine
+    profiles: ["quality"]
+    cpus: 1.0
+    mem_limit: 512m
+    logging: *service-logging
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-controle_bancario}
+      POSTGRES_USER: ${POSTGRES_USER:-controle_bancario}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      TZ: America/Sao_Paulo
+    secrets:
+      - postgres_password
+    # Sem `ports`: ninguém de fora precisa alcançá-lo, e não publicar é uma
+    # porta a menos escutando na máquina de quem roda a suíte.
+    #
+    # Este `tmpfs` SUBSTITUI o do anchor `postgres-hardening` -- o merge do YAML
+    # troca a chave inteira, não acrescenta itens. Por isso os dois caminhos do
+    # anchor estão repetidos aqui: sem eles, um Postgres com `read_only: true`
+    # não consegue escrever o socket nem os arquivos temporários, e nem sobe.
+    # `uid=70,gid=70,mode=0700` porque um tmpfs nasce pertencendo ao root, e o
+    # `initdb` roda como `postgres` com `cap_drop: ALL` -- sem CAP_CHOWN e
+    # CAP_FOWNER ele não consegue tomar posse do diretório, e o contêiner morre
+    # em "could not change permissions". 70 é o uid do postgres nesta imagem.
+    # O `0700` é o modo que o próprio `initdb` exigiria de qualquer forma.
+    tmpfs:
+      - /tmp:mode=1777,rw,noexec,nosuid,size=64m
+      - /var/run/postgresql:mode=1777,rw,noexec,nosuid,size=16m
+      - /var/lib/postgresql/data:mode=0700,uid=70,gid=70,rw,size=512m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-controle_bancario} -d ${POSTGRES_DB:-controle_bancario}"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
   quality:
     <<: *app-secrets
     build:
@@ -167,6 +213,11 @@ services:
         - github_token
     environment:
       <<: *app-environment
+      # Sobrescreve o `postgres` da âncora. A suíte fala com o banco efêmero.
+      POSTGRES_HOST: postgres-teste
+    depends_on:
+      postgres-teste:
+        condition: service_healthy
     profiles: ["quality"]
     stop_grace_period: 15s
     logging: *service-logging
