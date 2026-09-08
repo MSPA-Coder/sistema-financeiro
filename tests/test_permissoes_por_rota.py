@@ -26,7 +26,7 @@ nao dado. E a mesma razao pela qual estes testes conseguem existir nesta suite.
 
 from __future__ import annotations
 
-from django.urls import get_resolver
+from django.urls import Resolver404, get_resolver, resolve
 
 from accounts.services import PERMISSION_DEFINITIONS
 from core.context_processors import _build_menu_items, primeira_tela_permitida
@@ -81,6 +81,52 @@ def _permissoes_do_menu(itens=None) -> set[str]:
             resultado.add(item.required_permission)
         resultado |= _permissoes_do_menu(item.children)
     return resultado
+
+
+def _destinos_do_menu(itens=None) -> set[str]:
+    resultado: set[str] = set()
+    for item in _build_menu_items() if itens is None else itens:
+        resultado.add(item.url)
+        resultado |= _destinos_do_menu(item.children)
+    return resultado
+
+
+def test_todo_item_de_menu_aponta_para_uma_rota_que_existe() -> None:
+    """Regressao: o menu tinha "Administracao" apontando para `/admin/`.
+
+    A rota saiu da URLconf junto com `django.contrib.admin` -- ver o docstring
+    de `_rotas` e o comentario do `INSTALLED_APPS`. O item de menu sobreviveu a
+    remocao e ficou apontando para o vazio: quem era `is_staff` via a entrada e
+    caia num 404. Pior, o item era uma FOLHA no fim da arvore, e
+    `primeira_tela_permitida` percorre essa arvore para escolher o destino do
+    login -- um `is_staff` sem permissao nenhuma seria mandado para o 404 assim
+    que entrasse.
+
+    A varredura das rotas ja provava que `/admin/` nao existe, e a das
+    permissoes ja lia a arvore do menu; ninguem cruzava as duas. Esta guarda
+    cruza: destino de menu que nao resolve reprova aqui, e nao na tela de quem
+    usa. Verifica `url`, que e para onde o clique leva; `active_prefix` e
+    prefixo de realce e nem sempre e rota por si so.
+
+    Nao abre banco: `resolve` le a URLconf.
+    """
+    quebrados = sorted(
+        destino for destino in _destinos_do_menu() if not _resolve(destino)
+    )
+
+    assert not quebrados, (
+        f"Itens de menu apontam para rotas inexistentes: {quebrados}. "
+        "Corrija o destino ou remova o item -- link morto no menu e 404 na "
+        "cara de quem clica, e pode virar destino de login."
+    )
+
+
+def _resolve(caminho: str) -> bool:
+    try:
+        resolve(caminho)
+    except Resolver404:
+        return False
+    return True
 
 
 def test_toda_rota_exige_permissao_ou_esta_declarada_aberta() -> None:
