@@ -161,7 +161,69 @@ def _projected_status(template: CashFlowEntry, due_date: date, today: date) -> s
     return template.status or STATUS_PROJECTED
 
 
-def _copy_occurrence(template_rows: list[CashFlowEntry], due_date: date, today: date) -> int:
+def _moldes_sem_duplicata(
+    rows: list[CashFlowEntry],
+) -> tuple[list[CashFlowEntry], dict[int, int]]:
+    """Descarta do molde as linhas que são cópia uma da outra.
+
+    POR QUE ISTO PRECISA EXISTIR
+
+    `_extend_operation` usa como molde TODAS as linhas da maior data da
+    operação, e `_copy_occurrence` cria uma nova por molde. Isso está certo
+    quando as várias linhas são as pernas de uma transferência recorrente --
+    contas diferentes, descrições diferentes, uma receita e uma despesa --,
+    que é justamente para o que serve a religação por `source_entry`.
+
+    Mas quando um mês tem, por qualquer motivo, DUAS linhas iguais, todo mês
+    seguinte nasce com duas, e o mês seguinte a esse com quatro. A duplicação
+    se multiplica sozinha, e o efeito visível é uma projeção inflada: em
+    08/09/2026 eram 8 lançamentos a mais e R$ 7.660,00 a mais no futuro, em
+    quatro operações, tanto no banco local quanto em produção.
+
+    Os pares que originaram isso são de 31/07 e 06/08/2026, anteriores a este
+    módulo (que nasceu em 16/08). O código atual **não** cria o primeiro par --
+    a guarda de data em `_extend_operation` impede --, mas propagava o que
+    encontrasse. É essa propagação que esta função corta.
+
+    O QUE CONTA COMO "IGUAL"
+
+    Conta, categoria, tipo, descrição e valor. Duas pernas de transferência
+    diferem em pelo menos conta e descrição, então continuam ambas no molde.
+
+    `canonico` mapeia o id de cada linha descartada para o da que ficou, para
+    que uma referência de `source_entry_id` apontando para a descartada ainda
+    encontre destino na hora de religar.
+    """
+    unicos: list[CashFlowEntry] = []
+    canonico: dict[int, int] = {}
+    por_chave: dict[tuple, CashFlowEntry] = {}
+
+    for row in rows:
+        chave = (
+            row.account_id,
+            row.category_id,
+            row.entry_type,
+            row.description,
+            row.entry_amount,
+        )
+        mantido = por_chave.get(chave)
+        if mantido is None:
+            por_chave[chave] = row
+            unicos.append(row)
+            canonico[row.id] = row.id
+        else:
+            canonico[row.id] = mantido.id
+
+    return unicos, canonico
+
+
+def _copy_occurrence(
+    template_rows: list[CashFlowEntry],
+    due_date: date,
+    today: date,
+    canonico: dict[int, int] | None = None,
+) -> int:
+    canonico = canonico or {}
     created_by_template_id: dict[int, CashFlowEntry] = {}
     for template in template_rows:
         entry = CashFlowEntry.objects.create(
@@ -185,7 +247,11 @@ def _copy_occurrence(template_rows: list[CashFlowEntry], due_date: date, today: 
     for template in template_rows:
         if template.source_entry_id:
             created = created_by_template_id[template.id]
-            source = created_by_template_id.get(template.source_entry_id)
+            # A origem pode ter sido a linha descartada como duplicata: o
+            # `canonico` leva ao molde que ficou no lugar dela. Fora desse
+            # caso, o `get` devolve o próprio id, como antes.
+            id_da_origem = canonico.get(template.source_entry_id, template.source_entry_id)
+            source = created_by_template_id.get(id_da_origem)
             if source:
                 created.source_entry = source
                 created.save(update_fields=["source_entry"])
@@ -198,12 +264,26 @@ def _extend_operation(entries: list[CashFlowEntry], horizon_end: date, today: da
     if latest_due_date >= horizon_end:
         return 0
 
-    template_rows = [entry for entry in entries if entry.due_date == latest_due_date]
     next_due_date = add_months(latest_due_date, 1)
     generated_count = 0
+    template_rows: list[CashFlowEntry] | None = None
+    canonico: dict[int, int] = {}
+
     while next_due_date <= horizon_end:
         if next_due_date not in existing_dates:
-            generated_count += _copy_occurrence(template_rows, next_due_date, today)
+            if template_rows is None:
+                # O molde é montado só quando há mesmo o que criar. Além de
+                # evitar trabalho no caso comum (nada a fazer), isso preserva
+                # uma propriedade que a suíte usa: a DECISÃO de gerar ou não
+                # depende apenas das datas, e é por isso que
+                # `test_projecao_recorrente_idempotente.py` consegue medi-la
+                # sem banco, com dublês que só têm `due_date`.
+                template_rows, canonico = _moldes_sem_duplicata(
+                    [entry for entry in entries if entry.due_date == latest_due_date]
+                )
+            generated_count += _copy_occurrence(
+                template_rows, next_due_date, today, canonico
+            )
             existing_dates.add(next_due_date)
         next_due_date = add_months(next_due_date, 1)
     return generated_count
