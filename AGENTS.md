@@ -95,14 +95,25 @@ do sistema nem o PATH, e apagar a pasta desfaz a instalação por inteiro. A
 proibição que vale é outra, e continua de pé -- nada de instalar dependências
 do projeto no Python global do Windows.
 
-`sharedauth` é instalado direto do GitHub, na tag que `pyproject.toml` fixa.
-O repositório é **público**, então o `pip install` não precisa de credencial
-nenhuma -- basta `git` no PATH. A engrenagem de token que o `Dockerfile` e a CI
-ainda montam (`--mount=type=secret,id=github_token`, `.secrets/github_token.txt`
-e o PAT de leitura) é herança da época em que ele era privado, e continua
-funcionando sem atrapalhar; retirá-la é mudança de build, com sua própria
-validação, e não um ajuste de documentação. Aqui ele é
-instalado **sem** o extra `[flask]`, de propósito.
+`sharedauth` é instalado direto do GitHub, na tag que `pyproject.toml` fixa e
+no commit que o `uv.lock` registra. O repositório é **público**: o build precisa
+só de `git` no PATH, nenhuma credencial.
+
+A engrenagem de token que existia aqui — secret do BuildKit, `git config
+url...insteadOf` para injetar um PAT, e `.secrets/github_token.txt` — **saiu em
+08/09/2026** (achado L23 do `LEVANTAMENTO_2026-09.md`). Era herança da época em
+que o repositório era privado, e o efeito que importa é fora deste arquivo:
+enquanto qualquer build da frota exigisse o token, ele tinha de existir no VPS
+também.
+
+Aqui o pacote entra **sem** o extra `[flask]`, de propósito: só o núcleo, que é
+Python puro. O extra traria Flask, Flask-WTF e Flask-Limiter para dentro de uma
+imagem Django, e o `uv.lock` registra essa escolha.
+
+O laço rápido acima continua usando `pip install -e ".[dev]"`, e não o lock:
+ele troca reprodutibilidade por velocidade de propósito. Quem garante versões
+exatas é o `quality`, com `uv sync --locked`. Se o venv se comportar diferente
+do contêiner numa questão de versão, o contêiner é quem está certo.
 
 Os dois ambientes acham defeitos diferentes, então nenhum substitui o outro.
 O venv é Windows; o contêiner é Linux e é o único lugar com `ruff` e
@@ -203,9 +214,27 @@ O VPS e seus volumes são independentes do ambiente local. O código no servidor
 edite, faça commit ou merge no VPS. Consulte `docs/operations.md` antes de
 qualquer operação de produção.
 
-As versões suportadas são Python 3.14, PostgreSQL 17 e Django 5.2; faixas
-completas ficam em `pyproject.toml`. Não há lock de dependências nem patch
-de imagem fixado, portanto um build pode resolver patches mais novos.
+As versões suportadas são Python 3.14, PostgreSQL 17 e **Django 6.1**; faixas
+completas ficam em `pyproject.toml` e as versões exatas em `uv.lock`.
+
+**O build é reprodutível desde 08/09/2026** (fase F3 do
+`LEVANTAMENTO_2026-09.md`). As dependências vêm do `uv.lock`, com versão e hash
+SHA-256 fixados, e a imagem base está presa por digest. O que ainda flutua é só
+a camada de pacotes do sistema, e isso é deliberado: o `apt-get upgrade` do
+`Dockerfile` existe para aplicar correção de CVE do Debian antes de a imagem
+oficial ser republicada.
+
+**Como o Django 6.1 entrou.** O Dependabot alargou o teto de `<6` para `<7`, e
+a partir daí qualquer rebuild instalaria a 6.x — silenciosamente, porque não
+havia lock. O lock tornou a escolha visível e ela foi adotada de propósito, com
+a suíte inteira passando. A subida atravessa uma major: ao mexer em qualquer
+coisa que dependa de comportamento do framework, confira contra as notas de
+versão do Django 6 em vez de assumir a semântica da 5.2.
+
+Ao atualizar dependências, alargue o teto e preserve o piso compatível já
+verificado; depois rode `uv lock` e commite o resultado — o build usa
+`uv sync --locked`, que **reprova** se o lock não corresponder ao
+`pyproject.toml`.
 
 Ao atualizar dependências, alargue o teto e preserve o piso compatível já
 verificado. Só eleve o piso quando uma incompatibilidade for comprovada e a

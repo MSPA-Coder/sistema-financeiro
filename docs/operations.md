@@ -3,9 +3,13 @@
 ## Configuração e serviços
 
 O Compose exige os arquivos secretos `django_secret_key` e
-`postgres_password`. O build exige `github_token.txt` para ler SharedAuth. Por
-padrão, todos ficam em `.secrets/`; `COMPOSE_SECRETS_DIRECTORY` altera esse
-diretório. Certificados locais opcionais entram no build por
+`postgres_password`. Por padrão ficam em `.secrets/`;
+`COMPOSE_SECRETS_DIRECTORY` altera esse diretório.
+
+O `github_token.txt` que o build exigia **saiu em 08/09/2026**: o SharedAuth é
+público e a credencial era herança de quando não era. Se o arquivo ainda
+existir na sua máquina ou no VPS, pode ser apagado, e o PAT correspondente,
+revogado no GitHub. Certificados locais opcionais entram no build por
 `.certs/local-root-ca.crt`. Esses caminhos não são versionados.
 
 Variáveis principais:
