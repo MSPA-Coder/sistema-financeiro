@@ -64,11 +64,26 @@ $env:POSTGRES_PASSWORD = "dev-only"
 .\.venv\Scripts\python.exe -m ruff check .
 ```
 
-A suíte não toca o banco (ver o docstring de `tests/conftest.py`), então ela
-roda no host sem PostgreSQL algum. As duas variáveis são exigidas mesmo assim:
-`financeiro/settings.py` recusa subir sem elas, e é ele que o `conftest.py`
-importa. Os valores são de desenvolvimento, como os que o `Dockerfile` usa no
-`collectstatic` do build.
+A suíte tem duas camadas (ver o docstring de `tests/conftest.py`). A maior
+parte não toca o banco e roda no host sem PostgreSQL algum; os arquivos
+marcados com `django_db` — `test_invariantes_persistidos.py` e
+`test_migracoes_aplicadas.py` — precisam de banco e são o portão da fase F1.
+
+No venv, portanto, o laço rápido exclui essa camada:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q -m "not django_db"
+```
+
+Rodar `pytest` sem o filtro no venv falha, e a falha é do ambiente, não do
+código: não há PostgreSQL ali. A camada com banco roda no `quality`, que sobe o
+serviço `postgres-teste` junto. **Não desmarque um teste `django_db` para fazer
+o laço rápido passar** — foi exatamente essa camada que revelou que
+`@transaction.atomic` nunca havia sido exercitado.
+
+As duas variáveis são exigidas mesmo assim: `financeiro/settings.py` recusa
+subir sem elas, e é ele que o `conftest.py` importa. Os valores são de
+desenvolvimento, como os que o `Dockerfile` usa no `collectstatic` do build.
 
 O `collectstatic` é necessário uma vez (e de novo a cada mudança em `static/`):
 sem o manifesto, qualquer template com `{% static %}` estoura com "Missing
@@ -165,7 +180,9 @@ Mudança documental exige `git diff --check`, verificação de links/caminhos e
 busca por referências obsoletas. Para template, HTMX ou JavaScript, percorra a
 tela afetada. Para regra, rota ou service, execute testes focados e o fluxo
 completo. Para autenticação, autorização, sessão ou CSRF, execute `quality`.
-Para schema, valide backup, migration e bootstrap em PostgreSQL vazio. Para
+Para schema, valide backup e revise a migration; o bootstrap em PostgreSQL
+vazio deixou de ser manual, porque o  aplica a cadeia inteira a um
+banco vazio a cada execucao. Para
 dependências, Dockerfile ou Compose, reconstrua a imagem, valide o Compose e
 faça smoke test da pilha.
 

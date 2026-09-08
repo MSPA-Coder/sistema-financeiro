@@ -8,6 +8,7 @@ tabelas, migrations ou conexões com PostgreSQL.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -163,9 +164,32 @@ def test_default_de_postgres_user_nao_e_o_superusuario():
 
 
 def test_compose_nao_usa_postgres_como_padrao_de_postgres_user():
+    """Toda interpolação de POSTGRES_USER traz o padrão seguro.
+
+    A versão anterior deste teste contava as ocorrências e exigia `== 3`. O
+    número quebrava ao acrescentar um serviço legítimo -- foi o que aconteceu
+    quando o `postgres-teste` entrou -- e, pior, não media a propriedade que
+    interessa: um `${POSTGRES_USER}` seco, SEM padrão nenhum, passava pela
+    contagem sem ser notado, e é justamente ele que faria a conexão cair no
+    superusuário do cluster.
+
+    Verificar cada interpolação cobre os dois casos e não depende de quantos
+    serviços o arquivo tem.
+    """
     conteudo = COMPOSE.read_text(encoding="utf-8")
-    assert "POSTGRES_USER:-postgres}" not in conteudo
-    assert conteudo.count("POSTGRES_USER:-controle_bancario}") == 3
+
+    interpolacoes = re.findall(r"\$\{POSTGRES_USER(:-[^}]*)?\}", conteudo)
+    assert interpolacoes, "nenhuma interpolação de POSTGRES_USER encontrada"
+
+    sem_padrao_seguro = [
+        padrao or "(sem padrão)"
+        for padrao in interpolacoes
+        if padrao != ":-controle_bancario"
+    ]
+    assert not sem_padrao_seguro, (
+        "interpolações de POSTGRES_USER sem o padrão seguro: "
+        f"{sem_padrao_seguro}"
+    )
 
 
 def test_compose_exige_os_segredos_operacionais():

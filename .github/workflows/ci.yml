@@ -3,8 +3,16 @@ name: CI
 on:
   push:
     branches: [main]
+  # Sem filtro de `branches`, de proposito: assim a verificacao roda em PR para
+  # QUALQUER base, e nao so para `main`.
+  #
+  # Com o filtro, um PR empilhado sobre outro branch nao disparava check
+  # nenhum -- e o sintoma e a ausencia de sinal, nao um vermelho: a pagina do
+  # PR fica limpa e parece aprovada. Aconteceu na fase F1.
+  #
+  # O `push` acima continua restrito a `main`: o que interessa la e o estado
+  # do branch que a producao espelha.
   pull_request:
-    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: "47 3 * * 2"
@@ -32,11 +40,26 @@ jobs:
             -subj "/CN=ControleBancario CI Local CA"
           rm -f /tmp/local-root-ca.key
       - name: Criar segredos efêmeros de CI
+        # O `chmod 0644` na senha do PostgreSQL não é descuido, e o `umask 077`
+        # continua valendo para a chave do Django.
+        #
+        # Um segredo de arquivo do Compose é montado preservando dono e modo do
+        # host -- `uid`, `gid` e `mode` na sintaxe longa são ignorados fora do
+        # Swarm, e o próprio Compose avisa isso. O contêiner do PostgreSQL roda
+        # como `user: "postgres"` (uid 70) e precisa LER esse arquivo para
+        # inicializar; com 0600 pertencendo ao runner (uid 1001), ele morre no
+        # arranque com "Permission denied" e o serviço que depende dele nunca
+        # sobe.
+        #
+        # Até a fase F1 isso não aparecia porque nenhum contêiner de banco subia
+        # na CI. O valor aqui é uma constante pública deste arquivo e não
+        # protege nada.
         run: |
           umask 077
           mkdir -p .secrets
           printf '%s\n' 'ci-django-secret-key-not-for-production' > .secrets/django_secret_key
           printf '%s\n' 'ci-postgres-password-not-for-production' > .secrets/postgres_password
+          chmod 0644 .secrets/postgres_password
       - name: Escrever o token de leitura do SharedAuth
         # PAT de acesso restrito, somente-leitura, só no repositório
         # SharedAuth -- usado apenas para o `pip install` das dependencias

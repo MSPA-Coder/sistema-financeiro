@@ -63,8 +63,10 @@ aplicável.
 - regra, view ou service: testes focados e fluxo completo com dados
   representativos;
 - autenticação, autorização, sessão ou CSRF: serviço `quality` completo;
-- schema ou transformação de dados: backup validado, revisão da migration e
-  bootstrap em PostgreSQL vazio;
+- schema ou transformação de dados: backup validado e revisão da migration.
+  O bootstrap em PostgreSQL vazio não é mais passo manual: o serviço
+  `quality` sobe o `postgres-teste` e o pytest-django aplica a cadeia
+  inteira de migrações a um banco vazio para construir o banco de teste;
 - dependências, Dockerfile ou Compose: build sem cache quando pertinente,
   `docker compose config`, serviço `quality` e smoke test da pilha.
 
