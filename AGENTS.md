@@ -1,5 +1,18 @@
 # Controle Bancário — orientações de manutenção
 
+> **A frota é este projeto, o MegaSena e o ControleRendaVariavel.** Os três
+> compartilham o `SharedAuth`, o mesmo formato de Compose e Dockerfile e o mesmo
+> portão `quality`; servem de referência uns aos outros, e uma divergência entre
+> eles é candidata a correção. Este é o único dos três em Django — os outros dois
+> são Flask —, então a semelhança que se busca é de **operação e contrato**, não
+> de framework.
+>
+> **O ConfortoTermico não está na frota** e segue trilha própria desde
+> 07/09/2026: a arquitetura dele é livre, e diferença em relação a ele **não é
+> débito**. O que ele preserva é o contrato operacional — VPS, `deploy.sh`,
+> vigia, autocura, alerta, backup e `SharedAuth`. Ver o ADR 008 daquele
+> repositório.
+
 ## Escopo e fontes de verdade
 
 Este é um controle bancário em Django, HTMX e PostgreSQL. Docker Compose é a
