@@ -3,8 +3,16 @@ name: CI
 on:
   push:
     branches: [main]
+  # Sem filtro de `branches`, de proposito: assim a verificacao roda em PR para
+  # QUALQUER base, e nao so para `main`.
+  #
+  # Com o filtro, um PR empilhado sobre outro branch nao disparava check
+  # nenhum -- e o sintoma e a ausencia de sinal, nao um vermelho: a pagina do
+  # PR fica limpa e parece aprovada. Aconteceu na fase F1.
+  #
+  # O `push` acima continua restrito a `main`: o que interessa la e o estado
+  # do branch que a producao espelha.
   pull_request:
-    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: "47 3 * * 2"
