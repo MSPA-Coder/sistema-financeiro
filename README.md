@@ -26,10 +26,9 @@ arquivos secretos consumidos pelo Compose:
 .\scripts\provision_compose_secrets.ps1
 ```
 
-O build também requer `.secrets/github_token.txt`. O SharedAuth é público, então
-a credencial não é mais necessária para lê-lo; o arquivo continua sendo exigido
-pelo `--mount=type=secret` do `Dockerfile`, herdado de quando o repositório era
-privado. Não exiba nem versione esse arquivo enquanto ele existir.
+O build **não** requer mais `.secrets/github_token.txt`: o SharedAuth é
+público, e o `--mount=type=secret` que pedia por ele saiu em 08/09/2026. Se o
+arquivo ainda existir aqui, pode ser apagado.
 O arquivo `.certs/local-root-ca.crt` deve existir; deixe-o vazio quando não
 houver uma autoridade certificadora local a acrescentar ou gere-o com
 `.\scripts\export_local_ca.ps1` quando houver interceptação HTTPS compatível
