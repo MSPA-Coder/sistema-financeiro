@@ -1,5 +1,6 @@
 {% load static %}
 {% load icons %}
+{% load money_filters %}
 <div class="table-container u-mb-1">
     <form id="bulkPendingLinesForm" method="post" action="{% url 'bank_statements:bulk_action_lines' %}"
           hx-post="{% url 'bank_statements:bulk_action_lines' %}"
@@ -55,7 +56,7 @@
                 <td>{{ line.statement_date|date:"d/m/Y" }}</td>
                 <td>{{ line.account.owner.name }} / {{ line.account.institution.institution_name }} / {{ line.account.account_name }}</td>
                 <td>{{ line.description }}</td>
-                <td class="amount">{{ line.amount }}</td>
+                <td class="amount {{ line.amount|amount_class }}">{{ line.amount|money_signed }}</td>
                 <td>
                     {% if line.status == "novo" %}
                         {% if line.reconcile_candidates %}
@@ -71,7 +72,7 @@
                                 <option value="">Selecione…</option>
                                 {% endif %}
                                 {% for entry in line.reconcile_candidates %}
-                                <option value="{{ entry.id }}" data-sensitive-value="true" {% if line.reconcile_candidates|length == 1 %}selected{% endif %}>#{{ entry.id }} - {{ entry.due_date|date:"d/m/Y" }} - {{ entry.description|default:"-" }} - {{ entry.entry_amount }}</option>
+                                <option value="{{ entry.id }}" data-sensitive-value="true" {% if line.reconcile_candidates|length == 1 %}selected{% endif %}>#{{ entry.id }} - {{ entry.due_date|date:"d/m/Y" }} - {{ entry.description|default:"-" }} - {{ entry.entry_amount|money }}</option>
                                 {% endfor %}
                             </select>
                             <button type="submit" class="btn-sm btn-primary"
@@ -157,7 +158,7 @@
                 <td>{{ line.statement_date|date:"d/m/Y" }}</td>
                 <td>{{ line.account.owner.name }} / {{ line.account.institution.institution_name }} / {{ line.account.account_name }}</td>
                 <td>{{ line.description }}</td>
-                <td class="amount">{{ line.amount }}</td>
+                <td class="amount {{ line.amount|amount_class }}">{{ line.amount|money_signed }}</td>
                 <td>{% if line.matched_entry %}#{{ line.matched_entry.id }} - {{ line.matched_entry.description|default:"-" }}{% else %}Movimento não encontrado{% endif %}</td>
                 <td class="actions">
                     <form method="post" action="{% url 'bank_statements:undo_reconciliation' %}"

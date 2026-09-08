@@ -141,7 +141,15 @@ def _build_menu_items() -> list[MenuItem]:
                 MenuItem("Trilha de auditoria", "/settings/audit-log/", "\U0001F9FE", "/settings/audit-log/", required_permission="settings.audit.view"),
             ),
         ),
-        MenuItem("Administração", "/admin/", "#", "/admin/", requires_staff=True),
+        # NAO ha item "Administracao" apontando para `/admin/`. O
+        # `django.contrib.admin` esta fora do `INSTALLED_APPS` de proposito --
+        # o motivo (superficie de edicao de conta e login fora do
+        # `LoginLockout`) esta em `financeiro/settings.py`, e
+        # `tests/test_rotas_orfas_removidas.py` exige que `/admin/` responda
+        # 404. O item sobreviveu aa remocao da rota e ficou apontando para o
+        # vazio: staff via a entrada no menu e caia num 404. Removido em
+        # 08/09/2026. Se voltar a fazer sentido administrar por aqui, o
+        # destino e uma tela deste projeto, com auditoria -- nao o admin.
     ]
 
 
