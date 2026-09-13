@@ -66,10 +66,10 @@ termina com sucesso antes de `web` iniciar.
 - eventos relevantes são registrados em `AuditLog`; segredos não devem entrar
   em código, logs ou commits.
 
-Uma transferência interna pode apontar para uma conta de destino fora do
-escopo habitual do usuário. Nesse caso, apenas o par da transferência é
-autorizado pela conta de origem; isso não concede leitura ou acesso geral à
-conta de destino.
+Transferências internas exigem uma concessão explícita do usuário para a conta
+de destino, além da permissão funcional e do acesso à origem. A concessão não
+permite consultar a conta destino. O par histórico permanece visível pela
+origem, mas a revogação bloqueia novas mutações financeiras e recorrências.
 
 ## Dependência compartilhada
 

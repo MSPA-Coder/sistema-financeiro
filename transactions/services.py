@@ -9,6 +9,7 @@ from django.db import transaction as db_transaction
 from django.db.models import Count
 from django.utils import timezone
 
+from accounts.services import can_use_transfer_destination, transfer_destination_access_ids
 from banking.models import FinancialAccount
 from banking.services import can_access_account
 from core.domain.finance import (
@@ -78,12 +79,38 @@ def transfer_counterparty(entry: CashFlowEntry) -> CashFlowEntry | None:
     return entry.derived_entries.first()
 
 
+def transfer_origin_and_destination(entry: CashFlowEntry) -> tuple[CashFlowEntry | None, CashFlowEntry | None]:
+    """Resolve o par em orientação canônica, inclusive quando a entrada é destino."""
+    origin = entry.source_entry if entry.source_entry_id else entry
+    return origin, transfer_counterparty(origin)
+
+
+def assert_transfer_destination_authorized(user, entry: CashFlowEntry, action: str) -> None:
+    """Revalida origem e grant do destino em toda mutação de um par interno."""
+    origin, destination = transfer_origin_and_destination(entry)
+    if origin is None or destination is None or not can_access_account(user, origin.account_id, action):
+        raise ValueError("Acesso negado: conta de origem não autorizada para transferência.")
+    if not can_use_transfer_destination(user, destination.account_id):
+        raise ValueError("Acesso negado: conta destino não autorizada para transferência.")
+
+
+def assert_transfer_entries_authorized(user, entries: list[CashFlowEntry], action: str) -> None:
+    seen_origins: set[int] = set()
+    for entry in entries:
+        if entry.operation_type != OPERATION_INTERNAL_TRANSFER:
+            continue
+        origin, _destination = transfer_origin_and_destination(entry)
+        if origin is not None and origin.id not in seen_origins:
+            seen_origins.add(origin.id)
+            assert_transfer_destination_authorized(user, entry, action)
+
+
 @db_transaction.atomic
 def realize_transaction(
     entry: CashFlowEntry,
     realized_date: date | None = None,
     realized_amount: Decimal | None = None,
-    audit_context=None,
+    audit_context=None, user=None,
 ) -> CashFlowEntry:
     """Marca um lançamento como realizado.
 
@@ -94,6 +121,8 @@ def realize_transaction(
     """
     if entry.status == STATUS_REALIZED:
         raise ValueError("Lançamento já está realizado")
+    if getattr(entry, "operation_type", None) == OPERATION_INTERNAL_TRANSFER:
+        assert_transfer_destination_authorized(user, entry, "update")
 
     final_date = realized_date or date.today()
     # Os dois meses precisam estar abertos: o do vencimento e o da data de
@@ -146,7 +175,7 @@ def realize_transaction(
     return entry
 
 
-def unrealize_transaction(entry: CashFlowEntry) -> CashFlowEntry:
+def unrealize_transaction(entry: CashFlowEntry, user=None) -> CashFlowEntry:
     """Reverte a realização de um lançamento (usado por Bancos > Conciliação
     ao desfazer uma conciliação).
 
@@ -158,6 +187,8 @@ def unrealize_transaction(entry: CashFlowEntry) -> CashFlowEntry:
     """
     if entry.status != STATUS_REALIZED:
         raise ValueError("Lançamento não está realizado.")
+    if getattr(entry, "operation_type", None) == OPERATION_INTERNAL_TRANSFER:
+        assert_transfer_destination_authorized(user, entry, "update")
 
     assert_entry_period_open(entry, action_label="desfazer a realização de")
     counterpart = transfer_counterparty(entry)
@@ -200,17 +231,40 @@ def close_month(
     """Fecha um mês para uma conta específica."""
     if not can_access_account(user, account.id, "update"):
         raise ValueError("Acesso negado: usuário sem permissão para fechar este mês.")
-    if is_month_closed(account, year, month):
-        raise ValueError(f"Mês {month}/{year} já está fechado para esta conta")
 
-    month_close = AccountMonthClose.objects.create(
-        account=account,
-        year=year,
-        month=month,
-        closing_balance=closing_balance,
-        closed_at=timezone.now(),
-        closed_by_user=user,
-    )
+    # O registro é único mesmo depois de uma reabertura. Trancar a conta
+    # serializa dois fechamentos concorrentes do mesmo período e permite
+    # reativar o registro existente em vez de tentar um novo INSERT.
+    account = FinancialAccount.objects.select_for_update().get(pk=account.pk)
+    try:
+        month_close = AccountMonthClose.objects.select_for_update().get(
+            account=account,
+            year=year,
+            month=month,
+        )
+    except AccountMonthClose.DoesNotExist:
+        month_close = AccountMonthClose.objects.create(
+            account=account,
+            year=year,
+            month=month,
+            closing_balance=closing_balance,
+            closed_at=timezone.now(),
+            closed_by_user=user,
+        )
+    else:
+        if month_close.active:
+            raise ValueError(f"Mês {month}/{year} já está fechado para esta conta")
+        month_close.active = True
+        month_close.closing_balance = closing_balance
+        month_close.closed_at = timezone.now()
+        month_close.closed_by_user = user
+        month_close.reopened_at = None
+        month_close.reopened_by_user = None
+        month_close.reopen_reason = ""
+        month_close.save(update_fields=[
+            "active", "closing_balance", "closed_at", "closed_by_user",
+            "reopened_at", "reopened_by_user", "reopen_reason", "updated_at",
+        ])
     from core.services import log_audit_event
     log_audit_event(
         "account_month_close", month_close.id, "close",
@@ -644,7 +698,7 @@ def _validate_common_payload(req: TransactionRequest, monthly_amount: Decimal, i
 
 
 @db_transaction.atomic
-def create_transaction_batch(req: TransactionRequest, audit_context=None) -> list[CashFlowEntry]:
+def create_transaction_batch(req: TransactionRequest, audit_context=None, user=None) -> list[CashFlowEntry]:
     """Cria um lote de lançamentos: único, parcelado ou recorrente, incluindo
     transferência interna quando a categoria informada é `is_internal`.
 
@@ -673,11 +727,15 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None) -> lis
             )
         except FinancialAccount.DoesNotExist as exc:
             raise ValueError("Conta destino inválida.") from exc
+        if not can_use_transfer_destination(user, counterparty_account.id):
+            raise ValueError("Acesso negado: conta destino não autorizada para transferência.")
 
     try:
         account = FinancialAccount.objects.select_related("owner", "institution").get(id=req.account_id)
     except FinancialAccount.DoesNotExist as exc:
         raise ValueError("Conta inválida.") from exc
+    if not can_access_account(user, account.id, "create"):
+        raise ValueError("Acesso negado: conta de origem não autorizada para transferência.")
 
     installments, monthly_amount = _parcelas_e_valor(req)
 
@@ -695,6 +753,7 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None) -> lis
             first_due_date=req.due_date,
             last_due_date=req.due_date,
             entry_count=0,
+            responsible_user=user,
         )
 
     original_description = description
@@ -903,10 +962,10 @@ def current_future_attachment_counts(entries: list[CashFlowEntry]) -> dict[int, 
     return mapping
 
 
-def _update_single(tx: CashFlowEntry, req: TransactionRequest) -> list[CashFlowEntry]:
+def _update_single(tx: CashFlowEntry, req: TransactionRequest, user=None) -> list[CashFlowEntry]:
     category = CashFlowCategory.objects.get(id=req.category_id)
     if category.is_internal:
-        return _convert_single_to_internal_transfer(tx, req)
+        return _convert_single_to_internal_transfer(tx, req, user)
 
     installments, monthly_amount = _parcelas_e_valor(req)
 
@@ -920,7 +979,7 @@ def _update_single(tx: CashFlowEntry, req: TransactionRequest) -> list[CashFlowE
     return [tx]
 
 
-def _convert_single_to_internal_transfer(tx: CashFlowEntry, req: TransactionRequest) -> list[CashFlowEntry]:
+def _convert_single_to_internal_transfer(tx: CashFlowEntry, req: TransactionRequest, user=None) -> list[CashFlowEntry]:
     if not req.counterparty_account_id:
         raise ValueError("Conta destino é obrigatória para categoria interna.")
     if req.counterparty_account_id == req.account_id:
@@ -931,7 +990,11 @@ def _convert_single_to_internal_transfer(tx: CashFlowEntry, req: TransactionRequ
         )
     except FinancialAccount.DoesNotExist as exc:
         raise ValueError("Conta destino inválida.") from exc
+    if not can_use_transfer_destination(user, counterparty_account.id):
+        raise ValueError("Acesso negado: conta destino não autorizada para transferência.")
     account = FinancialAccount.objects.select_related("owner", "institution").get(id=req.account_id)
+    if not can_access_account(user, account.id, "update"):
+        raise ValueError("Acesso negado: conta de origem não autorizada para transferência.")
 
     installments, monthly_amount = _parcelas_e_valor(req)
     validate_month_not_closed(account, req.due_date)
@@ -948,6 +1011,7 @@ def _convert_single_to_internal_transfer(tx: CashFlowEntry, req: TransactionRequ
             first_due_date=req.due_date,
             last_due_date=req.due_date,
             entry_count=2,
+            responsible_user=user,
         )
 
     original_description = f"Conta Destino: {_account_label(counterparty_account)}"
@@ -1113,7 +1177,7 @@ def _update_installment_or_recurring(
 
 
 def _update_internal_transfer(
-    tx: CashFlowEntry, req: TransactionRequest, entries: list[CashFlowEntry], scope: str,
+    tx: CashFlowEntry, req: TransactionRequest, entries: list[CashFlowEntry], scope: str, user=None,
 ) -> list[CashFlowEntry]:
     from reports.services import add_months
 
@@ -1133,6 +1197,8 @@ def _update_internal_transfer(
     counterparty_account = FinancialAccount.objects.select_related("owner", "institution").get(
         id=counterparty_account_id
     )
+    if not can_use_transfer_destination(user, counterparty_account.id):
+        raise ValueError("Acesso negado: conta destino não autorizada para transferência.")
     original_description = f"Conta Destino: {_account_label(counterparty_account)}"
     counterparty_description = f"Conta Origem: {_account_label(account)}"
 
@@ -1197,7 +1263,7 @@ def _update_internal_transfer(
 def update_transaction_operation(
     tx: CashFlowEntry, req: TransactionRequest, operation_scope: str = OPERATION_SCOPE_ALL,
     current_future_confirmation_token: str | None = None,
-    audit_context=None,
+    audit_context=None, user=None,
 ) -> list[CashFlowEntry]:
     """Atualiza um lançamento (ou o grupo ao qual pertence) respeitando o
     escopo escolhido: `all`, `single` ou `current_future`."""
@@ -1206,16 +1272,19 @@ def update_transaction_operation(
     entries = operation_entries(tx)
     if operation_scope == OPERATION_SCOPE_CURRENT_FUTURE:
         _assert_current_future_confirmation(tx.id, current_future_confirmation_token)
-    for entry in scoped_entries(tx, entries, operation_scope):
+    scoped = scoped_entries(tx, entries, operation_scope)
+    if tx.operation_type == OPERATION_INTERNAL_TRANSFER:
+        assert_transfer_entries_authorized(user, with_transfer_counterparts(scoped, entries), "update")
+    for entry in scoped:
         assert_entry_period_open(entry)
     operation_type = tx.operation_type or OPERATION_SINGLE
 
     if operation_type == OPERATION_INTERNAL_TRANSFER:
-        updated = _update_internal_transfer(tx, req, entries, operation_scope)
+        updated = _update_internal_transfer(tx, req, entries, operation_scope, user)
     elif operation_type in (OPERATION_INSTALLMENT, OPERATION_RECURRING):
         updated = _update_installment_or_recurring(tx, req, entries, operation_scope)
     else:
-        updated = _update_single(tx, req)
+        updated = _update_single(tx, req, user)
 
     for entry in updated:
         assert_entry_period_open(entry)
@@ -1239,7 +1308,7 @@ def delete_transaction_or_operation(
     tx: CashFlowEntry,
     operation_scope: str = OPERATION_SCOPE_ALL,
     current_future_confirmation_token: str | None = None,
-    audit_context=None,
+    audit_context=None, user=None,
 ) -> int:
     """Exclui um lançamento (ou o grupo/bloco escolhido pelo escopo)."""
     from core.services import log_audit_event
@@ -1251,6 +1320,7 @@ def delete_transaction_or_operation(
     operation_type = tx.operation_type or OPERATION_SINGLE
     if operation_type == OPERATION_INTERNAL_TRANSFER:
         scoped = with_transfer_counterparts(scoped, all_entries)
+        assert_transfer_entries_authorized(user, scoped, "delete")
 
     for entry in scoped:
         assert_entry_period_open(entry)
@@ -1381,14 +1451,12 @@ def updatable_accounts_for_user(user):
     )
 
 
-def counterparty_accounts_for_transfer():
-    """Contas elegíveis como destino de transferência interna: todas as
-    contas do sistema, sem restrição de titular (ver `transactions.access`:
-    a autorização de uma transferência é dada pela conta de origem)."""
+def counterparty_accounts_for_transfer(user):
+    """Contas destino que o usuário recebeu explicitamente."""
     return list(
         FinancialAccount.objects.select_related("owner", "institution").order_by(
             "owner__name", "institution__institution_name", "account_name"
-        )
+        ).filter(id__in=transfer_destination_access_ids(user))
     )
 
 
@@ -1478,6 +1546,10 @@ def build_transactions_view_context(user, get_params, session, *, request=None) 
     month_param = get_params.get("month")
     year_value = _parse_int(year_param) if year_param else session.get("tx_sel_year", today.year)
     month_value = _parse_int(month_param) if month_param else session.get("tx_sel_month", today.month)
+    if year_param and year_value is None:
+        raise ValueError("Ano informado é inválido.")
+    if month_param and month_value is None:
+        raise ValueError("Mês informado é inválido.")
     year, month = report_services.resolve_month_period(get_params.get("period"), year_value, month_value, today)
     session["tx_sel_year"] = year
     session["tx_sel_month"] = month
@@ -1620,7 +1692,7 @@ def build_transactions_view_context(user, get_params, session, *, request=None) 
         "accounts": options.accounts,
         "create_accounts": creatable_accounts_for_user(user),
         "update_accounts": updatable_accounts_for_user(user),
-        "counterparty_accounts": counterparty_accounts_for_transfer(),
+        "counterparty_accounts": counterparty_accounts_for_transfer(user),
         "current_owner_id": ctx.owner_id,
         "current_institution_id": ctx.institution_id,
         "current_account_id": ctx.account_id,

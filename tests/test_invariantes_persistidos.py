@@ -188,6 +188,22 @@ def test_fechamento_mensal_e_unico_por_conta_e_periodo(conta, usuario):
     assert AccountMonthClose.objects.filter(account=conta, year=2026, month=6).count() == 1
 
 
+def test_fechamento_mensal_reabre_o_registro_existente_apos_reabertura(conta, usuario):
+    """Refechar um período reaberto não pode violar a unicidade do banco."""
+    original = services.close_month(conta, 2026, 6, Decimal("500.00"), usuario)
+    services.reopen_month(conta, 2026, 6, "corrigir saldo", usuario)
+
+    reclosed = services.close_month(conta, 2026, 6, Decimal("625.00"), usuario)
+
+    assert reclosed.id == original.id
+    assert reclosed.active is True
+    assert reclosed.closing_balance == Decimal("625.00")
+    assert reclosed.reopened_at is None
+    assert reclosed.reopened_by_user is None
+    assert reclosed.reopen_reason == ""
+    assert AccountMonthClose.objects.filter(account=conta, year=2026, month=6).count() == 1
+
+
 def test_banco_recusa_mes_fora_da_faixa(conta, usuario):
     with pytest.raises(IntegrityError, match="ck_account_month_close_month_range"), transaction.atomic():
         AccountMonthClose.objects.create(

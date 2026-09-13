@@ -80,6 +80,10 @@ class BankOperation(models.Model):
     first_due_date = models.DateField(null=True, blank=True)
     last_due_date = models.DateField(null=True, blank=True)
     entry_count = models.IntegerField(default=0)
+    responsible_user = models.ForeignKey(
+        'accounts.AppUser', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='responsible_bank_operations',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -289,4 +293,3 @@ class AccountMonthClose(models.Model):
         if self.pk:
             self.updated_at = timezone.now()
         super().save(*args, **kwargs)
-

@@ -19,6 +19,11 @@ duas pontas de transferências preservam o agrupamento durante criação, ediç�
 realização, exclusão e conciliação. Operações compostas são atômicas: uma falha
 reverte o conjunto.
 
+Transferências internas exigem concessão explícita do usuário para a conta de
+destino. Recorrências internas guardam um responsável; a projeção global só as
+estende enquanto a concessão continuar válida. Legados sem responsável ficam
+pausados até atribuição administrativa auditada.
+
 ## Fechamento mensal
 
 O fechamento pertence a uma conta e a um mês. Enquanto estiver ativo, bloqueia

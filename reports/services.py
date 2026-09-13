@@ -43,6 +43,11 @@ from transactions.models import CashFlowEntry
 
 MONEY_QUANT = Decimal("0.01")
 _AMOUNT_FIELD: DecimalField = DecimalField(max_digits=14, decimal_places=2)
+MAX_SAFE_MONTH = date(9999, 11, 1)
+
+
+class InvalidMonthPeriodError(ValueError):
+    """Parâmetro explícito que não pode ser usado sem estourar cálculos mensais."""
 
 
 def to_decimal(value) -> Decimal:
@@ -64,7 +69,12 @@ def add_months(d: date, months: int) -> date:
 
 
 def month_bounds(year: int, month: int) -> tuple[date, date]:
-    start = date(year, month, 1)
+    try:
+        start = date(year, month, 1)
+    except (TypeError, ValueError) as exc:
+        raise InvalidMonthPeriodError("Período informado é inválido.") from exc
+    if start > MAX_SAFE_MONTH:
+        raise InvalidMonthPeriodError("Período informado excede o limite suportado.")
     return start, add_months(start, 1)
 
 
@@ -110,15 +120,23 @@ def enforce_system_start_month(month_start: date) -> date:
 
 
 def resolve_month_period(period_value: str | None, year_value: int | None, month_value: int | None, today: date) -> tuple[int, int]:
-    period_month = parse_month_input(period_value)
-    if period_month:
+    if period_value not in (None, ""):
+        period_month = parse_month_input(period_value)
+        if period_month is None:
+            raise InvalidMonthPeriodError("Período informado é inválido.")
+        month_bounds(period_month.year, period_month.month)
         resolved = enforce_system_start_month(period_month)
+        month_bounds(resolved.year, resolved.month)
         return resolved.year, resolved.month
-    year = year_value or today.year
-    month = month_value or today.month
-    if not 1 <= month <= 12:
-        month = today.month
+    if year_value is not None and (not isinstance(year_value, int) or isinstance(year_value, bool)):
+        raise InvalidMonthPeriodError("Ano informado é inválido.")
+    if month_value is not None and (not isinstance(month_value, int) or isinstance(month_value, bool)):
+        raise InvalidMonthPeriodError("Mês informado é inválido.")
+    year = today.year if year_value is None else year_value
+    month = today.month if month_value is None else month_value
+    month_bounds(year, month)
     resolved = enforce_system_start_month(date(year, month, 1))
+    month_bounds(resolved.year, resolved.month)
     return resolved.year, resolved.month
 
 
