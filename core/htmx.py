@@ -20,12 +20,13 @@ view que hoje devolve um `render()` parcial para `HX-Request`.
 """
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.contrib import messages
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest
 from django.template.loader import render_to_string
 
 #: Id do elemento que a navegação por filtro (`{% nav_filtro %}`) troca. Ver
@@ -59,6 +60,19 @@ def quer_fragmento(request: HttpRequest) -> bool:
     if not request.headers.get("HX-Request"):
         return False
     return request.headers.get("HX-Target") != ALVO_DA_NAVEGACAO
+
+
+def invalid_period_response(request: HttpRequest, message: str) -> HttpResponseBadRequest:
+    """Devolve 400 e torna o erro visível na navegação HTMX sem trocar a tela.
+
+    O HTMX não processa swaps OOB em respostas 400. Um gatilho específico
+    permite ao cliente mostrar o aviso e mantém intactos os filtros que a
+    pessoa acabou de preencher; não altera o tratamento global de erros 400.
+    """
+    response = HttpResponseBadRequest(message)
+    if request.headers.get("HX-Request"):
+        response["HX-Trigger"] = json.dumps({"app:invalid-period": {"message": message}})
+    return response
 
 
 class HtmxFlashMessagesMiddleware:

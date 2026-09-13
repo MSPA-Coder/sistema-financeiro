@@ -26,6 +26,7 @@ from transactions.models import CashFlowCategory, CashFlowEntry
 from transactions.services import (
     TransactionRequest,
     assert_entry_period_open,
+    assert_transfer_destination_authorized,
     create_transaction_batch,
     is_month_closed,
     list_categories,
@@ -229,6 +230,12 @@ def reconcile_line_with_entry(user, *, line_id, entry_id, audit_context=None) ->
         raise ValueError("Movimento não encontrado.") from exc
     if not can_access_account(user, entry.account_id, "update"):
         raise ValueError("Acesso negado para este movimento.")
+    # Uma transferência já realizada com a mesma data/valor não chama
+    # `realize_transaction` abaixo. Revalide aqui para que esse atalho de
+    # conciliação não contorne uma concessão de destino posteriormente
+    # revogada.
+    if entry.operation_type == "internal_transfer":
+        assert_transfer_destination_authorized(user, entry, "update")
 
     if line.status != LINE_STATUS_NEW or line.matched_entry_id is not None:
         raise ValueError("Linha de extrato já conciliada ou ignorada.")
@@ -273,7 +280,7 @@ def reconcile_line_with_entry(user, *, line_id, entry_id, audit_context=None) ->
             entry,
             realized_date=line.statement_date,
             realized_amount=line_value,
-            audit_context=audit_context,
+            audit_context=audit_context, user=user,
         )
 
     return line
@@ -289,7 +296,7 @@ def undo_reconciliation(user, *, line_id) -> BankStatementLine:
 
     entry = line.matched_entry
     if entry.status == STATUS_REALIZED:
-        unrealize_transaction(entry)
+        unrealize_transaction(entry, user=user)
 
     line.matched_entry = None
     line.status = LINE_STATUS_NEW
@@ -341,7 +348,7 @@ def create_entry_from_line(user, *, line_id, category_id, audit_context=None) ->
         realized_date=line.statement_date,
         realized_amount=value,
     )
-    entries = create_transaction_batch(req, audit_context=audit_context)
+    entries = create_transaction_batch(req, audit_context=audit_context, user=user)
 
     line.matched_entry = entries[0]
     line.status = LINE_STATUS_RECONCILED

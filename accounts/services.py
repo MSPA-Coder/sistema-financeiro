@@ -19,6 +19,7 @@ from .models import (
     UserAccountVisibility,
     UserOwnerAccess,
     UserPermission,
+    UserTransferDestinationAccess,
 )
 from .password_validators import current_min_length
 
@@ -725,3 +726,28 @@ def update_user_account_visibility(
             hide_from_dashboard=account_id in dashboard_ids,
             hide_from_projections=account_id in projection_ids,
         )
+
+
+def transfer_destination_access_ids(user: AppUser | None) -> set[int]:
+    if not isinstance(user, AppUser) or user.pk is None:
+        return set()
+    return set(UserTransferDestinationAccess.objects.filter(user_id=user.pk).values_list("destination_account_id", flat=True))
+
+
+def can_use_transfer_destination(user: AppUser | None, account_id: int | None) -> bool:
+    return bool(user and account_id and UserTransferDestinationAccess.objects.filter(
+        user=user, destination_account_id=account_id
+    ).exists())
+
+
+def save_transfer_destination_accesses(user: AppUser, account_ids: set[int]) -> None:
+    """Substitui a matriz por ids que realmente existem; POST adulterado não cria grants."""
+    from banking.models import FinancialAccount
+
+    allowed_ids = set(FinancialAccount.objects.filter(id__in=account_ids).values_list("id", flat=True))
+    existing = transfer_destination_access_ids(user)
+    UserTransferDestinationAccess.objects.filter(user=user, destination_account_id__in=existing - allowed_ids).delete()
+    UserTransferDestinationAccess.objects.bulk_create([
+        UserTransferDestinationAccess(user=user, destination_account_id=account_id)
+        for account_id in allowed_ids - existing
+    ])

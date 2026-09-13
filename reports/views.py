@@ -15,7 +15,7 @@ from core.domain.finance import (
     VIEW_REALIZED,
     normalize_view_mode,
 )
-from core.htmx import quer_fragmento
+from core.htmx import invalid_period_response, quer_fragmento
 from core.permissions import permission_required
 from core.services import system_start_date
 
@@ -118,12 +118,15 @@ def upcoming_movements_view(request):
 def account_position_view(request):
     today = date.today()
     view_mode = normalize_view_mode(request.GET.get("mode"), default=VIEW_REALIZED)
-    year, month = services.resolve_month_period(
-        request.GET.get("period"),
-        _parse_int(request.GET.get("year")),
-        _parse_int(request.GET.get("month")),
-        today,
-    )
+    raw_year, raw_month = request.GET.get("year"), request.GET.get("month")
+    if (raw_year and _parse_int(raw_year) is None) or (raw_month and _parse_int(raw_month) is None):
+        return invalid_period_response(request, "Período informado é inválido.")
+    try:
+        year, month = services.resolve_month_period(
+            request.GET.get("period"), _parse_int(raw_year), _parse_int(raw_month), today,
+        )
+    except ValueError as exc:
+        return invalid_period_response(request, str(exc))
     selected_month = date(year, month, 1)
     selected_period = services.month_input_value(selected_month)
     today_period = services.month_input_value(date(today.year, today.month, 1))

@@ -419,6 +419,23 @@
         document.dispatchEvent(new CustomEvent('htmx:afterSwap'));
     }
 
+    /* Uma URL de período inválida continua sendo 400. O HTMX recebe o
+       `HX-Trigger` mesmo nesse status, mas não processa OOB swaps de erros;
+       este é o único caso permitido a mostrar a mensagem sem trocar a área
+       de conteúdo e, assim, sem apagar o formulário que a pessoa preencheu.
+       O texto entra como JSON em atributo e é exibido pelo componente comum,
+       sem ser interpretado como HTML. */
+    document.addEventListener('app:invalid-period', function (event) {
+        var message = event.detail && event.detail.message;
+        if (typeof message !== 'string' || !message) return;
+        var flashMessages = document.getElementById('flashMessages');
+        if (!flashMessages) return;
+        flashMessages.setAttribute('data-sa-avisos', JSON.stringify([
+            { mensagem: message, severidade: 'error' }
+        ]));
+        _announceServerAvisos();
+    });
+
     /* `#flashMessages` chega nas respostas htmx via `hx-swap-oob` (ver
        core/htmx.py), e trocas fora de banda disparam `htmx:oobAfterSwap`,
        não `htmx:afterSwap` - são eventos distintos, e o segundo (que

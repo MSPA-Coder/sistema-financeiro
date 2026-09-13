@@ -11,6 +11,7 @@ import pytest
 from django.http import HttpResponseRedirect
 from django.test import RequestFactory, override_settings
 
+from core import views as core_views
 from core.domain.finance import (
     OPERATION_SCOPE_ALL,
     OPERATION_SCOPE_CURRENT_FUTURE,
@@ -37,6 +38,57 @@ def test_close_month_cross_owner_does_not_create_close():
         services.close_month.__wrapped__(account, 2026, 8, Decimal("10.00"), object())
 
     create.assert_not_called()
+
+
+def test_monthly_close_form_accounts_obeys_the_selected_list_filter():
+    accounts = [SimpleNamespace(id=1), SimpleNamespace(id=2)]
+
+    assert core_views._monthly_close_form_accounts(accounts, None) == accounts
+    assert core_views._monthly_close_form_accounts(accounts, 2) == [accounts[1]]
+
+
+def test_monthly_close_template_keeps_the_filtered_account_selected_in_the_form():
+    template = (Path(__file__).resolve().parents[1] / "templates/settings/monthly_close.html").read_text(
+        encoding="utf-8",
+    )
+
+    assert (
+        'value="{{ account.id }}" {% if monthly_close_filters.account_id == account.id %}selected{% endif %}'
+        in template
+    )
+
+
+def test_monthly_close_redirect_preserves_the_list_filters():
+    request = RequestFactory().post(
+        "/settings/month-close/close/",
+        data={
+            "filter_account_id": "8",
+            "filter_year": "2026",
+            "filter_month": "5",
+            "filter_status": "reopened",
+        },
+    )
+
+    response = core_views._monthly_close_redirect(request)
+
+    assert response.url == (
+        "/settings/monthly-close/?filter_account_id=8&filter_year=2026&"
+        "filter_month=5&filter_status=reopened"
+    )
+
+
+def test_monthly_close_redirect_uses_filters_from_the_post_url_as_fallback():
+    request = RequestFactory().post(
+        "/settings/month-close/close/?filter_account_id=8&filter_year=2026&"
+        "filter_month=5&filter_status=reopened",
+    )
+
+    response = core_views._monthly_close_redirect(request)
+
+    assert response.url == (
+        "/settings/monthly-close/?filter_account_id=8&filter_year=2026&"
+        "filter_month=5&filter_status=reopened"
+    )
 
 
 def test_reopen_month_cross_owner_does_not_load_or_change_close():

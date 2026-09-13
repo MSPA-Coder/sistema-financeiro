@@ -171,6 +171,27 @@ class UserAccountVisibility(models.Model):
         ]
 
 
+class UserTransferDestinationAccess(models.Model):
+    """Concessão explícita para usar uma conta como destino de transferência."""
+
+    user = models.ForeignKey(AppUser, on_delete=models.CASCADE, related_name="transfer_destination_accesses")
+    destination_account = models.ForeignKey(
+        "banking.FinancialAccount", on_delete=models.PROTECT, related_name="transfer_destination_accesses"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "user_transfer_destination_access"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "destination_account"],
+                name="uq_user_transfer_destination_access",
+            ),
+        ]
+        indexes = [models.Index(fields=["user", "destination_account"])]
+
+
 class LoginLockout(models.Model):
     """Controle persistente de tentativas de login por usuário/IP."""
 

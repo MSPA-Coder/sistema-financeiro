@@ -63,7 +63,7 @@
 {% block content %}
 <div class="section-card">
     <h3>Fechamento Mensal</h3>
-    <form method="post" action="{% url 'core:settings_close_month' %}" class="btn-group monthly-close-form" data-ui="monthly-close-form">
+    <form method="post" action="{% url 'core:settings_close_month' %}{% if monthly_close_filter_query %}?{{ monthly_close_filter_query }}{% endif %}" class="btn-group monthly-close-form" data-ui="monthly-close-form">
         {% csrf_token %}
         <input type="hidden" name="filter_account_id" value="{{ monthly_close_filters.account_id|default:'' }}">
         <input type="hidden" name="filter_year" value="{{ monthly_close_filters.year|default:'' }}">
@@ -73,8 +73,8 @@
             <label>Conta</label>
             <select name="account_id" class="form-control" required>
                 <option value="">Selecione...</option>
-                {% for account in close_accounts %}
-                <option value="{{ account.id }}">{{ account.owner.name }} / {{ account.institution.institution_name }} / {{ account.account_name }}</option>
+                {% for account in monthly_close_form_accounts %}
+                <option value="{{ account.id }}" {% if monthly_close_filters.account_id == account.id %}selected{% endif %}>{{ account.owner.name }} / {{ account.institution.institution_name }} / {{ account.account_name }}</option>
                 {% endfor %}
             </select>
         </div>

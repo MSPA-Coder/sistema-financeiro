@@ -93,7 +93,7 @@ def _tela_com_alvo(alvo_id: int = 1):
 
 
 @pytest.mark.parametrize(
-    "acao", ["save_function_permissions", "save_owner_access", "apply_profile"]
+    "acao", ["save_function_permissions", "save_owner_access", "save_transfer_destinations", "assign_operation_responsible", "apply_profile"]
 )
 def test_conceder_privilegio_exige_administrator(acao):
     """As tres acoes que concedem privilegio recusam quem nao e administrador."""

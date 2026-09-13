@@ -73,6 +73,30 @@ Restaurações são administrativas: pare a aplicação, preserve o estado atual
 confirme o destino e use um procedimento já ensaiado. Nunca execute
 `docker compose down -v` em dados que devam ser preservados.
 
+## Rollout de concessões para transferências internas
+
+As migrations `accounts.0009_user_transfer_destination_access` e
+`transactions.0003_bankoperation_responsible_user` não redistribuem nem
+concedem acesso a dados existentes. Depois de aplicar a versão em uma janela
+operacional planejada, um administrator deve abrir **Segurança > Permissões**
+e registrar, para cada pessoa, apenas as contas que ela pode usar como destino
+de transferência. Administradores e superusuários também precisam dessa
+concessão explícita.
+
+Revogar uma concessão bloqueia imediatamente criar, converter, editar,
+realizar, excluir e conciliar transferências que atinjam aquele destino. O
+histórico continua visível por meio da conta de origem para quem já tem esse
+acesso. Antes de revogar, confirme que não há operação em andamento que a
+pessoa ainda precise alterar.
+
+Recorrências internas antigas não recebem responsável automaticamente e não
+geram novas ocorrências até regularização. Na mesma tela, atribua um
+responsável somente após conferir que ele está ativo, tem a permissão de criar
+lançamentos, pode criar na origem e possui concessão para todos os destinos da
+operação. A ação fica na auditoria; repita a verificação depois do rollout
+consultando os eventos `app_user_transfer_destination_access` e
+`bank_operation / assign_responsible`.
+
 ## VPS
 
 A implantação atual usa Ubuntu 24.04 em VPS Oracle. O Nginx publica

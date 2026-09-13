@@ -6,6 +6,7 @@ from datetime import date, timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db import transaction
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.http import urlencode
@@ -19,6 +20,7 @@ from accounts.services import (
     PROFILE_DEFINITIONS,
     account_visibility_options,
     allowed_permission_keys,
+    can_use_transfer_destination,
     create_managed_user,
     delete_managed_user,
     list_manageable_users,
@@ -30,10 +32,13 @@ from accounts.services import (
     reset_managed_user_password,
     save_function_permissions,
     save_owner_access_matrix,
+    save_transfer_destination_accesses,
+    transfer_destination_access_ids,
     update_managed_user,
     update_user_account_visibility,
     user_mutation_block_message,
 )
+from banking.models import FinancialAccount
 from core.context_processors import primeira_tela_permitida
 from core.domain.identity import USER_TYPE_ADMINISTRATOR, USER_TYPE_LABELS
 from core.domain.settings import (
@@ -64,7 +69,7 @@ from core.services import (
     update_user_table_scroll_rows,
     update_user_ui_theme,
 )
-from transactions.models import AccountMonthClose
+from transactions.models import AccountMonthClose, BankOperation, CashFlowEntry
 from transactions.recurring_projection import ensure_recurring_projection_horizon
 from transactions.services import close_month, reopen_month
 
@@ -276,6 +281,76 @@ def permissions_view(request):
                 user=request.user,
             )
             messages.success(request, "Acessos por titular atualizados.")
+        elif action == 'save_transfer_destinations':
+            # A matriz e sua trilha de auditoria formam um único ato
+            # administrativo. Sem isso, uma falha ao auditar deixaria um
+            # privilégio concedido sem a evidência que explica sua origem.
+            with transaction.atomic():
+                old_ids = sorted(transfer_destination_access_ids(selected_user))
+                account_ids = {
+                    account.id for account in FinancialAccount.objects.all()
+                    if request.POST.get(f'transfer_destination_{account.id}') == 'on'
+                }
+                save_transfer_destination_accesses(selected_user, account_ids)
+                log_audit_event(
+                    "app_user_transfer_destination_access", selected_user.id, "update",
+                    old_values={"account_ids": old_ids},
+                    new_values={"account_ids": sorted(transfer_destination_access_ids(selected_user))},
+                    user=request.user,
+                )
+            messages.success(request, "Destinos de transferência atualizados.")
+        elif action == 'assign_operation_responsible':
+            try:
+                raw_operation_id = request.POST.get('operation_id', '')
+                operation_id = int(raw_operation_id) if raw_operation_id.isascii() and raw_operation_id.isdecimal() and len(raw_operation_id) <= 19 else None
+                if operation_id is not None and not 0 < operation_id <= 9223372036854775807:
+                    operation_id = None
+            except (TypeError, ValueError):
+                operation_id = None
+
+            with transaction.atomic():
+                operation = (
+                    BankOperation.objects.select_for_update()
+                    .filter(id=operation_id, operation_type='internal_transfer', responsible_user__isnull=True)
+                    .first()
+                    if operation_id is not None else None
+                )
+                entries = list(CashFlowEntry.objects.filter(bank_operation=operation)) if operation else []
+                origins = [entry for entry in entries if entry.source_entry_id is None]
+                destinations = [entry for entry in entries if entry.source_entry_id is not None]
+                valid_responsible = (
+                    operation is not None
+                    and bool(entries)
+                    and all(entry.is_recurring for entry in entries)
+                    and bool(origins)
+                    and len(origins) == len(destinations)
+                    and selected_user.is_active
+                    and selected_user.has_perm('transactions.create')
+                    and all(can_use_transfer_destination(selected_user, entry.account_id) for entry in destinations)
+                )
+                if valid_responsible:
+                    from banking.services import can_access_account
+
+                    valid_responsible = all(
+                        can_access_account(selected_user, entry.account_id, 'create') for entry in origins
+                    )
+
+                if not valid_responsible:
+                    messages.warning(
+                        request,
+                        "Atribuição recusada: a recorrência exige usuário ativo, permissão de inclusão, "
+                        "acesso à origem e concessão para todos os destinos.",
+                    )
+                else:
+                    old_user_id = operation.responsible_user_id
+                    operation.responsible_user = selected_user
+                    operation.save(update_fields=['responsible_user', 'updated_at'])
+                    log_audit_event(
+                        "bank_operation", operation.id, "assign_responsible",
+                        old_values={"responsible_user_id": old_user_id},
+                        new_values={"responsible_user_id": selected_user.id}, user=request.user,
+                    )
+                    messages.success(request, "Responsável da recorrência atribuído.")
         elif action == 'apply_profile':
             profile_key = request.POST.get('profile_key', '')
             allowed_keys = profile_permission_keys(profile_key)
@@ -313,6 +388,11 @@ def _render_permissions(request, users, selected_user, can_manage_users, **extra
         'permission_definitions': PERMISSION_DEFINITIONS,
         'allowed_permission_keys': allowed_permission_keys(selected_user) if selected_user else set(),
         'owner_access_by_owner_id': owner_access_map(selected_user) if selected_user else {},
+        'transfer_destination_access_ids': transfer_destination_access_ids(selected_user) if selected_user else set(),
+        'transfer_destination_accounts': FinancialAccount.objects.select_related('owner', 'institution').order_by('owner__name', 'institution__institution_name', 'account_name'),
+        'legacy_transfer_operations': BankOperation.objects.filter(
+            operation_type='internal_transfer', responsible_user__isnull=True, entries__is_recurring=True,
+        ).distinct().order_by('id'),
         'protect_self_permissions_manage': bool(selected_user and selected_user.id == request.user.id),
         'permission_sections': permission_catalog_sections(permission_groups),
         'summary': permission_summary(selected_user),
@@ -432,13 +512,34 @@ def _monthly_close_filters(request, account_ids: list[int]) -> dict[str, int | s
 
 def _monthly_close_redirect(request):
     """Retorna à lista preservando somente os filtros vindos da própria tela."""
-    query = {
-        name: request.POST.get(name, "")
-        for name in _MONTHLY_CLOSE_FILTER_NAMES
-        if request.POST.get(name, "")
-    }
+    query = {}
+    for name in _MONTHLY_CLOSE_FILTER_NAMES:
+        value = request.POST.get(name)
+        if value is None:
+            value = request.GET.get(name, "")
+        if value:
+            query[name] = value
     url = reverse("core:settings_monthly_close")
     return redirect(f"{url}?{urlencode(query)}" if query else url)
+
+
+def _monthly_close_filter_query(filters: dict[str, int | str | None]) -> str:
+    """Serializa os filtros válidos para ações POST da tela."""
+    values = {
+        "filter_account_id": filters["account_id"],
+        "filter_year": filters["year"],
+        "filter_month": filters["month"],
+        "filter_status": filters["status"],
+    }
+    return urlencode({name: value for name, value in values.items() if value not in (None, "")})
+
+
+def _monthly_close_form_accounts(close_accounts, selected_account_id: int | None):
+    """Restringe o card de fechamento à conta escolhida no filtro da lista."""
+    if selected_account_id is None:
+        return close_accounts
+    return [account for account in close_accounts if account.id == selected_account_id]
+
 
 @login_required
 @permission_required('settings.monthly_close.manage')
@@ -446,9 +547,9 @@ def settings_monthly_close_view(request):
     from banking.models import FinancialAccount
     from banking.services import accessible_account_ids
 
-    close_accounts = FinancialAccount.objects.select_related("owner", "institution").filter(
+    close_accounts = list(FinancialAccount.objects.select_related("owner", "institution").filter(
         id__in=accessible_account_ids(request.user, "update")
-    )
+    ))
     account_ids = [account.id for account in close_accounts]
     filters = _monthly_close_filters(request, account_ids)
     recent_closes = AccountMonthClose.objects.select_related(
@@ -469,10 +570,14 @@ def settings_monthly_close_view(request):
 
     return render(request, "settings/monthly_close.html", {
         "close_accounts": close_accounts,
+        "monthly_close_form_accounts": _monthly_close_form_accounts(
+            close_accounts, filters["account_id"],
+        ),
         "recent_month_closes": recent_closes,
         "monthly_close_year_options": range(2000, 2101),
         "monthly_close_month_options": range(1, 13),
         "monthly_close_filters": filters,
+        "monthly_close_filter_query": _monthly_close_filter_query(filters),
         "monthly_close_default_month": previous_month.month,
         "monthly_close_default_year": previous_month.year,
     })

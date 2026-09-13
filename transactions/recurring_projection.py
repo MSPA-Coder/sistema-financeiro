@@ -33,6 +33,8 @@ from itertools import groupby
 
 from django.db import connection, transaction
 
+from accounts.services import can_use_transfer_destination
+from banking.services import can_access_account
 from core.domain.finance import (
     OPERATION_INSTALLMENT,
     OPERATION_RECURRING,
@@ -289,6 +291,23 @@ def _extend_operation(entries: list[CashFlowEntry], horizon_end: date, today: da
     return generated_count
 
 
+def _can_extend_internal_transfer(entries: list[CashFlowEntry]) -> bool:
+    """Legado sem mandato ou grant revogado permanece histórico, sem novas pernas."""
+    operation = entries[0].bank_operation
+    if operation is None or operation.responsible_user is None:
+        return False
+    user = operation.responsible_user
+    if not user.is_active or not user.has_perm("transactions.create"):
+        return False
+    latest_due_date = max(entry.due_date for entry in entries)
+    templates = [entry for entry in entries if entry.due_date == latest_due_date]
+    origins = [entry for entry in templates if entry.source_entry_id is None]
+    destinations = [entry for entry in templates if entry.source_entry_id is not None]
+    return bool(origins and destinations) and all(
+        can_access_account(user, origin.account_id, "create") for origin in origins
+    ) and all(can_use_transfer_destination(user, destination.account_id) for destination in destinations)
+
+
 @transaction.atomic
 def ensure_recurring_projection_horizon(
     *,
@@ -308,6 +327,7 @@ def ensure_recurring_projection_horizon(
             bank_operation__isnull=False,
         )
         .exclude(operation_type=OPERATION_INSTALLMENT)
+        .select_related("bank_operation__responsible_user")
         .order_by("bank_operation_id", "due_date", "id")
     )
 
@@ -315,6 +335,8 @@ def ensure_recurring_projection_horizon(
     processed_operations = 0
     for _bank_operation_id, group in groupby(all_entries, key=lambda e: e.bank_operation_id):
         entries = list(group)
+        if entries[0].operation_type == "internal_transfer" and not _can_extend_internal_transfer(entries):
+            continue
         generated_count += _extend_operation(entries, horizon_end, base_date)
         processed_operations += 1
 

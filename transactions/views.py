@@ -18,7 +18,7 @@ from core.domain.finance import (
     STATUS_REALIZED,
     VALID_OPERATION_SCOPES,
 )
-from core.htmx import quer_fragmento
+from core.htmx import invalid_period_response, quer_fragmento
 from core.permissions import permission_required
 from core.services import audit_request_context, log_audit_event
 from transactions import access
@@ -154,9 +154,12 @@ def _transaction_request_from_post(post) -> TransactionRequest:
 @permission_required("transactions.view")
 def transactions_view(request):
     """Lista de transações com filtros, saldo corrente e resumo (HTMX)."""
-    context = build_transactions_view_context(
-        request.user, request.GET, request.session, request=request
-    )
+    try:
+        context = build_transactions_view_context(
+            request.user, request.GET, request.session, request=request
+        )
+    except ValueError as exc:
+        return invalid_period_response(request, str(exc))
     show_balance_column = not context["dashboard_drilldown"]
     show_actions_column = not context["dashboard_drilldown"]
     table_columns = 6 + (1 if context["view_mode"] == STATUS_REALIZED else 0) \
@@ -213,7 +216,7 @@ def mark_realized(request, tx_id):
             entry,
             realized_date,
             realized_amount,
-            audit_context=audit_request_context(request),
+            audit_context=audit_request_context(request), user=request.user,
         )
         messages.success(request, "Lançamento marcado como realizado.")
     except ValueError as e:
@@ -251,7 +254,7 @@ def _transaction_new_post(request):
         return _redirect_to_transactions(request)
 
     try:
-        entries = create_transaction_batch(req, audit_context=audit_request_context(request))
+        entries = create_transaction_batch(req, audit_context=audit_request_context(request), user=request.user)
         messages.success(request, "Lançamento(s) criado(s) com sucesso.")
         duplicates = possible_duplicates_for_created_entries(req, entries)
         if duplicates:
@@ -323,7 +326,7 @@ def _transaction_edit_post(request, tx):
             req,
             scope,
             request.POST.get("current_future_confirmation_token"),
-            audit_context=audit_request_context(request),
+            audit_context=audit_request_context(request), user=request.user,
         )
         messages.success(request, "Lançamento(s) atualizado(s) com sucesso.")
     except ValueError as e:
@@ -363,7 +366,7 @@ def transaction_delete(request, tx_id):
             tx,
             scope,
             request.POST.get("current_future_confirmation_token"),
-            audit_context=audit_request_context(request),
+            audit_context=audit_request_context(request), user=request.user,
         )
         messages.success(request, "Lançamento excluído com sucesso.")
     except ValueError as e:
