@@ -165,9 +165,8 @@ jobs:
             require_absent curl
             require_absent pg_dump
             require_absent gcc
-            # A imagem servida nao contem pip (ver o Dockerfile). O BUILD do
-            # estagio runtime executa `python -m pip check` imediatamente antes
-            # de remove-lo, sobre o mesmo conjunto de dependencias.
+            # A imagem servida nao contem pip (ver o Dockerfile); a coerencia
+            # das dependencias vem garantida pelo `uv.lock`.
           '
 
           runtime_container="$(docker create "$runtime_image")"

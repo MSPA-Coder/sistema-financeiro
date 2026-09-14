@@ -2,12 +2,12 @@
 
 ## Ambiente local
 
-Use Docker Compose como interface do projeto. Não instale Python, PostgreSQL,
-Ruff, pytest ou dependências da aplicação no host.
+Use Docker Compose como interface do projeto. No host, o único Python do
+projeto é o venv opcional do laço rápido (ver `AGENTS.md`); nada vai para o
+Python global, e PostgreSQL roda só em contêiner.
 
-Prepare `.env.docker`, provisione os secrets de Django e PostgreSQL e forneça o
-token de leitura de SharedAuth conforme o [README](../README.md). Para iniciar
-o modo de desenvolvimento:
+Prepare `.env.docker` e provisione os secrets de Django e PostgreSQL conforme o
+[README](../README.md). Para iniciar o modo de desenvolvimento:
 
 ```powershell
 docker compose --env-file .env.docker -f compose.yaml -f compose.dev.yaml up --build -d

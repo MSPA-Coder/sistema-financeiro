@@ -2,10 +2,11 @@
 
 > **A frota é este projeto, o MegaSena e o ControleRendaVariavel.** Os três
 > compartilham o `SharedAuth`, o mesmo formato de Compose e Dockerfile e o mesmo
-> portão `quality`; servem de referência uns aos outros, e uma divergência entre
-> eles é candidata a correção. Este é o único dos três em Django — os outros dois
-> são Flask —, então a semelhança que se busca é de **operação e contrato**, não
-> de framework.
+> portão `quality`, e servem de referência uns aos outros. Divergir é permitido
+> quando for uma escolha consciente: experimente num deles e, se der certo, leve
+> aos outros. Este é o único dos três em Django — os outros dois são Flask —,
+> então a semelhança que se busca é de **operação e contrato**, não de
+> framework.
 >
 > **O ConfortoTermico não está na frota** e segue trilha própria desde
 > 07/09/2026: a arquitetura dele é livre, e diferença em relação a ele **não é
@@ -29,9 +30,10 @@ Antes de alterar, leia a fonte pertinente:
 - `compose.yaml`, `compose.dev.yaml` e `Dockerfile`: execução efetiva;
 - models, migrations e testes: schema e controles automatizados.
 
-Preserve alterações locais não relacionadas. O fluxo usual é
-`urls -> views -> services -> models`; não introduza uma camada de repositories.
-Consultas vivem nos services e, quando triviais, na view.
+Preserve alterações locais não relacionadas. O fluxo atual é
+`urls -> views -> services -> models`, sem camada de repositories: consultas
+vivem nos services e, quando triviais, na view. Uma camada nova é bem-vinda se
+simplificar o código de verdade — registre o motivo em `docs/architecture.md`.
 
 ## Comandos válidos
 
@@ -112,13 +114,6 @@ do projeto no Python global do Windows.
 no commit que o `uv.lock` registra. O repositório é **público**: o build precisa
 só de `git` no PATH, nenhuma credencial.
 
-A engrenagem de token que existia aqui — secret do BuildKit, `git config
-url...insteadOf` para injetar um PAT, e `.secrets/github_token.txt` — **saiu em
-08/09/2026** (achado L23 do `LEVANTAMENTO_2026-09.md`). Era herança da época em
-que o repositório era privado, e o efeito que importa é fora deste arquivo:
-enquanto qualquer build da frota exigisse o token, ele tinha de existir no VPS
-também.
-
 Aqui o pacote entra **sem** o extra `[flask]`, de propósito: só o núcleo, que é
 Python puro. O extra traria Flask, Flask-WTF e Flask-Limiter para dentro de uma
 imagem Django, e o `uv.lock` registra essa escolha.
@@ -195,8 +190,7 @@ Senha redefinida por um administrador vale até o primeiro acesso:
 `MustChangePasswordMiddleware` desvia **toda** requisição para
 `/change-password/` enquanto ela estiver ligada — não só o login. O tamanho da
 senha sorteada vem da política em Configurações > Parâmetros, nunca do padrão
-da biblioteca. O token de leitura usado no build é secret do BuildKit e nunca deve
-entrar em imagem, log ou commit.
+da biblioteca.
 
 ## Validação proporcional
 
@@ -205,14 +199,13 @@ busca por referências obsoletas. Para template, HTMX ou JavaScript, percorra a
 tela afetada. Para regra, rota ou service, execute testes focados e o fluxo
 completo. Para autenticação, autorização, sessão ou CSRF, execute `quality`.
 Para schema, valide backup e revise a migration; o bootstrap em PostgreSQL
-vazio deixou de ser manual, porque o  aplica a cadeia inteira a um
-banco vazio a cada execucao. Para
-dependências, Dockerfile ou Compose, reconstrua a imagem, valide o Compose e
-faça smoke test da pilha.
+vazio não é passo manual, porque o `quality` aplica a cadeia inteira de
+migrações a um banco vazio a cada execução. Para dependências, Dockerfile ou
+Compose, reconstrua a imagem, valide o Compose e faça smoke test da pilha.
 
 A CI valida Compose, Ruff, pytest, dependências Python, imagem operacional e
-fronteira de escrita do runtime. O Dependabot acompanha `pip`, Docker e GitHub
-Actions. Não enfraqueça verificações de vulnerabilidade para fazer uma falha
+fronteira de escrita do runtime. O Dependabot acompanha o `uv.lock`, a imagem
+base e as GitHub Actions. Não enfraqueça verificações de vulnerabilidade para fazer uma falha
 passar; corrija a dependência/base ou registre uma exceção específica e
 justificada quando não houver correção.
 
@@ -230,29 +223,21 @@ qualquer operação de produção.
 As versões suportadas são Python 3.14, PostgreSQL 17 e **Django 6.1**; faixas
 completas ficam em `pyproject.toml` e as versões exatas em `uv.lock`.
 
-**O build é reprodutível desde 08/09/2026** (fase F3 do
-`LEVANTAMENTO_2026-09.md`). As dependências vêm do `uv.lock`, com versão e hash
-SHA-256 fixados, e a imagem base está presa por digest. O que ainda flutua é só
-a camada de pacotes do sistema, e isso é deliberado: o `apt-get upgrade` do
-`Dockerfile` existe para aplicar correção de CVE do Debian antes de a imagem
-oficial ser republicada.
+O build é reprodutível: as dependências vêm do `uv.lock`, com versão e hash
+SHA-256 fixados, e a imagem base está presa por digest. Só a camada de pacotes
+do sistema flutua, de propósito: o `apt-get upgrade` do `Dockerfile` aplica
+correção de CVE do Debian antes de a imagem oficial ser republicada.
 
-**Como o Django 6.1 entrou.** O Dependabot alargou o teto de `<6` para `<7`, e
-a partir daí qualquer rebuild instalaria a 6.x — silenciosamente, porque não
-havia lock. O lock tornou a escolha visível e ela foi adotada de propósito, com
-a suíte inteira passando. A subida atravessa uma major: ao mexer em qualquer
-coisa que dependa de comportamento do framework, confira contra as notas de
-versão do Django 6 em vez de assumir a semântica da 5.2.
+O projeto subiu do Django 5.2 para o 6.1 em 08/09/2026, com a suíte inteira
+passando. Ao mexer em algo que dependa de comportamento do framework, confira
+as notas de versão do Django 6 em vez de assumir a semântica da 5.2.
 
 Ao atualizar dependências, alargue o teto e preserve o piso compatível já
-verificado; depois rode `uv lock` e commite o resultado — o build usa
-`uv sync --locked`, que **reprova** se o lock não corresponder ao
-`pyproject.toml`.
-
-Ao atualizar dependências, alargue o teto e preserve o piso compatível já
-verificado. Só eleve o piso quando uma incompatibilidade for comprovada e a
-nova base mínima tiver sido validada. Reconstrua do zero, execute `quality` e
-valide o fluxo afetado.
+verificado; só eleve o piso quando uma incompatibilidade for comprovada. Depois
+rode `uv lock` e commite o resultado — o build usa `uv sync --locked`, que
+**reprova** se o lock não corresponder ao `pyproject.toml`. O Dependabot
+acompanha o `uv.lock` pelo ecossistema `uv`. Reconstrua do zero, execute
+`quality` e valide o fluxo afetado.
 
 Ao concluir uma tarefa, informe comandos executados no host e nos contêineres,
 resultados e validações omitidas com o motivo.
