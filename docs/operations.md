@@ -6,11 +6,8 @@ O Compose exige os arquivos secretos `django_secret_key` e
 `postgres_password`. Por padrão ficam em `.secrets/`;
 `COMPOSE_SECRETS_DIRECTORY` altera esse diretório.
 
-O `github_token.txt` que o build exigia **saiu em 08/09/2026**: o SharedAuth é
-público e a credencial era herança de quando não era. Se o arquivo ainda
-existir na sua máquina ou no VPS, pode ser apagado, e o PAT correspondente,
-revogado no GitHub. Certificados locais opcionais entram no build por
-`.certs/local-root-ca.crt`. Esses caminhos não são versionados.
+Certificados locais opcionais entram no build por `.certs/local-root-ca.crt`.
+Esses caminhos não são versionados.
 
 Variáveis principais:
 
@@ -101,8 +98,8 @@ consultando os eventos `app_user_transfer_destination_access` e
 
 A implantação atual usa Ubuntu 24.04 em VPS Oracle. O Nginx publica
 `https://bancario-mspa.duckdns.org`; a aplicação e o PostgreSQL permanecem em
-loopback nas portas `5201` e `5202`. A configuração versionada do proxy está em
-`deploy/nginx/controle-bancario.conf`.
+loopback nas portas `5201` e `5202`. O vhost versionado e o instalador do nginx
+estão em `_manutencao/vps/nginx/` (arquivo `controle-bancario`).
 
 O código do servidor é um espelho somente-leitura do branch `main`. Mudanças
 nascem na estação de desenvolvimento, seguem para o GitHub e chegam ao VPS por

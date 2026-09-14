@@ -75,6 +75,6 @@ origem, mas a revogação bloqueia novas mutações financeiras e recorrências.
 
 SharedAuth fornece constantes de cabeçalhos defensivos/CSP e formatação de
 números em pt-BR. A aplicação dos cabeçalhos, a autenticação, o modelo de
-usuário e as permissões continuam pertencendo a este projeto. O build acessa a
-dependência privada com um secret do BuildKit, sem incorporar a credencial à
-imagem final.
+usuário e as permissões continuam pertencendo a este projeto. O repositório do
+SharedAuth é público: o build o instala por Git, na tag fixada no
+`pyproject.toml` e no commit registrado no `uv.lock`, sem credencial.

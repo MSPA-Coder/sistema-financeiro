@@ -1,5 +1,4 @@
 .git
-_backup_*/
 .github
 .idea
 .agents
@@ -21,11 +20,8 @@ backups
 logs
 media
 staticfiles
-legacy
 htmlcov
 .coverage
 .pytest_cache
 .mypy_cache
 .ruff_cache
-migration_report.json
-migrations/legacy_history/

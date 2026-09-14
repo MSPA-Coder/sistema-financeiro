@@ -41,7 +41,6 @@ temp/
 !.env.docker.example
 .secrets/
 .certs/
-migration_report.json
 .idea/
 .vscode/*
 !.vscode/extensions.json

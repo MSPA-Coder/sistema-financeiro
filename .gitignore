@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# Nucleo comum aos quatro projetos. Mantenha esta secao em sincronia; o que for
+# Nucleo comum aos projetos irmaos. Mantenha esta secao em sincronia; o que for
 # especifico deste projeto vai no fim do arquivo.
 # ---------------------------------------------------------------------------
 
@@ -79,6 +79,3 @@ Thumbs.db
 # conteudo de runtime, servidos a partir de volume, nunca do repositorio.
 media/
 staticfiles/
-
-# Relatorio gerado pela migracao Flask -> Django.
-migration_report.json
