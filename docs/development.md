@@ -79,3 +79,31 @@ não substitui a validação manual do fluxo alterado nem um ensaio de restaura�
 Leia [Operação, dados e backup](operations.md), faça o backup correspondente e
 confirme que ele é restaurável. Não use `down -v`, não remova volumes e não
 substitua arquivos de mídia sem autorização explícita.
+
+## Reclassificar lançamentos em lote
+
+`reclassificar_lancamentos` move lançamentos que foram registrados na categoria
+errada -- aplicação contada como despesa, liquidação de bolsa contada como
+gasto, rendimento misturado com aporte. Ele **simula por padrão**:
+
+```bash
+docker compose --env-file .env.docker -f compose.yaml run --rm web \
+  python manage.py reclassificar_lancamentos --usuario SEU_USUARIO
+```
+
+O relatório sai inteiro, lançamento a lançamento, e nada é gravado. Confira o
+relatório; só então repita com `--aplicar`.
+
+Três coisas que valem saber antes de rodar com `--aplicar`:
+
+- **ele reabre meses fechados** e os fecha de novo com o mesmo saldo. Nenhum
+  valor muda -- o que muda é em que coluna cada lançamento entra;
+- **ele não adivinha.** Descrição que nenhuma família de `REGRAS` descreve fica
+  onde está e sai listada como pendente. Acrescentar uma família é acrescentar
+  uma linha em `REGRAS`, e rodar de novo é seguro: o comando é idempotente;
+- **transferência entre moedas precisa do extrato.** Quanto entrou na conta em
+  moeda estrangeira não é dedutível do valor em reais, e o sistema não converte
+  moeda de propósito. Passe `--valores-em-moeda arquivo.csv`, com uma linha
+  `data;valor_origem;valor_destino` por operação.
+
+Faça o backup antes, como em qualquer alteração de dados reais.
