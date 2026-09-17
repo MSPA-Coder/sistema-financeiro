@@ -177,8 +177,8 @@ def test_o_resumo_traz_saldo_por_conta_e_total_por_moeda(contas, com_token):
     assert por_id["Conta em dólar"]["moeda"] == "USD"
 
     assert corpo["totais_por_moeda"] == [
-        {"moeda": "BRL", "saldo": "950.00", "contas": 1},
-        {"moeda": "USD", "saldo": "1250.00", "contas": 1},
+        {"moeda": "BRL", "total": "950.00", "linhas": 1},
+        {"moeda": "USD", "total": "1250.00", "linhas": 1},
     ]
 
 
@@ -189,7 +189,7 @@ def test_nenhum_valor_viaja_como_numero_json(contas, com_token):
     for linha in bruto["contas"]:
         assert isinstance(linha["saldo"], str)
     for total in bruto["totais_por_moeda"]:
-        assert isinstance(total["saldo"], str)
+        assert isinstance(total["total"], str)
 
 
 def test_titular_e_instituicao_sao_identificados_pelo_nome_normalizado(contas, com_token):

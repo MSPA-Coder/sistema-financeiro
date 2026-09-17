@@ -162,9 +162,13 @@ def montar_resumo(referencia: date) -> dict:
                 "saldo_inicial_em": conta.initial_balance_date.isoformat(),
             }
         )
-        total = totais.setdefault(conta.currency, {"moeda": conta.currency, "saldo": Decimal("0.00"), "contas": 0})
-        total["saldo"] += saldo
-        total["contas"] += 1
+        # `total` e `linhas`, e não `saldo` e `contas`: o mesmo envelope serve
+        # aos dois publicadores, e do outro lado a linha é uma posição, não uma
+        # conta. Um contrato com duas grafias para a mesma ideia é o tipo de
+        # coisa que só cobra o preço depois.
+        total = totais.setdefault(conta.currency, {"moeda": conta.currency, "total": Decimal("0.00"), "linhas": 0})
+        total["total"] += saldo
+        total["linhas"] += 1
 
     return {
         "contrato": CONTRATO,
@@ -176,7 +180,7 @@ def montar_resumo(referencia: date) -> dict:
         "instituicoes": [instituicoes[chave] for chave in sorted(instituicoes)],
         "contas": linhas,
         "totais_por_moeda": [
-            {"moeda": moeda, "saldo": str(dados["saldo"]), "contas": dados["contas"]}
+            {"moeda": moeda, "total": str(dados["total"]), "linhas": dados["linhas"]}
             for moeda, dados in sorted(totais.items())
         ],
         # Preenchidos pelo outro publicador. Ver o cabeçalho deste módulo.
