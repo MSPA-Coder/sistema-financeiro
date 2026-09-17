@@ -1071,6 +1071,7 @@ canvas { display: block; box-sizing: border-box; }
 [data-ui="muted-m0"] { color: var(--muted); margin: 0; }
 [data-ui="checkbox-label-inline"] { display: flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; }
 [data-ui="w-120"] { width: 120px; }
+[data-ui="w-260"] { width: 260px; }
 [data-ui="settings-actions"] { grid-column: 1 / -1; justify-content: flex-end; margin-top: 0.25rem; }
 [data-ui="w-170"] { width: 170px; }
 [data-ui="section-header-start"] { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }

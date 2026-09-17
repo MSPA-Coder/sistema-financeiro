@@ -4,6 +4,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db.models import Exists, OuterRef
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -11,6 +12,7 @@ from django.views.decorators.http import require_POST
 
 from core.domain.finance import (
     CALC_REPEAT,
+    CATEGORY_KIND_OPTIONS,
     OPERATION_SCOPE_SINGLE,
     STATUS_FILTER_OPTIONS,
     STATUS_OPTIONS,
@@ -396,7 +398,12 @@ def categories_view(request):
     """Lista e cadastro de categorias, com suporte a HTMX."""
     current_filter_type = request.GET.get('filter_type') or ''
     context = {
-        "categories": list_categories(current_filter_type or None),
+        # `has_entries` trava o seletor de tipo na tela: categoria com histórico
+        # não muda de tipo sem passar pela reclassificação, que tem relatório.
+        "categories": list_categories(current_filter_type or None).annotate(
+            has_entries=Exists(CashFlowEntry.objects.filter(category_id=OuterRef("pk")))
+        ),
+        "category_kind_options": CATEGORY_KIND_OPTIONS,
         "current_filter_type": current_filter_type,
     }
     if quer_fragmento(request):
@@ -410,7 +417,7 @@ def categories_view(request):
 @require_POST
 def create_category_view(request):
     try:
-        create_category(request.POST.get('category_name', ''), request.POST.get('is_internal') == 'on')
+        create_category(request.POST.get('category_name', ''), request.POST.get('kind', ''))
         messages.success(request, "Categoria cadastrada com sucesso.")
     except ValueError as e:
         messages.error(request, str(e))
@@ -424,7 +431,7 @@ def create_category_view(request):
 def update_category_view(request, category_id):
     category = get_object_or_404(CashFlowCategory, id=category_id)
     try:
-        update_category(category, request.POST.get('category_name', ''), request.POST.get('is_internal') == 'on')
+        update_category(category, request.POST.get('category_name', ''), request.POST.get('kind', ''))
         messages.success(request, "Categoria atualizada com sucesso.")
     except ValueError as e:
         messages.error(request, str(e))

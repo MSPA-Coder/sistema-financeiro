@@ -24,9 +24,11 @@
     <form method="post" action="{% url 'transactions:create_category' %}" class="add-form">
         {% csrf_token %}
         <input type="text" name="category_name" aria-label="Nome da categoria" placeholder="Nome da categoria..." maxlength="100" required autofocus data-ui="flex-1">
-        <label data-ui="checkbox-label-inline">
-            <input type="checkbox" name="is_internal" aria-label="Categoria interna" data-ui="checkbox-reset"> Interna
-        </label>
+        <select name="kind" aria-label="Tipo da categoria" required data-ui="w-260">
+            {% for value, label in category_kind_options %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+        </select>
         <button type="submit" class="btn btn-primary btn-sm"
                 data-sa-confirmar="Cadastrar esta categoria?"
                 data-sa-titulo="Confirmar cadastro"

@@ -15,10 +15,12 @@ from banking.services import can_access_account, currency_blocks
 from core.domain.finance import (
     CALC_DIVIDE,
     CALC_REPEAT,
+    CATEGORY_KIND_MANAGERIAL,
     ENTRY_TYPE_EXPENSE,
     ENTRY_TYPE_INCOME,
     MAX_TRANSACTION_DESCRIPTION_LENGTH,
     MAX_TRANSACTION_INSTALLMENTS,
+    NON_MANAGERIAL_CATEGORY_KINDS,
     OPERATION_INSTALLMENT,
     OPERATION_INTERNAL_TRANSFER,
     OPERATION_RECURRING,
@@ -29,6 +31,7 @@ from core.domain.finance import (
     STATUS_PENDING,
     STATUS_PROJECTED,
     STATUS_REALIZED,
+    VALID_CATEGORY_KINDS,
 )
 from transactions.models import (
     AccountMonthClose,
@@ -332,11 +335,17 @@ _MAX_CATEGORY_NAME_LENGTH = 100
 
 
 def list_categories(type_filter: str | None = None):
+    """`internal` é o filtro antigo da tela: tudo que não é gerencial.
+
+    Ele continua valendo porque a pergunta que a tela faz é essa -- "o que não
+    entra em receita nem despesa" --, e as duas respostas (transferência e
+    movimentação) cabem juntas nela.
+    """
     queryset = CashFlowCategory.objects.all()
     if type_filter == 'internal':
-        queryset = queryset.filter(is_internal=True)
+        queryset = queryset.filter(kind__in=NON_MANAGERIAL_CATEGORY_KINDS)
     elif type_filter == 'normal':
-        queryset = queryset.filter(is_internal=False)
+        queryset = queryset.filter(kind=CATEGORY_KIND_MANAGERIAL)
     return queryset
 
 
@@ -349,24 +358,45 @@ def _clean_category_name(name: str) -> str:
     return name
 
 
-def create_category(name: str, is_internal: bool) -> CashFlowCategory:
+def _clean_category_kind(raw_value: str | None) -> str:
+    kind = (raw_value or "").strip().lower()
+    if not kind:
+        raise ValueError("Tipo da categoria é obrigatório.")
+    if kind not in VALID_CATEGORY_KINDS:
+        raise ValueError(f"Tipo de categoria inválido: {kind}.")
+    return kind
+
+
+def create_category(name: str, kind: str) -> CashFlowCategory:
     from django.db import IntegrityError
 
     clean_name = _clean_category_name(name)
+    clean_kind = _clean_category_kind(kind)
     try:
-        return CashFlowCategory.objects.create(category_name=clean_name, is_internal=bool(is_internal))
+        return CashFlowCategory.objects.create(category_name=clean_name, kind=clean_kind)
     except IntegrityError as exc:
         raise ValueError("Já existe uma categoria com este nome.") from exc
 
 
-def update_category(category: CashFlowCategory, name: str, is_internal: bool) -> CashFlowCategory:
+def update_category(category: CashFlowCategory, name: str, kind: str) -> CashFlowCategory:
     from django.db import IntegrityError
 
     clean_name = _clean_category_name(name)
+    clean_kind = _clean_category_kind(kind)
+    # Trocar o tipo de uma categoria com histórico muda o significado do passado
+    # inteiro dela: o que era despesa vira movimentação em todos os meses de uma
+    # vez, inclusive nos fechados. É uma reclassificação, e reclassificação tem
+    # relatório -- por isso ela é a U04c, e não um campo que se mexe na tela.
+    if clean_kind != category.kind and CashFlowEntry.objects.filter(category=category).exists():
+        raise ValueError(
+            "Esta categoria já tem lançamentos e não pode mudar de tipo por aqui: "
+            "mudar o tipo reclassifica todo o passado dela de uma vez, inclusive "
+            "meses fechados. Use a reclassificação, que registra o que mudou."
+        )
     category.category_name = clean_name
-    category.is_internal = bool(is_internal)
+    category.kind = clean_kind
     try:
-        category.save(update_fields=["category_name", "is_internal", "updated_at"])
+        category.save(update_fields=["category_name", "kind", "updated_at"])
     except IntegrityError as exc:
         raise ValueError("Já existe uma categoria com este nome.") from exc
     return category
@@ -536,8 +566,8 @@ def _counterparty_side_amount(mirrored_amount, counterparty_amount: Decimal | No
     return counterparty_amount
 
 
-def operation_type_for(req: TransactionRequest, is_internal: bool) -> str:
-    if is_internal:
+def operation_type_for(req: TransactionRequest, eh_transferencia: bool) -> str:
+    if eh_transferencia:
         return OPERATION_INTERNAL_TRANSFER
     if req.is_recurring:
         return OPERATION_RECURRING
@@ -776,7 +806,7 @@ def _validate_common_payload(req: TransactionRequest, monthly_amount: Decimal, i
 @db_transaction.atomic
 def create_transaction_batch(req: TransactionRequest, audit_context=None, user=None) -> list[CashFlowEntry]:
     """Cria um lote de lançamentos: único, parcelado ou recorrente, incluindo
-    transferência interna quando a categoria informada é `is_internal`.
+    transferência interna quando a categoria informada é do tipo transferência.
 
     Recorrências são projetadas até o horizonte configurado em Configurações >
     Parâmetros (`recurring_projection_horizon_end`).
@@ -789,10 +819,10 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None, user=N
         category = CashFlowCategory.objects.get(id=req.category_id)
     except CashFlowCategory.DoesNotExist as exc:
         raise ValueError("Categoria inválida.") from exc
-    is_internal = bool(category.is_internal)
+    eh_transferencia = category.requires_counterparty
 
     counterparty_account = None
-    if is_internal:
+    if eh_transferencia:
         if not req.counterparty_account_id:
             raise ValueError("Conta destino é obrigatória para categoria interna.")
         if req.counterparty_account_id == req.account_id:
@@ -816,13 +846,13 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None, user=N
     installments, monthly_amount = _parcelas_e_valor(req)
 
     counterparty_amount = None
-    if is_internal:
+    if eh_transferencia:
         counterparty_amount = counterparty_amount_for_transfer(
             req, account, counterparty_account, installments=installments
         )
 
     description = (req.description or "").strip()[:MAX_TRANSACTION_DESCRIPTION_LENGTH]
-    operation_type = operation_type_for(req, is_internal)
+    operation_type = operation_type_for(req, eh_transferencia)
 
     bank_operation = None
     if operation_type != OPERATION_SINGLE:
@@ -840,7 +870,7 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None, user=N
 
     original_description = description
     counterparty_description = description
-    if is_internal:
+    if eh_transferencia:
         original_description = f"Conta Destino: {_account_label(counterparty_account)}"
         counterparty_description = f"Conta Origem: {_account_label(account)}"
 
@@ -848,7 +878,7 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None, user=N
 
     def _add_pair(due_date: date, current_installment: int, installments_total: int) -> None:
         validate_month_not_closed(account, due_date)
-        if is_internal:
+        if eh_transferencia:
             validate_month_not_closed(counterparty_account, due_date)
         status = _normalize_open_entry_status(req.status, due_date)
         realized_date = req.realized_date if status == STATUS_REALIZED else None
@@ -873,7 +903,7 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None, user=N
             bank_operation=bank_operation,
         )
         entries.append(original)
-        if is_internal:
+        if eh_transferencia:
             counterparty_entry = CashFlowEntry.objects.create(
                 account=counterparty_account,
                 category=category,
@@ -1053,7 +1083,7 @@ def current_future_attachment_counts(entries: list[CashFlowEntry]) -> dict[int, 
 
 def _update_single(tx: CashFlowEntry, req: TransactionRequest, user=None) -> list[CashFlowEntry]:
     category = CashFlowCategory.objects.get(id=req.category_id)
-    if category.is_internal:
+    if category.requires_counterparty:
         return _convert_single_to_internal_transfer(tx, req, user)
 
     installments, monthly_amount = _parcelas_e_valor(req)
@@ -1274,8 +1304,8 @@ def _update_internal_transfer(
     from reports.services import add_months
 
     category = CashFlowCategory.objects.get(id=req.category_id)
-    if not category.is_internal:
-        raise ValueError("Transferência interna exige categoria interna.")
+    if not category.requires_counterparty:
+        raise ValueError("Transferência interna exige categoria do tipo transferência.")
 
     counterparty_account_id = req.counterparty_account_id or _get_counterparty_account_id(tx)
     if not counterparty_account_id:
@@ -1508,7 +1538,7 @@ def list_transactions_for_view(
     if filter_category:
         qs = qs.filter(category__category_name=filter_category)
     if exclude_internal:
-        qs = qs.filter(category__is_internal=False)
+        qs = qs.filter(category__kind=CATEGORY_KIND_MANAGERIAL)
     if filter_date is not None:
         qs = qs.filter(proj_date=filter_date)
     if operation_key:
@@ -1528,7 +1558,7 @@ def list_transactions_for_view(
 def list_category_names(*, include_internal: bool = True) -> list[str]:
     qs = CashFlowCategory.objects.all()
     if not include_internal:
-        qs = qs.filter(is_internal=False)
+        qs = qs.filter(kind=CATEGORY_KIND_MANAGERIAL)
     return list(qs.order_by("category_name").values_list("category_name", flat=True))
 
 

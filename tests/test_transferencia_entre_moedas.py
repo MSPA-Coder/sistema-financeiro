@@ -28,6 +28,7 @@ from bank_statements.models import BankStatementImport, BankStatementLine
 from bank_statements.reconciliation import reconcile_line_with_entry
 from banking.models import FinancialAccount, FinancialInstitution
 from core.domain.finance import (
+    CATEGORY_KIND_TRANSFER,
     CURRENCY_BRL,
     CURRENCY_USD,
     ENTRY_TYPE_EXPENSE,
@@ -66,7 +67,7 @@ def cenario():
         user=user, owner=owner, can_view=True, can_create=True, can_update=True, can_delete=True
     )
     save_transfer_destination_accesses(user, {dolar.id, outra_em_real.id})
-    categoria = CashFlowCategory.objects.create(category_name="Transferência", is_internal=True)
+    categoria = CashFlowCategory.objects.create(category_name="Transferência", kind=CATEGORY_KIND_TRANSFER)
     return user, real, dolar, outra_em_real, categoria
 
 

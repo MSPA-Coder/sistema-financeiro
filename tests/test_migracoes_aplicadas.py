@@ -42,6 +42,7 @@ CONSTRAINTS_ESPERADAS = {
     "uq_account_month_close_account_period",
     "ck_financial_institution_type_valid",
     "ck_financial_account_currency_valid",
+    "ck_cash_flow_category_kind_valid",
 }
 
 

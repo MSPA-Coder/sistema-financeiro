@@ -28,6 +28,30 @@ STATUS_OPTIONS: Final = (
 # uma nova ordenacao poderia retirar silenciosamente um status valido.
 STATUS_FILTER_OPTIONS: Final = STATUS_OPTIONS
 
+# O que uma categoria significa para o resultado. Eram dois casos (gerencial ou
+# "interna"), e o terceiro faltava: dinheiro que sai da conta sem mudar de dono e
+# sem ter uma conta de destino neste sistema -- a liquidação de bolsa, que vira
+# ação, e é o Renda Variável quem avalia. Chamar isso de despesa é errado, e
+# chamar de transferência exigiria uma contraparte que não existe aqui.
+CATEGORY_KIND_MANAGERIAL: Final = "gerencial"
+CATEGORY_KIND_TRANSFER: Final = "transferencia"
+CATEGORY_KIND_MOVEMENT: Final = "movimentacao"
+VALID_CATEGORY_KINDS: Final = (
+    CATEGORY_KIND_MANAGERIAL,
+    CATEGORY_KIND_TRANSFER,
+    CATEGORY_KIND_MOVEMENT,
+)
+CATEGORY_KIND_OPTIONS: Final = (
+    (CATEGORY_KIND_MANAGERIAL, "Gerencial (receita ou despesa)"),
+    (CATEGORY_KIND_TRANSFER, "Transferência entre contas"),
+    (CATEGORY_KIND_MOVEMENT, "Movimentação (não é receita nem despesa)"),
+)
+# Os dois que não entram em receita nem em despesa gerencial.
+NON_MANAGERIAL_CATEGORY_KINDS: Final = (
+    CATEGORY_KIND_TRANSFER,
+    CATEGORY_KIND_MOVEMENT,
+)
+
 OPERATION_SINGLE: Final = "single"
 OPERATION_INSTALLMENT: Final = "installment"
 OPERATION_RECURRING: Final = "recurring"

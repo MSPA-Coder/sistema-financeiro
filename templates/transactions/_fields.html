@@ -33,7 +33,11 @@ edição inline da tabela. Espera no contexto: `t` (CashFlowEntry ou None),
     <select name="category_id" aria-label="Categoria" required class="category-select">
         <option value="" data-internal="0">Selecione...</option>
         {% for cat in categories %}
-        <option value="{{ cat.id }}" data-internal="{% if cat.is_internal %}1{% else %}0{% endif %}" {% if t and t.category_id == cat.id %}selected{% endif %}>{{ cat.category_name }}</option>
+        {% comment %}
+        `data-internal` liga o campo de conta destino, e só a TRANSFERÊNCIA tem
+        outra ponta -- movimentação sai da conta sem destino neste sistema.
+        {% endcomment %}
+        <option value="{{ cat.id }}" data-internal="{% if cat.requires_counterparty %}1{% else %}0{% endif %}" {% if t and t.category_id == cat.id %}selected{% endif %}>{{ cat.category_name }}</option>
         {% endfor %}
     </select>
 </div>
