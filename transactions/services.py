@@ -1,4 +1,5 @@
 """Serviços de domínio para transações e fluxo de caixa."""
+import calendar
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -1151,6 +1152,38 @@ def current_future_attachment_counts(entries: list[CashFlowEntry]) -> dict[int, 
     return mapping
 
 
+def _group_due_date_shift(old_due_date: date, new_due_date: date):
+    """Como cada ocorrência de um grupo se move quando o vencimento da LINHA
+    EDITADA vai de `old_due_date` para `new_due_date`.
+
+    O deslocamento é a diferença -- em meses e, se o dia mudou, no dia -- e se
+    aplica à data DE CADA ocorrência, nunca à posição dela. Antes, uma edição
+    de grupo regerava os vencimentos a partir do vencimento recebido, contando
+    as posições desde a primeira ocorrência: editar a 2ª parcela de 6 só para
+    trocar a descrição empurrava o grupo inteiro um mês adiante.
+
+    Contar pela data de cada ocorrência tem três consequências que contar por
+    posição não tinha: editar sem tocar no vencimento não move nada; um mês
+    adiantado ou adiado a mão continua onde está; e uma ocorrência removida no
+    meio da série continua ausente, em vez de ser preenchida pela seguinte.
+    """
+    from reports.services import add_months
+
+    months = (new_due_date.year - old_due_date.year) * 12 + new_due_date.month - old_due_date.month
+    # Só quando o dia é mexido de propósito ele vale para o grupo: o dia de
+    # cada ocorrência é dela, e pode ter sido ajustado por causa de fim de
+    # semana ou feriado.
+    day = new_due_date.day if new_due_date.day != old_due_date.day else None
+
+    def deslocar(due_date: date) -> date:
+        moved = add_months(due_date, months)
+        if day is None:
+            return moved
+        return moved.replace(day=min(day, calendar.monthrange(moved.year, moved.month)[1]))
+
+    return deslocar
+
+
 def _update_single(tx: CashFlowEntry, req: TransactionRequest, user=None) -> list[CashFlowEntry]:
     category = CashFlowCategory.objects.get(id=req.category_id)
     if category.requires_counterparty:
@@ -1242,12 +1275,21 @@ def _replace_current_future_block(
     tx: CashFlowEntry, req: TransactionRequest, entries: list[CashFlowEntry],
     operation_type: str, installments: int, monthly_amount: Decimal,
 ) -> list[CashFlowEntry]:
-    """Substitui deterministicamente o bloco atual/futuro de uma operação
-    (apaga e recria, já que os offsets de data mudam com o novo vencimento)."""
-    from reports.services import add_months
+    """Substitui deterministicamente o bloco atual/futuro de uma operação.
 
+    Apaga e recria, o que renumera as parcelas do bloco de uma vez. Os
+    vencimentos, porém, vêm das linhas antigas deslocadas por
+    `_group_due_date_shift`, e não de meses consecutivos a partir do vencimento
+    recebido: recriar em sequência apagava os ajustes de dia e fechava as
+    lacunas de quem estava no bloco.
+    """
     if not entries:
         return []
+
+    deslocar = _group_due_date_shift(tx.due_date, req.due_date)
+    # As linhas são apagadas adiante, mas os objetos em `entries` guardam as
+    # datas de antes -- é delas que sai cada vencimento novo.
+    novos_vencimentos = [deslocar(entry.due_date) for entry in entries]
 
     start_installment = entries[0].current_installment or 1
     if operation_type == OPERATION_INSTALLMENT and start_installment + len(entries) - 1 > installments:
@@ -1261,7 +1303,7 @@ def _replace_current_future_block(
 
     rebuilt: list[CashFlowEntry] = []
     for offset in range(len(entries)):
-        due_date = add_months(req.due_date, offset)
+        due_date = novos_vencimentos[offset]
         validate_month_not_closed(account, due_date)
         current_installment = 1 if operation_type == OPERATION_RECURRING else start_installment + offset
         entry_amount = installment_amount_for(
@@ -1335,8 +1377,6 @@ def _assert_current_future_confirmation(entry_id: int, token: str | None) -> Non
 def _update_installment_or_recurring(
     tx: CashFlowEntry, req: TransactionRequest, entries: list[CashFlowEntry], scope: str,
 ) -> list[CashFlowEntry]:
-    from reports.services import add_months
-
     operation_type = tx.operation_type or OPERATION_INSTALLMENT
     installments, monthly_amount = _parcelas_e_valor(
         req, recorrente=operation_type == OPERATION_RECURRING
@@ -1350,8 +1390,9 @@ def _update_installment_or_recurring(
         return _replace_current_future_block(tx, req, ordered, operation_type, installments, monthly_amount)
 
     account = FinancialAccount.objects.get(id=req.account_id)
+    deslocar = _group_due_date_shift(tx.due_date, req.due_date)
     for offset, entry in enumerate(ordered):
-        due_date = add_months(req.due_date, offset)
+        due_date = deslocar(entry.due_date)
         validate_month_not_closed(account, due_date)
         if scope == OPERATION_SCOPE_ALL:
             entry.current_installment = offset + 1 if operation_type == OPERATION_INSTALLMENT else 1
@@ -1377,8 +1418,6 @@ def _update_installment_or_recurring(
 def _update_internal_transfer(
     tx: CashFlowEntry, req: TransactionRequest, entries: list[CashFlowEntry], scope: str, user=None,
 ) -> list[CashFlowEntry]:
-    from reports.services import add_months
-
     category = CashFlowCategory.objects.get(id=req.category_id)
     if not category.requires_counterparty:
         raise ValueError("Transferência interna exige categoria do tipo transferência.")
@@ -1404,6 +1443,7 @@ def _update_internal_transfer(
     counterparty_description = f"Conta Origem: {_account_label(account)}"
 
     pairs = _origin_counterparty_pairs(scoped_entries(tx, entries, scope))
+    deslocar = _group_due_date_shift(tx.due_date, req.due_date)
     updated: list[CashFlowEntry] = []
     for offset, (origin, counterpart) in enumerate(pairs):
         # Só a dupla da linha editada recebe o status do formulário; as outras
@@ -1411,7 +1451,7 @@ def _update_internal_transfer(
         # todo escopo e para parcelado também -- antes, só a recorrente em "este
         # e os próximos" era protegida, e só no sentido de não realizar.
         keep_realization = tx.id not in (origin.id, counterpart.id)
-        due_date = add_months(req.due_date, offset)
+        due_date = deslocar(origin.due_date)
         validate_month_not_closed(account, due_date)
         validate_month_not_closed(counterparty_account, due_date)
 
