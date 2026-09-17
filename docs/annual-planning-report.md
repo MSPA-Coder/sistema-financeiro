@@ -22,6 +22,13 @@ Além das opções de filtro (`reference_month`, `default_reference_month`,
   tem `{value, is_current}`. `owner_values` é alinhada a `owner_columns`;
 - `totals` (opcional), com `owner_values` e `months` no mesmo formato das
   linhas;
+- `currency`: a moeda das contas selecionadas, usada no símbolo de todo valor
+  da grade. A seleção que atravessa moedas não chega aqui: a view chama esta
+  apresentação **uma vez por moeda** (`banking.services.currency_blocks`) e a
+  tela mostra uma grade para cada, porque a grade soma titulares e meses numa
+  coluna só e esse total não existe entre moedas. Se ainda assim um chamador
+  passar contas de moedas diferentes, `MixedCurrencyError` é levantada aqui.
+  Sem conta nenhuma selecionada, vale a moeda base;
 
 ## Regras de cálculo
 

@@ -36,6 +36,8 @@ from django.db.utils import DataError
 from accounts.models import AccountOwner
 from banking.models import FinancialAccount, FinancialInstitution
 from core.domain.finance import (
+    CURRENCY_BRL,
+    CURRENCY_USD,
     ENTRY_TYPE_EXPENSE,
     OPERATION_SINGLE,
     STATUS_PROJECTED,
@@ -293,3 +295,61 @@ def test_banco_recusa_valor_acima_da_precisao_da_coluna(conta, categoria):
     """`max_digits=12, decimal_places=2` é contrato, não sugestão."""
     with pytest.raises((DataError, IntegrityError)), transaction.atomic():
         _lancamento(conta, categoria, entry_amount=Decimal("12345678901.00"))
+
+
+# ---------------------------------------------------------------------------
+# 5. A moeda da conta
+# ---------------------------------------------------------------------------
+
+
+def test_conta_nasce_em_real(conta):
+    """BRL é o que o sistema sempre assumiu sem dizer; agora está escrito."""
+    conta.refresh_from_db()
+
+    assert conta.currency == CURRENCY_BRL
+
+
+def test_banco_recusa_moeda_fora_da_lista(conta):
+    """Invariante nova: moeda é vocabulário fechado, não texto livre.
+
+    Sem o piso no banco, uma carga de dados ou uma correção manual poderia
+    gravar `usd`, `Eur` ou qualquer sigla, e todo relatório passaria a agrupar
+    por string, não por moeda.
+
+    `EUR` de propósito: é sigla de três letras, do tamanho exato da coluna, e
+    passa pelo `varchar(3)` para ser barrada pela `CheckConstraint` -- que é o
+    que este teste mede. Uma sigla mais longa seria recusada antes, pelo tipo
+    da coluna, e não provaria nada sobre a constraint.
+    """
+    with pytest.raises(IntegrityError, match="ck_financial_account_currency_valid"), transaction.atomic():
+        FinancialAccount.objects.create(
+            owner=conta.owner,
+            institution=conta.institution,
+            account_name="Conta em euro",
+            currency="EUR",
+        )
+
+
+def test_conta_em_dolar_e_aceita(conta):
+    """A decisão do estudo: o caixa da corretora estrangeira mora aqui."""
+    dolar = FinancialAccount.objects.create(
+        owner=conta.owner,
+        institution=conta.institution,
+        account_name="Avenue",
+        currency=CURRENCY_USD,
+        initial_balance=Decimal("1500.00"),
+        initial_balance_date=date(2025, 12, 31),
+    )
+    dolar.refresh_from_db()
+
+    assert dolar.currency == CURRENCY_USD
+    assert dolar.initial_balance == Decimal("1500.00")
+    assert dolar.initial_balance_date == date(2025, 12, 31)
+
+
+def test_saldo_inicial_tem_data(conta):
+    """Sem data, saldo inicial em dólar não tem como ser convertido nem
+    posicionado numa série de patrimônio."""
+    conta.refresh_from_db()
+
+    assert conta.initial_balance_date is not None

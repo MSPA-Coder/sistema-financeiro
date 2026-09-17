@@ -28,6 +28,30 @@ STATUS_OPTIONS: Final = (
 # uma nova ordenacao poderia retirar silenciosamente um status valido.
 STATUS_FILTER_OPTIONS: Final = STATUS_OPTIONS
 
+# O que uma categoria significa para o resultado. Eram dois casos (gerencial ou
+# "interna"), e o terceiro faltava: dinheiro que sai da conta sem mudar de dono e
+# sem ter uma conta de destino neste sistema -- a liquidação de bolsa, que vira
+# ação, e é o Renda Variável quem avalia. Chamar isso de despesa é errado, e
+# chamar de transferência exigiria uma contraparte que não existe aqui.
+CATEGORY_KIND_MANAGERIAL: Final = "gerencial"
+CATEGORY_KIND_TRANSFER: Final = "transferencia"
+CATEGORY_KIND_MOVEMENT: Final = "movimentacao"
+VALID_CATEGORY_KINDS: Final = (
+    CATEGORY_KIND_MANAGERIAL,
+    CATEGORY_KIND_TRANSFER,
+    CATEGORY_KIND_MOVEMENT,
+)
+CATEGORY_KIND_OPTIONS: Final = (
+    (CATEGORY_KIND_MANAGERIAL, "Gerencial (receita ou despesa)"),
+    (CATEGORY_KIND_TRANSFER, "Transferência entre contas"),
+    (CATEGORY_KIND_MOVEMENT, "Movimentação (não é receita nem despesa)"),
+)
+# Os dois que não entram em receita nem em despesa gerencial.
+NON_MANAGERIAL_CATEGORY_KINDS: Final = (
+    CATEGORY_KIND_TRANSFER,
+    CATEGORY_KIND_MOVEMENT,
+)
+
 OPERATION_SINGLE: Final = "single"
 OPERATION_INSTALLMENT: Final = "installment"
 OPERATION_RECURRING: Final = "recurring"
@@ -49,6 +73,48 @@ VALID_OPERATION_SCOPES: Final = (
 
 CALC_REPEAT: Final = "repeat"
 CALC_DIVIDE: Final = "divide"
+
+# A moeda pertence a CONTA, nunca ao lançamento: um lançamento é sempre de uma
+# conta, e moeda repetida no lançamento é moeda que um dia diverge da conta --
+# aí nenhum relatório sabe qual das duas vale. Uma corretora que guardasse duas
+# moedas vira duas contas, como o extrato dela mesma apresenta.
+CURRENCY_BRL: Final = "BRL"
+CURRENCY_USD: Final = "USD"
+VALID_CURRENCIES: Final = (
+    CURRENCY_BRL,
+    CURRENCY_USD,
+)
+CURRENCY_OPTIONS: Final = (
+    (CURRENCY_BRL, "Real (R$)"),
+    (CURRENCY_USD, "Dólar (US$)"),
+)
+CURRENCY_SYMBOLS: Final = {
+    CURRENCY_BRL: "R$",
+    CURRENCY_USD: "US$",
+}
+# Moeda de quem não tem conta: o orçamento é por categoria e mês, não por
+# conta. Converter de uma moeda para outra é apresentação e não acontece aqui.
+BASE_CURRENCY: Final = CURRENCY_BRL
+
+
+class MixedCurrencyError(ValueError):
+    """Somar contas de moedas diferentes é erro, não arredondamento.
+
+    Este sistema registra fato, não converte moeda: não existe aqui a taxa que
+    transformaria dólar em real, e inventar uma na hora de somar produziria um
+    número que ninguém consegue auditar depois. Quando a seleção de contas
+    atravessa moedas, o certo é recusar e pedir um recorte -- nunca devolver um
+    total que parece certo.
+    """
+
+    def __init__(self, currencies) -> None:
+        self.currencies = tuple(sorted(currencies))
+        super().__init__(
+            "As contas selecionadas têm moedas diferentes ("
+            + ", ".join(self.currencies)
+            + "), e este sistema não converte moeda. Filtre por uma conta, um "
+            "titular ou uma instituição de uma moeda só."
+        )
 
 MAX_TRANSACTION_INSTALLMENTS: Final = 48
 MAX_TRANSACTION_DESCRIPTION_LENGTH: Final = 255

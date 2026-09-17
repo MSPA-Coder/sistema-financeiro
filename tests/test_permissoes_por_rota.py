@@ -42,6 +42,14 @@ ROTAS_ABERTAS: dict[str, str] = {
     "logout/": "encerrar sessao nao pode depender de permissao",
     "health": "sonda de infraestrutura, sem sessao",
     "health/": "sonda de infraestrutura, sem sessao",
+    "patrimonio/v1/resumo": (
+        "integracao maquina a maquina: quem chama e o consolidador de "
+        "patrimonio, que nao tem sessao nem usuario neste sistema. A permissao "
+        "e o token compartilhado, verificado no corpo da view em tempo "
+        "constante, e sem ele a rota nao devolve dado nenhum. Escopo por "
+        "titular seria pior que inutil aqui: produziria um patrimonio "
+        "consolidado que esconde contas sem avisar."
+    ),
     "change-password/": "todo usuario troca a propria senha, sempre",
     "inicio/": (
         "nao e tela: resolve para onde a pessoa pode ir e redireciona. Exigir "

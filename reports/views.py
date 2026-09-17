@@ -8,6 +8,7 @@ from decimal import Decimal
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
+from banking.services import currency_blocks
 from core.domain.finance import (
     VIEW_ALL,
     VIEW_MODE_OPTIONS,
@@ -15,7 +16,7 @@ from core.domain.finance import (
     VIEW_REALIZED,
     normalize_view_mode,
 )
-from core.htmx import invalid_period_response, quer_fragmento
+from core.htmx import invalid_period_response, quer_fragmento, recusa_moedas_misturadas
 from core.permissions import permission_required
 from core.services import system_start_date
 
@@ -33,6 +34,7 @@ def _parse_int(value: str | None) -> int | None:
 
 @login_required
 @permission_required("projections.view")
+@recusa_moedas_misturadas
 def projections_view(request):
     today = date.today()
     view_mode = normalize_view_mode(request.GET.get("mode", VIEW_PROJECTED))
@@ -48,11 +50,20 @@ def projections_view(request):
 
     ctx = services.selected_context(request.user, request.GET, request=request)
     options = services.context_options(request.user, ctx, hidden_scope="projections")
-    month_data = services.projection_months_between(options.account_ids, start_month, end_month, view_mode)
+    # Um bloco por moeda: cada grupo é de uma moeda só, então os agregados
+    # continuam recebendo exatamente o que sempre exigiram. Com uma moeda só --
+    # que é o caso de hoje -- há um bloco, e a tela sai idêntica.
+    blocos = []
+    for currency, ids in currency_blocks(options.account_ids):
+        month_data = services.projection_months_between(ids, start_month, end_month, view_mode)
+        blocos.append({
+            "currency": currency,
+            "month_data": month_data,
+            "period_totals": services.projection_period_totals(month_data),
+        })
 
     context = {
-        "month_data": month_data,
-        "period_totals": services.projection_period_totals(month_data),
+        "blocos": blocos,
         "start_month": services.month_input_value(start_month),
         "end_month": services.month_input_value(end_month),
         "default_start_month": services.month_input_value(default_start_month),
@@ -77,6 +88,7 @@ def projections_view(request):
 
 @login_required
 @permission_required("reports.upcoming_movements.view")
+@recusa_moedas_misturadas
 def upcoming_movements_view(request):
     default_start, default_end = services.current_week_period()
     start_date = services.parse_iso_date(request.GET.get("start_date")) or default_start
@@ -87,12 +99,18 @@ def upcoming_movements_view(request):
     view_mode = services.normalize_upcoming_movement_mode(request.GET.get("mode", VIEW_PROJECTED))
     ctx = services.selected_context(request.user, request.GET, request=request)
     options = services.context_options(request.user, ctx)
-    report = services.upcoming_movements_report(options.account_ids, start_date, end_date, view_mode)
+    blocos = [
+        {
+            "currency": currency,
+            "report": services.upcoming_movements_report(ids, start_date, end_date, view_mode),
+        }
+        for currency, ids in currency_blocks(options.account_ids)
+    ]
 
     status_options = [opt for opt in VIEW_MODE_OPTIONS if opt[0] in services.UPCOMING_MOVEMENT_VIEW_MODES]
 
     context = {
-        "report": report,
+        "blocos": blocos,
         "start_date": start_date,
         "end_date": end_date,
         "default_start_date": default_start,
@@ -115,6 +133,7 @@ def upcoming_movements_view(request):
 
 @login_required
 @permission_required("reports.account_position.view")
+@recusa_moedas_misturadas
 def account_position_view(request):
     today = date.today()
     view_mode = normalize_view_mode(request.GET.get("mode"), default=VIEW_REALIZED)
@@ -135,13 +154,23 @@ def account_position_view(request):
     ctx = services.FinancialContext(owner_id=selected_ctx.owner_id, institution_id=selected_ctx.institution_id, account_id=None)
     options = services.context_options(request.user, ctx)
     rows = services.account_cash_report_rows(options.account_ids, selected_month, selected_month, view_mode)
+    # As linhas convivem numa tabela só, cada uma com o símbolo da sua conta --
+    # linha por conta nunca foi agregação. O que é por moeda é o TOTAL.
+    blocos = []
+    for currency, ids in currency_blocks(options.account_ids):
+        do_bloco = [row for row in rows if row.account_id in set(ids)]
+        blocos.append({
+            "currency": currency,
+            "rows": do_bloco,
+            "total_start": sum((row.start_balance for row in do_bloco), Decimal("0.00")),
+            "total_generation": sum((row.cash_generation for row in do_bloco), Decimal("0.00")),
+            "total_transfers": sum((row.internal_transfers for row in do_bloco), Decimal("0.00")),
+            "total_end": sum((row.end_balance for row in do_bloco), Decimal("0.00")),
+        })
 
     context = {
         "report_rows": rows,
-        "total_start": sum((row.start_balance for row in rows), Decimal("0.00")),
-        "total_generation": sum((row.cash_generation for row in rows), Decimal("0.00")),
-        "total_transfers": sum((row.internal_transfers for row in rows), Decimal("0.00")),
-        "total_end": sum((row.end_balance for row in rows), Decimal("0.00")),
+        "blocos": blocos,
         "selected_period": selected_period,
         "today_period": today_period,
         "view_mode": view_mode,
@@ -177,6 +206,7 @@ def _multi_id_param(request, key: str) -> list[int] | None:
 
 @login_required
 @permission_required("reports.annual_planning.view")
+@recusa_moedas_misturadas
 def annual_planning_view(request):
     """Planejamento por categoria: mês-base individual e meses consolidados."""
     today = date.today()
@@ -209,17 +239,26 @@ def annual_planning_view(request):
         else sorted(allowed_account_ids.intersection(account_ids))
     )
     show_descriptions = request.GET.get("show_descriptions") == "1"
-    report = services.annual_planning_presentation(
-        request.user,
-        reference_month,
-        owner_ids=owner_ids,
-        account_ids=account_ids,
-        layout=layout,
-        view_mode=view_mode,
-        show_descriptions=show_descriptions,
-    )
+    # Uma grade por moeda: a grade soma titulares e meses numa coluna só, e essa
+    # coluna não existe entre moedas. Passar os ids do grupo é equivalente ao
+    # que a apresentação já resolveria sozinha quando há uma moeda só.
+    blocos = [
+        {
+            "currency": currency,
+            "report": services.annual_planning_presentation(
+                request.user,
+                reference_month,
+                owner_ids=owner_ids,
+                account_ids=ids,
+                layout=layout,
+                view_mode=view_mode,
+                show_descriptions=show_descriptions,
+            ),
+        }
+        for currency, ids in currency_blocks(selected_account_ids)
+    ]
     context = {
-        "report": report,
+        "blocos": blocos,
         "reference_month": services.month_input_value(reference_month),
         "default_reference_month": services.month_input_value(date(today.year, today.month, 1)),
         "layout": layout_value if layout_value in {"calendar", "rolling"} else "calendar",

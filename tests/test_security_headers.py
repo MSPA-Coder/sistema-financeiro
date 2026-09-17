@@ -142,13 +142,13 @@ def test_a_casca_nao_traz_estilo_embutido() -> None:
     assert "<style" not in rendered
 
 
-def test_htmx_nao_reaplica_o_atributo_style_ao_trocar_de_tela() -> None:
-    """`attributesToSettle` inclui `style` por padrao -- e isso a CSP bloqueia.
+def test_htmx_nao_reaplica_atributos_de_canvas_ao_trocar_de_tela() -> None:
+    """Canvas deve nascer com seus proprios tamanho e estilo.
 
-    O HTMX copiava o atributo `style` dos `<canvas>` do Chart.js a cada troca,
-    e cada copia virava uma violacao (`style-src-attr`): seis por troca no
-    painel. Nenhum elemento deste projeto depende de `style` sobreviver a um
-    swap; todo estado alternado por JavaScript mora em classe.
+    `style` era bloqueado pela CSP. `width` e `height` tambem nao podem ser
+    assentados pelo HTMX: o Chart.js os reescreve com a resolucao do dispositivo
+    e copiar esse valor para o canvas da resposta seguinte corrompe a nova
+    medicao. Nenhum elemento depende desses atributos sobreviver a um swap.
     """
     import json
     import re
@@ -160,6 +160,9 @@ def test_htmx_nao_reaplica_o_atributo_style_ao_trocar_de_tela() -> None:
     config = json.loads(bruto)
 
     assert "style" not in config["attributesToSettle"]
+    assert "width" not in config["attributesToSettle"]
+    assert "height" not in config["attributesToSettle"]
+    assert config["attributesToSettle"] == ["class"]
     assert config["includeIndicatorStyles"] is False
 
 

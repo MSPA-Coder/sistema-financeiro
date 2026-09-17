@@ -3,8 +3,12 @@ from django.db import models
 from django.utils import timezone
 
 from core.domain.finance import (
+    CATEGORY_KIND_MANAGERIAL,
+    CATEGORY_KIND_OPTIONS,
+    CATEGORY_KIND_TRANSFER,
     ENTRY_TYPE_EXPENSE,
     ENTRY_TYPE_INCOME,
+    NON_MANAGERIAL_CATEGORY_KINDS,
     OPERATION_INSTALLMENT,
     OPERATION_INTERNAL_TRANSFER,
     OPERATION_RECURRING,
@@ -12,19 +16,32 @@ from core.domain.finance import (
     STATUS_PENDING,
     STATUS_PROJECTED,
     STATUS_REALIZED,
+    VALID_CATEGORY_KINDS,
     VALID_ENTRY_TYPES,
     VALID_STATUSES,
 )
 
 
 class CashFlowCategory(models.Model):
-    """Categoria de fluxo de caixa. Categorias internas afetam saldo, mas não totais gerenciais."""
-    
+    """Categoria de fluxo de caixa.
+
+    `kind` diz o que a categoria significa para o resultado, e é a única verdade
+    guardada. Eram dois casos num booleano (`is_internal`), e faltava o terceiro:
+    dinheiro que sai da conta sem mudar de dono e **sem conta de destino neste
+    sistema** -- a liquidação de bolsa, que vira ação, avaliada pelo Renda
+    Variável. Chamar isso de despesa é errado; chamar de transferência exigiria
+    uma contraparte que não existe aqui.
+    """
+
     category_name = models.CharField(max_length=100, unique=True)
-    is_internal = models.BooleanField(default=False)
+    kind = models.CharField(
+        max_length=20,
+        choices=CATEGORY_KIND_OPTIONS,
+        default=CATEGORY_KIND_MANAGERIAL,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         db_table = 'cash_flow_category'
         ordering = ['category_name']
@@ -33,14 +50,33 @@ class CashFlowCategory(models.Model):
                 condition=models.Q(category_name__regex=r'^\s*.+\s*$'),
                 name='ck_cash_flow_category_name_not_blank',
             ),
+            models.CheckConstraint(
+                condition=models.Q(kind__in=VALID_CATEGORY_KINDS),
+                name='ck_cash_flow_category_kind_valid',
+            ),
         ]
         indexes = [
-            models.Index(fields=['is_internal']),
+            models.Index(fields=['kind']),
         ]
-    
+
     def __str__(self):
         return self.category_name
-    
+
+    @property
+    def is_internal(self) -> bool:
+        """Não entra em receita nem em despesa gerencial.
+
+        Derivado de `kind`, nunca guardado: transferência e movimentação são
+        duas coisas diferentes que compartilham este efeito, e guardar o efeito
+        ao lado da causa criaria duas verdades para a mesma categoria.
+        """
+        return self.kind in NON_MANAGERIAL_CATEGORY_KINDS
+
+    @property
+    def requires_counterparty(self) -> bool:
+        """Só a transferência tem outra ponta. Movimentação não tem para onde."""
+        return self.kind == CATEGORY_KIND_TRANSFER
+
     def save(self, *args, **kwargs):
         if self.pk:
             self.updated_at = timezone.now()

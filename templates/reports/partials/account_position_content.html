@@ -20,23 +20,31 @@
                 <td>
                     <a href="{% url 'transactions:transactions_view' %}?period={{ selected_period }}&amp;mode={{ view_mode }}&amp;owner_id={{ current_owner_id|default:'' }}&amp;institution_id={{ current_institution_id|default:'' }}&amp;account_id={{ row.account_id }}">{{ row.account_name }}</a>
                 </td>
-                <td class="value-col {{ row.start_balance|amount_class }}">{{ row.start_balance|money_signed }}</td>
-                <td class="value-col {{ row.cash_generation|amount_class }}">{{ row.cash_generation|money_signed }}</td>
-                <td class="value-col {{ row.internal_transfers|amount_class }}">{{ row.internal_transfers|money_signed }}</td>
-                <td class="value-col {{ row.end_balance|amount_class }}"><strong>{{ row.end_balance|money_signed }}</strong></td>
+                <td class="value-col {{ row.start_balance|amount_class }}">{{ row.start_balance|money_signed:row.currency }}</td>
+                <td class="value-col {{ row.cash_generation|amount_class }}">{{ row.cash_generation|money_signed:row.currency }}</td>
+                <td class="value-col {{ row.internal_transfers|amount_class }}">{{ row.internal_transfers|money_signed:row.currency }}</td>
+                <td class="value-col {{ row.end_balance|amount_class }}"><strong>{{ row.end_balance|money_signed:row.currency }}</strong></td>
             </tr>
             {% empty %}
             <tr><td colspan="7" data-ui="empty-2">Nenhum dado encontrado.</td></tr>
             {% endfor %}
-            {% if report_rows %}
+            {% comment %}
+            As linhas acima convivem numa tabela só, cada uma com o símbolo da
+            sua conta -- linha por conta nunca foi agregação. O que é por moeda
+            é o TOTAL: um por moeda, e o rótulo só distingue quando há mais de
+            um. Somar as duas seria o defeito que a etapa 4 impede.
+            {% endcomment %}
+            {% for bloco in blocos %}
+            {% if bloco.rows %}
             <tr class="summary-row">
-                <td colspan="3">TOTAL</td>
-                <td class="value-col {{ total_start|amount_class }}">{{ total_start|money_signed }}</td>
-                <td class="value-col {{ total_generation|amount_class }}">{{ total_generation|money_signed }}</td>
-                <td class="value-col {{ total_transfers|amount_class }}">{{ total_transfers|money_signed }}</td>
-                <td class="value-col {{ total_end|amount_class }}">{{ total_end|money_signed }}</td>
+                <td colspan="3">TOTAL{% if blocos|length > 1 %} · {{ bloco.currency|currency_label }}{% endif %}</td>
+                <td class="value-col {{ bloco.total_start|amount_class }}">{{ bloco.total_start|money_signed:bloco.currency }}</td>
+                <td class="value-col {{ bloco.total_generation|amount_class }}">{{ bloco.total_generation|money_signed:bloco.currency }}</td>
+                <td class="value-col {{ bloco.total_transfers|amount_class }}">{{ bloco.total_transfers|money_signed:bloco.currency }}</td>
+                <td class="value-col {{ bloco.total_end|amount_class }}">{{ bloco.total_end|money_signed:bloco.currency }}</td>
             </tr>
             {% endif %}
+            {% endfor %}
         </tbody>
     </table>
 </div>

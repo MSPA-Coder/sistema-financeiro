@@ -75,6 +75,40 @@ def invalid_period_response(request: HttpRequest, message: str) -> HttpResponseB
     return response
 
 
+def mixed_currency_response(request: HttpRequest, message: str) -> HttpResponseBadRequest:
+    """Mesma mecânica de `invalid_period_response`, outro motivo.
+
+    Seleção que atravessa moedas não tem total possível (ver
+    `core.domain.finance.MixedCurrencyError`). O gatilho é próprio para que a
+    mensagem diga o que é, e para que um relatório de erro do cliente não
+    confunda os dois casos.
+    """
+    response = HttpResponseBadRequest(message)
+    if request.headers.get("HX-Request"):
+        response["HX-Trigger"] = json.dumps({"app:moedas-misturadas": {"message": message}})
+    return response
+
+
+def recusa_moedas_misturadas(view):
+    """Transforma `MixedCurrencyError` em aviso na tela, nunca em 500.
+
+    A regra é do domínio e vale para qualquer caminho; a tradução para HTTP
+    fica aqui, num lugar só, em vez de um `try/except` em cada view.
+    """
+    from functools import wraps
+
+    from core.domain.finance import MixedCurrencyError
+
+    @wraps(view)
+    def _view(request, *args, **kwargs):
+        try:
+            return view(request, *args, **kwargs)
+        except MixedCurrencyError as exc:
+            return mixed_currency_response(request, str(exc))
+
+    return _view
+
+
 class HtmxFlashMessagesMiddleware:
     """Anexa um swap fora de banda do bloco de mensagens a toda resposta HTMX.
 

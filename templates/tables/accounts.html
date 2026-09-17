@@ -36,7 +36,13 @@
             {% endfor %}
         </select>
         <input type="text" name="account_name" aria-label="Nome da conta" placeholder="Nome da conta..." maxlength="100" required autofocus data-ui="flex-1">
+        <select name="currency" aria-label="Moeda" required data-ui="w-120">
+            {% for code, label in currencies %}
+                <option value="{{ code }}">{{ label }}</option>
+            {% endfor %}
+        </select>
         <input type="text" name="initial_balance" aria-label="Saldo inicial" placeholder="Saldo inicial" data-ui="w-120">
+        <input type="date" name="initial_balance_date" aria-label="Data do saldo inicial" title="Data a que o saldo inicial se refere" data-ui="w-120">
         <button type="submit" class="btn btn-primary btn-sm"
                 data-sa-confirmar="Cadastrar esta conta financeira?"
                 data-sa-titulo="Confirmar cadastro"
@@ -65,7 +71,9 @@
                         </select>
                     </th>
                     <th>Nome</th>
+                    <th>Moeda</th>
                     <th>Saldo inicial</th>
+                    <th>Data do saldo</th>
                     <th data-ui="w-100">Ações</th>
                 </tr>
             </thead>

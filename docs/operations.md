@@ -2,9 +2,12 @@
 
 ## Configuração e serviços
 
-O Compose exige os arquivos secretos `django_secret_key` e
-`postgres_password`. Por padrão ficam em `.secrets/`;
-`COMPOSE_SECRETS_DIRECTORY` altera esse diretório.
+O Compose exige os arquivos secretos `django_secret_key`, `postgres_password` e
+`patrimonio_token`. Por padrão ficam em `.secrets/`;
+`COMPOSE_SECRETS_DIRECTORY` altera esse diretório. Os três são provisionados
+por `.\scripts\provision_compose_secrets.ps1`, que **gera** o
+`patrimonio_token` quando o arquivo de ambiente não traz um — ele é a única
+credencial daqui que ninguém precisa escolher.
 
 Certificados locais opcionais entram no build por `.certs/local-root-ca.crt`.
 Esses caminhos não são versionados.
@@ -130,3 +133,50 @@ operacional é `~/deploy.sh bancario`; ele atualiza o espelho, reconstrói a
 imagem, aguarda os health checks e valida o endereço público. `.env.vps`,
 `.secrets/` e `.certs/` também ficam fora do Git e precisam ser preservados em
 uma reinstalação.
+
+**Antes do primeiro deploy desta versão**, crie `.secrets/patrimonio_token` no
+servidor. O Compose recusa subir com um arquivo de segredo declarado e ausente,
+e o `deploy.sh` faria rollback de uma implantação que não tinha defeito nenhum:
+
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(48))" > .secrets/patrimonio_token
+sudo chown --reference=.secrets/django_secret_key .secrets/patrimonio_token
+sudo chmod --reference=.secrets/django_secret_key .secrets/patrimonio_token
+```
+
+**Dono e modo copiados do `django_secret_key`, e não `ubuntu` com `600`.** O
+Compose sem Swarm monta o segredo com as permissões do arquivo no host, e o
+contêiner lê como o usuário `app`, que não é o `ubuntu`. Um token que só o
+`ubuntu` lê sobe sem erro nenhum e deixa a rota respondendo **503** — a falha
+aparece longe da causa.
+
+## Resumo publicado para o consolidador
+
+`GET /patrimonio/v1/resumo` devolve, em JSON, o caixa que este sistema conhece:
+uma linha por conta, com moeda e saldo na data pedida, mais o total **por
+moeda** -- nunca somado entre moedas. É o que o consolidador de patrimônio lê;
+ele não toca no banco daqui, e este sistema não sabe nada sobre ele.
+
+```bash
+printf 'Authorization: Bearer %s\n' "$(sudo cat .secrets/patrimonio_token)" \
+  | curl -s -H @- "https://bancario-mspa.duckdns.org/patrimonio/v1/resumo?data=2026-09-16"
+```
+
+No servidor, pelo endereço público: no loopback (`127.0.0.1:5201`) o
+`SECURE_SSL_REDIRECT` responde **301** a qualquer rota. O token vai pela entrada
+padrão (`-H @-`), e não na linha de comando, onde qualquer usuário da máquina o
+leria em `ps`.
+
+`?data=` é opcional e vale a data de hoje. Conta cujo saldo inicial é posterior
+à data pedida fica fora da foto: ela ainda não existia.
+
+**O token é a permissão.** Quem o tem lê o saldo de todas as contas deste
+sistema, sem escopo por titular -- um resumo filtrado produziria um patrimônio
+consolidado que esconde contas sem avisar, que é pior do que não responder.
+Guarde-o como se guarda uma senha de banco, e rode a rotação nos dois lados ao
+mesmo tempo.
+
+Sem um token utilizável (ausente, curto demais ou igual ao do
+`.env.docker.example`), a rota responde **503** e a integração fica fora do ar
+-- que é a falha visível. `401` quer dizer "token errado", não "não
+configurado", e os dois mandam o operador procurar em lugares diferentes.

@@ -1,4 +1,12 @@
 {% load money_filters %}
+{% comment %}
+Um bloco por moeda (ver `banking.services.currency_blocks`). Com uma moeda só --
+o caso de hoje -- há um bloco e nenhum cabeçalho: a tela sai idêntica ao que
+sempre foi. O cabeçalho só aparece quando existe mais de uma moeda, porque aí
+não dizer qual é seria pior do que repetir a tabela.
+{% endcomment %}
+{% for bloco in blocos %}
+{% if blocos|length > 1 %}<h3 class="currency-block-title">{{ bloco.currency|currency_label }}</h3>{% endif %}
 <div class="table-container">
     <table class="projection-table">
         <thead>
@@ -18,7 +26,7 @@
             </tr>
         </thead>
         <tbody>
-            {% for m in month_data %}
+            {% for m in bloco.month_data %}
             <tr>
                 <td class="month-col">
                     <div class="month-cell">
@@ -30,37 +38,38 @@
                            href="{% url 'transactions:transactions_view' %}?period={{ m.month }}&amp;mode={{ view_mode }}&amp;owner_id={{ current_owner_id|default:'' }}&amp;institution_id={{ current_institution_id|default:'' }}&amp;account_id={{ current_account_id|default:'' }}">🔍</a>
                     </div>
                 </td>
-                <td class="value-col amount-positive col-separator">{{ m.receita|money_signed }}</td>
-                <td class="value-col amount-negative">{{ m.despesa|neg|money_signed }}</td>
-                <td class="value-col {{ m.geracao|amount_class }}">{{ m.geracao|money_signed }}</td>
-                <td class="value-col amount-positive col-separator">{{ m.rec_int|money_signed }}</td>
-                <td class="value-col amount-negative">{{ m.desp_int|neg|money_signed }}</td>
+                <td class="value-col amount-positive col-separator">{{ m.receita|money_signed:bloco.currency }}</td>
+                <td class="value-col amount-negative">{{ m.despesa|neg|money_signed:bloco.currency }}</td>
+                <td class="value-col {{ m.geracao|amount_class }}">{{ m.geracao|money_signed:bloco.currency }}</td>
+                <td class="value-col amount-positive col-separator">{{ m.rec_int|money_signed:bloco.currency }}</td>
+                <td class="value-col amount-negative">{{ m.desp_int|neg|money_signed:bloco.currency }}</td>
                 {% if show_status_columns %}
-                <td class="value-col col-separator {{ m.geracao_atrasado|amount_class }}">{{ m.geracao_atrasado|money_signed }}</td>
-                <td class="value-col {{ m.geracao_realizada|amount_class }}">{{ m.geracao_realizada|money_signed }}</td>
-                <td class="value-col {{ m.geracao_projetada|amount_class }}">{{ m.geracao_projetada|money_signed }}</td>
+                <td class="value-col col-separator {{ m.geracao_atrasado|amount_class }}">{{ m.geracao_atrasado|money_signed:bloco.currency }}</td>
+                <td class="value-col {{ m.geracao_realizada|amount_class }}">{{ m.geracao_realizada|money_signed:bloco.currency }}</td>
+                <td class="value-col {{ m.geracao_projetada|amount_class }}">{{ m.geracao_projetada|money_signed:bloco.currency }}</td>
                 {% endif %}
-                <td class="value-col col-separator col-separator-right {{ m.saldo|amount_class }}"><strong>{{ m.saldo|money_signed }}</strong></td>
+                <td class="value-col col-separator col-separator-right {{ m.saldo|amount_class }}"><strong>{{ m.saldo|money_signed:bloco.currency }}</strong></td>
             </tr>
             {% empty %}
             <tr><td colspan="10" data-ui="empty-2">Nenhum dado encontrado.</td></tr>
             {% endfor %}
-            {% if period_totals %}
+            {% if bloco.period_totals %}
             <tr class="summary-row">
                 <td class="month-col">TOTAL PERÍODO</td>
-                <td class="value-col amount-positive col-separator">{{ period_totals.receita|money_signed }}</td>
-                <td class="value-col amount-negative">{{ period_totals.despesa|neg|money_signed }}</td>
-                <td class="value-col {{ period_totals.geracao|amount_class }}">{{ period_totals.geracao|money_signed }}</td>
-                <td class="value-col amount-positive col-separator">{{ period_totals.rec_int|money_signed }}</td>
-                <td class="value-col amount-negative">{{ period_totals.desp_int|neg|money_signed }}</td>
+                <td class="value-col amount-positive col-separator">{{ bloco.period_totals.receita|money_signed:bloco.currency }}</td>
+                <td class="value-col amount-negative">{{ bloco.period_totals.despesa|neg|money_signed:bloco.currency }}</td>
+                <td class="value-col {{ bloco.period_totals.geracao|amount_class }}">{{ bloco.period_totals.geracao|money_signed:bloco.currency }}</td>
+                <td class="value-col amount-positive col-separator">{{ bloco.period_totals.rec_int|money_signed:bloco.currency }}</td>
+                <td class="value-col amount-negative">{{ bloco.period_totals.desp_int|neg|money_signed:bloco.currency }}</td>
                 {% if show_status_columns %}
-                <td class="value-col col-separator {{ period_totals.geracao_atrasado|amount_class }}">{{ period_totals.geracao_atrasado|money_signed }}</td>
-                <td class="value-col {{ period_totals.geracao_realizada|amount_class }}">{{ period_totals.geracao_realizada|money_signed }}</td>
-                <td class="value-col {{ period_totals.geracao_projetada|amount_class }}">{{ period_totals.geracao_projetada|money_signed }}</td>
+                <td class="value-col col-separator {{ bloco.period_totals.geracao_atrasado|amount_class }}">{{ bloco.period_totals.geracao_atrasado|money_signed:bloco.currency }}</td>
+                <td class="value-col {{ bloco.period_totals.geracao_realizada|amount_class }}">{{ bloco.period_totals.geracao_realizada|money_signed:bloco.currency }}</td>
+                <td class="value-col {{ bloco.period_totals.geracao_projetada|amount_class }}">{{ bloco.period_totals.geracao_projetada|money_signed:bloco.currency }}</td>
                 {% endif %}
-                <td class="value-col col-separator col-separator-right {{ period_totals.saldo|amount_class }}">{{ period_totals.saldo|money_signed }}</td>
+                <td class="value-col col-separator col-separator-right {{ bloco.period_totals.saldo|amount_class }}">{{ bloco.period_totals.saldo|money_signed:bloco.currency }}</td>
             </tr>
             {% endif %}
         </tbody>
     </table>
 </div>
+{% endfor %}

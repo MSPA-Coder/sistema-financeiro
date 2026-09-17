@@ -19,12 +19,14 @@
     `.htmx-indicator` e estilizada em `core/application.css`, onde o resto da
     aparencia deste projeto mora.
 
-    `attributesToSettle` sai com `style` de fora (o padrao inclui). Manter
-    `style` fazia o HTMX copiar o atributo dos `<canvas>` do Chart.js a cada
-    troca, e a CSP recusava a copia -- seis violacoes por troca no painel.
-    Nenhum elemento deste projeto depende de `style` sobreviver a um swap.
+    `attributesToSettle` preserva apenas `class`. `style`, `width` e `height`
+    pertencem ao ciclo de vida do canvas: o Chart.js troca os dois ultimos por
+    pixels reais do dispositivo. Se o HTMX os copia para o canvas novo, ele
+    nasce com a medida do grafico anterior e pode ficar ovalado, menor ou sem
+    area para desenhar. Nenhum elemento deste projeto depende desses atributos
+    sobreviver a um swap.
     {% endcomment %}
-    <meta name="htmx-config" content='{"includeIndicatorStyles": false, "attributesToSettle": ["class", "width", "height"]}'>
+    <meta name="htmx-config" content='{"includeIndicatorStyles": false, "attributesToSettle": ["class"]}'>
     <script src="{% static 'vendor/htmx.min.js' %}"></script>
     <script src="{% static 'sharedauth/sharedauth-ui.js' %}" defer></script>
 

@@ -50,6 +50,7 @@ class OperationSummary:
     end_date: date
     entries_count: int
     total_amount: Decimal
+    total_currency: str
     status_summary: str
     entries: list[CashFlowEntry]
 
@@ -77,10 +78,24 @@ def _base_description(entries: list[CashFlowEntry]) -> str:
     return "-"
 
 
-def _operation_total(entries: list[CashFlowEntry]) -> Decimal:
+def _operation_total(entries: list[CashFlowEntry]) -> tuple[Decimal, str]:
+    """Quanto a operação vale, e em que moeda.
+
+    Transferência interna não soma as pontas -- é o mesmo dinheiro saindo e
+    entrando. Também não dá para pegar a maior das duas: quando a transferência
+    atravessa moedas, a maior é só a de número maior, e o total sairia rotulado
+    com a moeda errada. Quem responde pela operação é a origem.
+    """
     if entries[0].operation_type == OPERATION_INTERNAL_TRANSFER:
-        return max((entry.entry_amount for entry in entries), default=Decimal("0.00"))
-    return sum((entry.entry_amount for entry in entries), Decimal("0.00"))
+        origins = [entry for entry in entries if entry.source_entry_id is None] or entries
+        return (
+            max((entry.entry_amount for entry in origins), default=Decimal("0.00")),
+            origins[0].account.currency,
+        )
+    return (
+        sum((entry.entry_amount for entry in entries), Decimal("0.00")),
+        entries[0].account.currency,
+    )
 
 
 def _build_summary(operation_key: str, entries: list[CashFlowEntry]) -> OperationSummary:
@@ -102,6 +117,7 @@ def _build_summary(operation_key: str, entries: list[CashFlowEntry]) -> Operatio
             category_names.append(category_name)
             seen_categories.add(category_name)
 
+    total_amount, total_currency = _operation_total(entries)
     return OperationSummary(
         operation_id=operation_key,
         operation_type=operation_type,
@@ -113,7 +129,8 @@ def _build_summary(operation_key: str, entries: list[CashFlowEntry]) -> Operatio
         start_date=entries[0].due_date,
         end_date=entries[-1].due_date,
         entries_count=len(entries),
-        total_amount=_operation_total(entries),
+        total_amount=total_amount,
+        total_currency=total_currency,
         status_summary=_status_summary(entries),
         entries=entries,
     )

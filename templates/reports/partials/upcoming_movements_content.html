@@ -1,29 +1,36 @@
 {% load money_filters %}
+{% comment %}
+Um bloco por moeda (ver `banking.services.currency_blocks`). Com uma moeda só --
+o caso de hoje -- há um bloco e nenhum cabeçalho, e a tela sai idêntica ao que
+sempre foi.
+{% endcomment %}
+{% for bloco in blocos %}
+{% if blocos|length > 1 %}<h3 class="currency-block-title">{{ bloco.currency|currency_label }}</h3>{% endif %}
 <section class="decision-strip" aria-label="Resumo dos próximos movimentos">
-    <div class="decision-card {{ report.summary.action_level }}">
+    <div class="decision-card {{ bloco.report.summary.action_level }}">
         <strong>Providência</strong>
-        <div class="decision-value">{{ report.summary.action_label }}</div>
+        <div class="decision-value">{{ bloco.report.summary.action_label }}</div>
         <div class="decision-note">
-            {{ report.summary.action_message }}
-            {% if report.summary.action_amount > 0 %} Valor de referência: {{ report.summary.action_amount|money }}.{% endif %}
+            {{ bloco.report.summary.action_message }}
+            {% if bloco.report.summary.action_amount > 0 %} Valor de referência: {{ bloco.report.summary.action_amount|money:bloco.currency }}.{% endif %}
         </div>
     </div>
     <div class="decision-card">
         <strong>Saldo inicial</strong>
-        <div class="decision-value card-value {{ report.summary.start_balance|amount_class }}">{{ report.summary.start_balance|money_signed }}</div>
+        <div class="decision-value card-value {{ bloco.report.summary.start_balance|amount_class }}">{{ bloco.report.summary.start_balance|money_signed:bloco.currency }}</div>
     </div>
     <div class="decision-card">
         <strong>Movimento líquido</strong>
-        <div class="decision-value card-value {{ report.summary.net_movement|amount_class }}">{{ report.summary.net_movement|money_signed }}</div>
+        <div class="decision-value card-value {{ bloco.report.summary.net_movement|amount_class }}">{{ bloco.report.summary.net_movement|money_signed:bloco.currency }}</div>
     </div>
     <div class="decision-card">
         <strong>Menor saldo</strong>
-        <div class="decision-value card-value {{ report.summary.minimum_balance|amount_class }}">{{ report.summary.minimum_balance|money_signed }}</div>
-        <div class="decision-note">{{ report.summary.minimum_balance_date|date:'d/m/Y' }}</div>
+        <div class="decision-value card-value {{ bloco.report.summary.minimum_balance|amount_class }}">{{ bloco.report.summary.minimum_balance|money_signed:bloco.currency }}</div>
+        <div class="decision-note">{{ bloco.report.summary.minimum_balance_date|date:'d/m/Y' }}</div>
     </div>
     <div class="decision-card">
         <strong>Saldo final</strong>
-        <div class="decision-value card-value {{ report.summary.end_balance|amount_class }}">{{ report.summary.end_balance|money_signed }}</div>
+        <div class="decision-value card-value {{ bloco.report.summary.end_balance|amount_class }}">{{ bloco.report.summary.end_balance|money_signed:bloco.currency }}</div>
     </div>
 </section>
 
@@ -44,37 +51,37 @@
             </tr>
         </thead>
         <tbody>
-            {% for row in report.account_rows %}
+            {% for row in bloco.report.account_rows %}
             <tr>
                 <td>{{ row.owner_name }}</td>
                 <td>{{ row.institution_name }}</td>
                 <td>
-                    <a href="{% url 'transactions:transactions_view' %}?period={{ report.start_date|date:'Y-m' }}&amp;mode={{ view_mode }}&amp;owner_id={{ current_owner_id|default:'' }}&amp;institution_id={{ current_institution_id|default:'' }}&amp;account_id={{ row.account_id }}">{{ row.account_name }}</a>
+                    <a href="{% url 'transactions:transactions_view' %}?period={{ bloco.report.start_date|date:'Y-m' }}&amp;mode={{ view_mode }}&amp;owner_id={{ current_owner_id|default:'' }}&amp;institution_id={{ current_institution_id|default:'' }}&amp;account_id={{ row.account_id }}">{{ row.account_name }}</a>
                 </td>
-                <td class="value-col {{ row.start_balance|amount_class }}">{{ row.start_balance|money_signed }}</td>
-                <td class="value-col amount-positive">{{ row.income|money_signed }}</td>
-                <td class="value-col amount-negative">{{ row.expense|neg|money_signed }}</td>
-                <td class="value-col {{ row.internal_net|amount_class }}">{{ row.internal_net|money_signed }}</td>
-                <td class="value-col {{ row.minimum_balance|amount_class }}">{{ row.minimum_balance|money_signed }}<span class="action-message">{{ row.minimum_balance_date|date:'d/m/Y' }}</span></td>
-                <td class="value-col {{ row.end_balance|amount_class }}">{{ row.end_balance|money_signed }}</td>
+                <td class="value-col {{ row.start_balance|amount_class }}">{{ row.start_balance|money_signed:bloco.currency }}</td>
+                <td class="value-col amount-positive">{{ row.income|money_signed:bloco.currency }}</td>
+                <td class="value-col amount-negative">{{ row.expense|neg|money_signed:bloco.currency }}</td>
+                <td class="value-col {{ row.internal_net|amount_class }}">{{ row.internal_net|money_signed:bloco.currency }}</td>
+                <td class="value-col {{ row.minimum_balance|amount_class }}">{{ row.minimum_balance|money_signed:bloco.currency }}<span class="action-message">{{ row.minimum_balance_date|date:'d/m/Y' }}</span></td>
+                <td class="value-col {{ row.end_balance|amount_class }}">{{ row.end_balance|money_signed:bloco.currency }}</td>
                 <td>
                     <span class="action-pill {{ row.action_level }}">{{ row.action_label }}</span>
-                    <span class="action-message">{{ row.action_message }}{% if row.action_amount > 0 %} {{ row.action_amount|money }}.{% endif %}</span>
+                    <span class="action-message">{{ row.action_message }}{% if row.action_amount > 0 %} {{ row.action_amount|money:bloco.currency }}.{% endif %}</span>
                 </td>
             </tr>
             {% empty %}
             <tr><td colspan="10" data-ui="empty-2">Nenhuma conta com movimento no período.</td></tr>
             {% endfor %}
-            {% if report.account_rows %}
+            {% if bloco.report.account_rows %}
             <tr class="summary-row">
                 <td colspan="3">TOTAL</td>
-                <td class="value-col {{ report.summary.start_balance|amount_class }}">{{ report.summary.start_balance|money_signed }}</td>
-                <td class="value-col amount-positive">{{ report.summary.income|money_signed }}</td>
-                <td class="value-col amount-negative">{{ report.summary.expense|neg|money_signed }}</td>
-                <td class="value-col {{ report.summary.internal_net|amount_class }}">{{ report.summary.internal_net|money_signed }}</td>
-                <td class="value-col {{ report.summary.minimum_balance|amount_class }}">{{ report.summary.minimum_balance|money_signed }}</td>
-                <td class="value-col {{ report.summary.end_balance|amount_class }}">{{ report.summary.end_balance|money_signed }}</td>
-                <td>{{ report.summary.action_label }}</td>
+                <td class="value-col {{ bloco.report.summary.start_balance|amount_class }}">{{ bloco.report.summary.start_balance|money_signed:bloco.currency }}</td>
+                <td class="value-col amount-positive">{{ bloco.report.summary.income|money_signed:bloco.currency }}</td>
+                <td class="value-col amount-negative">{{ bloco.report.summary.expense|neg|money_signed:bloco.currency }}</td>
+                <td class="value-col {{ bloco.report.summary.internal_net|amount_class }}">{{ bloco.report.summary.internal_net|money_signed:bloco.currency }}</td>
+                <td class="value-col {{ bloco.report.summary.minimum_balance|amount_class }}">{{ bloco.report.summary.minimum_balance|money_signed:bloco.currency }}</td>
+                <td class="value-col {{ bloco.report.summary.end_balance|amount_class }}">{{ bloco.report.summary.end_balance|money_signed:bloco.currency }}</td>
+                <td>{{ bloco.report.summary.action_label }}</td>
             </tr>
             {% endif %}
         </tbody>
@@ -95,7 +102,7 @@
             </tr>
         </thead>
         <tbody>
-            {% for line in report.movement_lines %}
+            {% for line in bloco.report.movement_lines %}
             <tr>
                 <td class="date-col">
                     <a href="{% url 'transactions:transactions_view' %}?period={{ line.movement_date|date:'Y-m' }}&amp;mode={{ view_mode }}&amp;owner_id={{ current_owner_id|default:'' }}&amp;institution_id={{ current_institution_id|default:'' }}&amp;account_id={{ line.account_id }}">{{ line.movement_date|date:'d/m/Y' }}</a>
@@ -106,8 +113,8 @@
                     {% if line.entry_type == 'receita' %}Receita{% else %}Despesa{% endif %}
                     {% if line.description %}<div class="line-description">{{ line.description }}</div>{% endif %}
                 </td>
-                <td class="value-col {{ line.signed_amount|amount_class }}">{{ line.signed_amount|money_signed }}</td>
-                <td class="value-col {{ line.balance_after|amount_class }}">{{ line.balance_after|money_signed }}</td>
+                <td class="value-col {{ line.signed_amount|amount_class }}">{{ line.signed_amount|money_signed:bloco.currency }}</td>
+                <td class="value-col {{ line.balance_after|amount_class }}">{{ line.balance_after|money_signed:bloco.currency }}</td>
                 <td class="status-col">{{ line.status }}</td>
             </tr>
             {% empty %}
@@ -116,3 +123,4 @@
         </tbody>
     </table>
 </div>
+{% endfor %}

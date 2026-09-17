@@ -1,12 +1,15 @@
 """Serviços de Cadastros: Instituições e Contas financeiras."""
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from django.db import IntegrityError
-from django.db.models import ProtectedError
+from django.db.models import Exists, OuterRef, ProtectedError
+from django.utils.timezone import localdate
 
 from accounts.services import accessible_owner_ids, can_access_owner
+from core.domain.finance import BASE_CURRENCY, VALID_CURRENCIES, MixedCurrencyError
 
 from .models import FinancialAccount, FinancialInstitution
 
@@ -99,10 +102,20 @@ def can_access_account(user, account_id, action: str = "view") -> bool:
 
 
 def list_accounts_for_user(user, owner_id: int | None = None, institution_id: int | None = None):
-    """Contas visíveis para `user`, restritas aos titulares acessíveis."""
+    """Contas visíveis para `user`, restritas aos titulares acessíveis.
+
+    `has_entries` acompanha cada conta porque a moeda de conta com lançamento é
+    imutável (ver `update_account`): a tela usa isso para não oferecer uma troca
+    que o servidor vai recusar. O `Exists` percorre a relação inversa
+    `transactions` sem importar o app de lançamentos.
+    """
     owner_ids = accessible_owner_ids(user, "view")
     queryset = FinancialAccount.objects.select_related('owner', 'institution').filter(
         owner_id__in=owner_ids
+    ).annotate(
+        has_entries=Exists(
+            FinancialAccount.objects.filter(pk=OuterRef('pk'), transactions__isnull=False)
+        )
     )
     if owner_id:
         queryset = queryset.filter(owner_id=owner_id)
@@ -118,6 +131,106 @@ def _parse_initial_balance(raw_value: str | None) -> Decimal:
         return Decimal(str(raw_value).strip().replace(',', '.'))
     except InvalidOperation as exc:
         raise ValueError("Saldo inicial inválido.") from exc
+
+
+def currencies_of_accounts(account_ids) -> tuple[str, ...]:
+    """Moedas distintas de um conjunto de contas, em ordem."""
+    ids = [int(account_id) for account_id in account_ids if account_id]
+    if not ids:
+        return ()
+    # `order_by()` sem argumento limpa a ordenação padrão do modelo
+    # (`account_name`). Sem isso o Django acrescenta essa coluna ao SELECT, o
+    # `DISTINCT` passa a valer para o par (moeda, nome) e duas contas na mesma
+    # moeda voltam como duas moedas -- foi assim que a primeira versão desta
+    # função acusou moedas misturadas onde só havia real.
+    return tuple(sorted(
+        FinancialAccount.objects.filter(id__in=ids)
+        .order_by()
+        .values_list("currency", flat=True)
+        .distinct()
+    ))
+
+
+def currency_of_accounts(account_ids) -> str:
+    """A moeda comum do conjunto, ou `MixedCurrencyError`.
+
+    Conjunto vazio vale a moeda base: uma tela sem conta nenhuma continua
+    escrevendo `R$ 0,00`, que é o que ela sempre escreveu.
+
+    É a porta única por onde todo agregado que atravessa contas passa. Sem ela,
+    um total mudo somaria real com dólar e pareceria certo -- o defeito mais
+    caro que esta mudança podia deixar para trás.
+    """
+    currencies = currencies_of_accounts(account_ids)
+    if not currencies:
+        return BASE_CURRENCY
+    if len(currencies) > 1:
+        raise MixedCurrencyError(currencies)
+    return currencies[0]
+
+
+def account_ids_by_currency(account_ids) -> dict[str, list[int]]:
+    """As contas da seleção, repartidas por moeda.
+
+    É a porta por onde as telas pedem um bloco de totais para cada moeda, em vez
+    de um total só para a seleção inteira. Cada grupo que sai daqui é de uma
+    moeda só, então os agregados continuam recebendo o que sempre exigiram --
+    e `currency_of_accounts` segue sendo a rede para quem esquecer disso.
+
+    Moeda base primeiro, depois alfabética: a ordem dos blocos na tela não pode
+    depender da ordem em que o banco devolveu as linhas.
+    """
+    ids = [int(account_id) for account_id in account_ids if account_id]
+    if not ids:
+        return {}
+    agrupadas: dict[str, list[int]] = {}
+    for account_id, currency in (
+        FinancialAccount.objects.filter(id__in=ids)
+        .order_by("account_name", "id")
+        .values_list("id", "currency")
+    ):
+        agrupadas.setdefault(currency, []).append(account_id)
+    return {
+        currency: agrupadas[currency]
+        for currency in sorted(agrupadas, key=lambda c: (c != BASE_CURRENCY, c))
+    }
+
+
+def currency_blocks(account_ids) -> list[tuple[str, list[int]]]:
+    """Os grupos de `account_ids_by_currency`, sempre com pelo menos um bloco.
+
+    Seleção sem conta nenhuma continua rendendo um bloco em moeda base: a tela
+    vazia escreve `R$ 0,00` como sempre escreveu, em vez de sumir.
+    """
+    grupos = account_ids_by_currency(account_ids)
+    if not grupos:
+        return [(BASE_CURRENCY, [])]
+    return list(grupos.items())
+
+
+def _parse_currency(raw_value: str | None) -> str:
+    currency = (raw_value or "").strip().upper()
+    if not currency:
+        raise ValueError("Moeda é obrigatória.")
+    if currency not in VALID_CURRENCIES:
+        raise ValueError(f"Moeda inválida: {currency}.")
+    return currency
+
+
+def _parse_initial_balance_date(raw_value: str | None) -> date:
+    """Vazio vale como hoje; conta nova sem data informada é conta de hoje.
+
+    O histórico já foi datado em 31/12/2025 pela migração
+    `0004_conta_moeda_e_data_do_saldo_inicial`, e não é o formulário que
+    reescreve isso.
+    """
+    raw_text = (raw_value or "").strip()
+    if not raw_text:
+        return localdate()
+    try:
+        return date.fromisoformat(raw_text)
+    except ValueError as exc:
+        raise ValueError("Data do saldo inicial inválida.") from exc
 
 
 def _clean_account_fields(owner_id: str, institution_id: str, account_name: str, initial_balance: str):
@@ -146,10 +259,21 @@ def _clean_account_fields(owner_id: str, institution_id: str, account_name: str,
     return owner_id_int, institution_id_int, account_name, balance
 
 
-def create_account(user, *, owner_id: str, institution_id: str, account_name: str, initial_balance: str) -> FinancialAccount:
+def create_account(
+    user,
+    *,
+    owner_id: str,
+    institution_id: str,
+    account_name: str,
+    initial_balance: str,
+    currency: str,
+    initial_balance_date: str = "",
+) -> FinancialAccount:
     clean_owner_id, clean_institution_id, clean_name, balance = _clean_account_fields(
         owner_id, institution_id, account_name, initial_balance
     )
+    clean_currency = _parse_currency(currency)
+    clean_balance_date = _parse_initial_balance_date(initial_balance_date)
     if not can_access_owner(user, clean_owner_id, "create"):
         raise ValueError("Acesso negado: você não pode criar contas para este titular.")
     if not FinancialInstitution.objects.filter(id=clean_institution_id).exists():
@@ -160,25 +284,54 @@ def create_account(user, *, owner_id: str, institution_id: str, account_name: st
         institution_id=clean_institution_id,
         account_name=clean_name,
         initial_balance=balance,
+        currency=clean_currency,
+        initial_balance_date=clean_balance_date,
     )
 
 
-def update_account(user, account: FinancialAccount, *, owner_id: str, institution_id: str, account_name: str, initial_balance: str) -> FinancialAccount:
+def update_account(
+    user,
+    account: FinancialAccount,
+    *,
+    owner_id: str,
+    institution_id: str,
+    account_name: str,
+    initial_balance: str,
+    currency: str,
+    initial_balance_date: str = "",
+) -> FinancialAccount:
     clean_owner_id, clean_institution_id, clean_name, balance = _clean_account_fields(
         owner_id, institution_id, account_name, initial_balance
     )
+    clean_currency = _parse_currency(currency)
+    clean_balance_date = _parse_initial_balance_date(initial_balance_date)
     if not can_access_owner(user, account.owner_id, "update"):
         raise ValueError("Acesso negado: você não pode alterar contas deste titular.")
     if not can_access_owner(user, clean_owner_id, "update"):
         raise ValueError("Acesso negado: você não pode transferir a conta para este titular.")
     if not FinancialInstitution.objects.filter(id=clean_institution_id).exists():
         raise ValueError("Instituição não encontrada.")
+    # Trocar a moeda de uma conta com lançamento reescreveria em silêncio o
+    # significado de todo o passado dela: os mesmos valores passariam a valer
+    # em outra moeda, sem nenhum registro de conversão. Conta com histórico não
+    # muda de moeda -- se a moeda estiver errada, a saída é outra conta.
+    if clean_currency != account.currency and account.transactions.exists():
+        raise ValueError(
+            "Esta conta já tem lançamentos e não pode mudar de moeda: os valores "
+            "já registrados continuariam iguais, valendo outra coisa. Crie uma "
+            "conta na moeda correta e transfira o saldo."
+        )
 
     account.owner_id = clean_owner_id
     account.institution_id = clean_institution_id
     account.account_name = clean_name
     account.initial_balance = balance
-    account.save(update_fields=["owner", "institution", "account_name", "initial_balance", "updated_at"])
+    account.currency = clean_currency
+    account.initial_balance_date = clean_balance_date
+    account.save(update_fields=[
+        "owner", "institution", "account_name", "initial_balance",
+        "currency", "initial_balance_date", "updated_at",
+    ])
     return account
 
 

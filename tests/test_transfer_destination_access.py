@@ -17,6 +17,7 @@ from bank_statements.reconciliation import reconcile_line_with_entry
 from banking.models import FinancialAccount, FinancialInstitution
 from core import views as core_views
 from core.domain.finance import (
+    CATEGORY_KIND_TRANSFER,
     ENTRY_TYPE_EXPENSE,
     OPERATION_SCOPE_ALL,
     OPERATION_SCOPE_SINGLE,
@@ -39,7 +40,7 @@ def transfer_setup():
     origin = FinancialAccount.objects.create(owner=owner, institution=institution, account_name="Origem")
     destination = FinancialAccount.objects.create(owner=destination_owner, institution=institution, account_name="Destino secreto")
     UserOwnerAccess.objects.create(user=user, owner=owner, can_view=True, can_create=True, can_update=True, can_delete=True)
-    category = CashFlowCategory.objects.create(category_name="Interna", is_internal=True)
+    category = CashFlowCategory.objects.create(category_name="Interna", kind=CATEGORY_KIND_TRANSFER)
     return user, origin, destination, category
 
 

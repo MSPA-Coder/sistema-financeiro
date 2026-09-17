@@ -54,11 +54,17 @@ jobs:
         # Até a fase F1 isso não aparecia porque nenhum contêiner de banco subia
         # na CI. O valor aqui é uma constante pública deste arquivo e não
         # protege nada.
+        #
+        # `patrimonio_token` precisa existir só para o Compose montar o segredo
+        # declarado: sem o arquivo, `run quality` morre antes do primeiro teste.
+        # A suíte não lê este valor -- os testes da rota concedem o próprio
+        # token por arquivo temporário.
         run: |
           umask 077
           mkdir -p .secrets
           printf '%s\n' 'ci-django-secret-key-not-for-production' > .secrets/django_secret_key
           printf '%s\n' 'ci-postgres-password-not-for-production' > .secrets/postgres_password
+          printf '%s\n' 'ci-patrimonio-token-not-for-production' > .secrets/patrimonio_token
           chmod 0644 .secrets/postgres_password
       - name: Validar Compose
         run: docker compose config --quiet

@@ -8,7 +8,7 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
 
-from core.htmx import quer_fragmento
+from core.htmx import quer_fragmento, recusa_moedas_misturadas
 from core.permissions import permission_required
 from core.services import system_start_date
 from reports import services as reports_services
@@ -27,6 +27,7 @@ def _redirect_to_panel(request):
 
 @login_required
 @permission_required("management.view")
+@recusa_moedas_misturadas
 def management_view(request):
     today = date.today()
     period_value = request.GET.get("month") or reports_services.month_input_value(date(today.year, today.month, 1))

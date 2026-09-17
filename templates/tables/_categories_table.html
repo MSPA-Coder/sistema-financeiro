@@ -4,10 +4,12 @@
     <tr>
         <td>{{ category.category_name }}</td>
         <td>
-            {% if category.is_internal %}
-            <span class="badge badge-warning">Interna</span>
+            {% if category.kind == 'transferencia' %}
+            <span class="badge badge-warning">Transferência</span>
+            {% elif category.kind == 'movimentacao' %}
+            <span class="badge badge-warning">Movimentação</span>
             {% else %}
-            <span class="badge badge-success">Normal</span>
+            <span class="badge badge-success">Gerencial</span>
             {% endif %}
         </td>
         <td class="actions">
@@ -27,9 +29,19 @@
             <form method="post" action="{% url 'transactions:update_category' category.id %}" class="edit-form">
                 {% csrf_token %}
                 <input type="text" name="category_name" value="{{ category.category_name }}" aria-label="Nome da categoria" maxlength="100" required data-ui="flex-1">
-                <label data-ui="checkbox-label-inline">
-                    <input type="checkbox" name="is_internal" aria-label="Categoria interna" {% if category.is_internal %}checked{% endif %} data-ui="checkbox-reset"> Interna
-                </label>
+                {% comment %}
+                Categoria com lançamento não muda de tipo por aqui: mudar o tipo
+                reclassifica todo o passado dela de uma vez, inclusive meses
+                fechados. O seletor trava, e o servidor recusa de qualquer forma
+                (ver `update_category`).
+                {% endcomment %}
+                <select name="kind" aria-label="Tipo da categoria" required data-ui="w-260"
+                        {% if category.has_entries %}disabled title="Categoria com lançamentos: o tipo só muda por reclassificação"{% endif %}>
+                    {% for value, label in category_kind_options %}
+                    <option value="{{ value }}" {% if category.kind == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                {% if category.has_entries %}<input type="hidden" name="kind" value="{{ category.kind }}">{% endif %}
                 <button type="submit" class="btn btn-primary btn-sm"
                         data-sa-confirmar="Salvar as alterações desta categoria?"
                         data-sa-titulo="Confirmar alteração"
