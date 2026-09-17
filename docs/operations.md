@@ -140,8 +140,15 @@ e o `deploy.sh` faria rollback de uma implantação que não tinha defeito nenhu
 
 ```bash
 python3 -c "import secrets; print(secrets.token_urlsafe(48))" > .secrets/patrimonio_token
-chmod 600 .secrets/patrimonio_token
+sudo chown --reference=.secrets/django_secret_key .secrets/patrimonio_token
+sudo chmod --reference=.secrets/django_secret_key .secrets/patrimonio_token
 ```
+
+**Dono e modo copiados do `django_secret_key`, e não `ubuntu` com `600`.** O
+Compose sem Swarm monta o segredo com as permissões do arquivo no host, e o
+contêiner lê como o usuário `app`, que não é o `ubuntu`. Um token que só o
+`ubuntu` lê sobe sem erro nenhum e deixa a rota respondendo **503** — a falha
+aparece longe da causa.
 
 ## Resumo publicado para o consolidador
 
@@ -151,9 +158,14 @@ moeda** -- nunca somado entre moedas. É o que o consolidador de patrimônio lê
 ele não toca no banco daqui, e este sistema não sabe nada sobre ele.
 
 ```bash
-curl -H "Authorization: Bearer $(cat .secrets/patrimonio_token)" \
-  "http://localhost:5201/patrimonio/v1/resumo?data=2026-09-16"
+printf 'Authorization: Bearer %s\n' "$(sudo cat .secrets/patrimonio_token)" \
+  | curl -s -H @- "https://bancario-mspa.duckdns.org/patrimonio/v1/resumo?data=2026-09-16"
 ```
+
+No servidor, pelo endereço público: no loopback (`127.0.0.1:5201`) o
+`SECURE_SSL_REDIRECT` responde **301** a qualquer rota. O token vai pela entrada
+padrão (`-H @-`), e não na linha de comando, onde qualquer usuário da máquina o
+leria em `ps`.
 
 `?data=` é opcional e vale a data de hoje. Conta cujo saldo inicial é posterior
 à data pedida fica fora da foto: ela ainda não existia.
