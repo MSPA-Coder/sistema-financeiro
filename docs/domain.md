@@ -91,6 +91,18 @@ duas pontas de transferências preservam o agrupamento durante criação, ediç�
 realização, exclusão e conciliação. Operações compostas são atômicas: uma falha
 reverte o conjunto.
 
+Realizar é um fato de uma ocorrência, não do grupo. Criar um parcelado ou um
+recorrente como realizado realiza só a primeira ocorrência, com a data
+informada; as demais seguem o vencimento, como a projeção mensal já fazia. Na
+edição em grupo ("todos" ou "este e os próximos"), status, data e valor
+realizados do formulário valem só para a linha editada e a outra ponta dela;
+as outras ocorrências mantêm a realização que têm, e as em aberto só
+acompanham o vencimento. Decidido assim em 17/09/2026 porque o status pedido
+era aplicado ao grupo inteiro: meses futuros nasciam realizados na mesma data,
+o saldo realizado daquele dia perdia o valor uma vez por ocorrência, e editar o
+grupo a partir de uma linha em aberto apagava a realização das já pagas. A
+`BankOperation` resume o status das ocorrências também na criação.
+
 Transferências internas exigem concessão explícita do usuário para a conta de
 destino. Recorrências internas guardam um responsável; a projeção global só as
 estende enquanto a concessão continuar válida. Legados sem responsável ficam
