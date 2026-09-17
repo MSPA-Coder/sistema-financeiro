@@ -377,44 +377,6 @@
         construirGraficos(d);
     }
 
-    /* Diagnóstico sob demanda: só com `?diag=1` no endereço.
-
-       Existe porque um defeito de gráfico aparece no navegador de quem usa, e
-       não no de quem programa -- e pedir para a pessoa abrir o console e colar
-       código é caro e fácil de errar. Com `diag=1` a própria tela mostra o que
-       eu precisaria medir: o arquivo carregado, quantos gráficos estão vivos e,
-       para cada um, o tamanho dele contra o tamanho do contêiner. */
-    function mostrarDiagnostico() {
-        if (window.location.search.indexOf('diag=1') === -1) return;
-        var caixa = document.getElementById('diagnostico-graficos');
-        if (!caixa) {
-            caixa = document.createElement('pre');
-            caixa.id = 'diagnostico-graficos';
-            caixa.setAttribute('data-ui', 'diagnostico-graficos');
-            document.body.appendChild(caixa);
-        }
-        var arquivo = '(?)';
-        for (var i = 0; i < document.scripts.length; i++) {
-            var nome = (document.scripts[i].src || '').split('/').pop();
-            if (nome.indexOf('dashboard') === 0) arquivo = nome;
-        }
-        var linhas = CANVAS_IDS.map(function (id) {
-            var canvas = document.getElementById(id);
-            if (!canvas) return id + ': ausente';
-            var grafico = window.Chart && Chart.getChart ? Chart.getChart(canvas) : null;
-            var r = canvas.getBoundingClientRect();
-            var p = canvas.parentElement.getBoundingClientRect();
-            return id + ': ' + Math.round(r.width) + 'x' + Math.round(r.height) +
-                   ' (pai ' + Math.round(p.width) + 'x' + Math.round(p.height) + ') ' +
-                   (grafico ? 'ok' : 'SEM GRAFICO');
-        });
-        caixa.textContent = 'arquivo: ' + arquivo +
-            '\nvivos: ' + (window.Chart ? Object.keys(Chart.instances || {}).length : '-') +
-            ' | dpr: ' + window.devicePixelRatio +
-            ' | janela: ' + window.innerWidth + 'x' + window.innerHeight +
-            '\n' + linhas.join('\n');
-    }
-
     function renderizar() {
         if (typeof Chart === 'undefined') { console.error('Chart.js não carregado'); return; }
         var d = lerDados();
@@ -422,10 +384,9 @@
         jaReconstruiu = false;
         destruirGraficos();
         construirGraficos(d);
-        var conferir = function () { conferirTamanhos(d); mostrarDiagnostico(); };
+        var conferir = function () { conferirTamanhos(d); };
         requestAnimationFrame(conferir);
         setTimeout(conferir, 120);
-        setTimeout(mostrarDiagnostico, 700);
     }
 
     window.addEventListener('load', renderizar);
