@@ -28,6 +28,50 @@ function initRealizedFields() {
     });
 }
 
+/* Moeda da opcao selecionada num <select> de conta. O servidor escreve
+   data-currency e data-currency-symbol em cada <option> (ver _fields.html):
+   a moeda pertence a conta, e a tela so repete o que ela diz. */
+function _selectedAccountCurrency(select) {
+    if (!select) return null;
+    var option = select.options[select.selectedIndex];
+    if (!option || !option.value) return null;
+    return { code: option.dataset.currency || '', symbol: option.dataset.currencySymbol || '' };
+}
+
+/* Rotulos de valor e o campo do valor creditado no destino.
+
+   O campo so existe quando as duas contas estao em moedas diferentes -- ai as
+   pontas deixam de ser espelhadas e cada extrato tem o seu proprio valor. Fora
+   desse caso ele fica oculto E desabilitado: campo desabilitado nao e enviado,
+   e o servidor recusa esse valor quando as moedas sao iguais. */
+function updateTransferCurrencyFields(form) {
+    if (!form) return;
+    var accountSelect = form.querySelector('select[name="account_id"]');
+    var counterpartySelect = form.querySelector('select[name="counterparty_account_id"]');
+    var categorySelect = form.querySelector('.category-select');
+    var selectedCategory = categorySelect && categorySelect.options[categorySelect.selectedIndex];
+    var isInternal = !!(selectedCategory && selectedCategory.dataset.internal === '1');
+
+    var accountCurrency = _selectedAccountCurrency(accountSelect);
+    var counterpartyCurrency = _selectedAccountCurrency(counterpartySelect);
+    form.querySelectorAll('[data-currency-for]').forEach(function (el) {
+        var source = el.dataset.currencyFor === 'counterparty' ? counterpartyCurrency : accountCurrency;
+        if (source && source.symbol) el.textContent = source.symbol;
+    });
+
+    var crossCurrency = isInternal && !!accountCurrency && !!counterpartyCurrency
+        && accountCurrency.code !== '' && counterpartyCurrency.code !== ''
+        && accountCurrency.code !== counterpartyCurrency.code;
+    form.querySelectorAll('.counterparty-amount-field').forEach(function (el) {
+        el.classList.toggle('is-visible', crossCurrency);
+        var input = el.querySelector('input[name="counterparty_amount"]');
+        if (!input) return;
+        input.disabled = !crossCurrency;
+        input.required = crossCurrency;
+        if (!crossCurrency) input.value = '';
+    });
+}
+
 function toggleCounterpartyFields(select) {
     if (!select || !select.closest) return;
     var form = select.closest('form');
@@ -39,6 +83,7 @@ function toggleCounterpartyFields(select) {
         var acSel = el.querySelector('select[name="counterparty_account_id"]');
         if (acSel) acSel.required = isInternal;
     });
+    updateTransferCurrencyFields(form);
 }
 
 function initCounterpartyFields() {
@@ -48,12 +93,27 @@ function initCounterpartyFields() {
         select._counterpartyFieldsBound = true;
         select.addEventListener('change', function () { toggleCounterpartyFields(select); });
     });
+    /* A moeda do par muda tambem quando se troca a conta de origem ou a de
+       destino, nao so a categoria. */
+    document.querySelectorAll('select[name="account_id"], select[name="counterparty_account_id"]').forEach(
+        function (select) {
+            if (select._currencyFieldsBound) return;
+            select._currencyFieldsBound = true;
+            select.addEventListener('change', function () {
+                updateTransferCurrencyFields(select.closest('form'));
+            });
+        }
+    );
 }
 
-function openRealizeModal(txId, dueDate, plannedValue) {
+function openRealizeModal(txId, dueDate, plannedValue, currencySymbol) {
     document.getElementById('modal_tx_id').value = txId;
     document.querySelector('#realizeModal input[name="realized_date"]').value   = dueDate;
     document.querySelector('#realizeModal input[name="realized_amount"]').value = plannedValue;
+    /* O modal e um so para a tabela inteira, e a moeda e da conta de cada
+       linha: sem isto, um valor em dolar seria oferecido como se fosse real. */
+    var symbol = document.querySelector('#realizeModal [data-realize-currency-symbol]');
+    if (symbol && currencySymbol) symbol.textContent = currencySymbol;
     var form = document.getElementById('realizeForm');
     var url  = new URL(form.action, window.location.origin);
     url.pathname = url.pathname.replace(/\/mark_realized\/\d+\/?$/, '/mark_realized/' + txId + '/');
@@ -138,7 +198,12 @@ function _initTransactionActions(root) {
                 );
             }
             if (action === 'realize') {
-                openRealizeModal(button.dataset.transactionId, button.dataset.dueDate, button.dataset.plannedValue);
+                openRealizeModal(
+                    button.dataset.transactionId,
+                    button.dataset.dueDate,
+                    button.dataset.plannedValue,
+                    button.dataset.currencySymbol
+                );
             }
         });
     });

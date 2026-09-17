@@ -425,7 +425,7 @@
        de conteúdo e, assim, sem apagar o formulário que a pessoa preencheu.
        O texto entra como JSON em atributo e é exibido pelo componente comum,
        sem ser interpretado como HTML. */
-    document.addEventListener('app:invalid-period', function (event) {
+    function _mostrarAvisoDoServidor(event) {
         var message = event.detail && event.detail.message;
         if (typeof message !== 'string' || !message) return;
         var flashMessages = document.getElementById('flashMessages');
@@ -434,7 +434,15 @@
             { mensagem: message, severidade: 'error' }
         ]));
         _announceServerAvisos();
-    });
+    }
+
+    document.addEventListener('app:invalid-period', _mostrarAvisoDoServidor);
+
+    /* Mesma mecânica, outro motivo: contas de moedas diferentes na mesma
+       seleção não têm total possível, e o servidor recusa em vez de somar
+       (ver core/domain/finance.py::MixedCurrencyError). Os dois gatilhos são
+       separados para que a mensagem diga qual dos dois casos aconteceu. */
+    document.addEventListener('app:moedas-misturadas', _mostrarAvisoDoServidor);
 
     /* `#flashMessages` chega nas respostas htmx via `hx-swap-oob` (ver
        core/htmx.py), e trocas fora de banda disparam `htmx:oobAfterSwap`,

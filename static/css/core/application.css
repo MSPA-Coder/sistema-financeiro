@@ -743,6 +743,37 @@ select.filter-active {
 /* ============================================================
    TABELAS
    ============================================================ */
+/* Caixa de diagnóstico dos gráficos do Painel. Só existe no DOM quando o
+   endereço traz `?diag=1`; sem isso, nada é criado e esta regra não alcança
+   nenhum elemento. */
+[data-ui="diagnostico-graficos"] {
+    position: fixed;
+    right: 0.6rem;
+    bottom: 0.6rem;
+    z-index: 60;
+    margin: 0;
+    padding: 0.55rem 0.7rem;
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-sm);
+    font-size: 0.72rem;
+    line-height: 1.35;
+    white-space: pre;
+}
+
+/* Cabeçalho de um bloco de totais por moeda. Só é renderizado quando a tela
+   tem mais de uma moeda -- com uma só, a tela continua sem ele. */
+.currency-block-title {
+    margin: 1.1rem 0 0.4rem;
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.currency-block-title:first-child { margin-top: 0; }
+
 .table-container {
     background: var(--card);
     padding: 0.65rem;

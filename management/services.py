@@ -24,7 +24,7 @@ from django.db.models.functions import Coalesce
 
 from accounts.models import AccountOwner
 from accounts.services import accessible_owner_ids
-from core.domain.finance import STATUS_REALIZED
+from core.domain.finance import BASE_CURRENCY, STATUS_REALIZED
 from reports.services import add_months, to_decimal
 from transactions.access import can_access_entry
 from transactions.models import CashFlowCategory, CashFlowEntry
@@ -285,12 +285,19 @@ def retire_budget(user, budget_id) -> tuple[MonthlyBudget, str]:
 
 
 def actual_amount_for_budget(owner_id: int, category_id: int, year: int, month: int) -> Decimal:
-    """Soma dos lançamentos realizados no mês/categoria/titular (não persistido)."""
+    """Soma dos lançamentos realizados no mês/categoria/titular (não persistido).
+
+    Só conta o que está na moeda base: o orçamento é por categoria e mês, sem
+    conta, e por isso `MonthlyBudget.planned_amount` é em `BRL`. Comparar um
+    planejado em real com um realizado que mistura moedas daria uma diferença
+    sem significado -- e converter não é assunto deste sistema.
+    """
     start, end_exclusive = month_bounds(year, month)
     amount_expr = Coalesce("realized_amount", "entry_amount", output_field=_AMOUNT_FIELD)
     total = (
         CashFlowEntry.objects.filter(
             account__owner_id=owner_id,
+            account__currency=BASE_CURRENCY,
             category_id=category_id,
             status=STATUS_REALIZED,
             realized_date__gte=start,
@@ -333,7 +340,10 @@ def budget_rows_for_period(owner_ids: Iterable[int], year: int, month: int) -> l
     amount_expr = Coalesce("realized_amount", "entry_amount", output_field=_AMOUNT_FIELD)
     actual_rows = (
         CashFlowEntry.objects.filter(
+            # Mesma razão de `actual_amount_for_budget`: orçamento é em moeda
+            # base, e o realizado que ele compara também tem que ser.
             account__owner_id__in=ids,
+            account__currency=BASE_CURRENCY,
             category_id__in={budget.category_id for budget in budgets},
             status=STATUS_REALIZED,
             realized_date__gte=start,

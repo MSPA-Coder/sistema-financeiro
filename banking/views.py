@@ -7,6 +7,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from accounts.services import accessible_owner_ids
+from core.domain.finance import CURRENCY_OPTIONS
 from core.htmx import quer_fragmento
 from core.permissions import permission_required
 
@@ -101,6 +102,7 @@ def accounts_view(request):
         ),
         "owners": _owners_for_form(request.user),
         "institutions": list_institutions(),
+        "currencies": CURRENCY_OPTIONS,
         "current_filter_owner_id": int(current_filter_owner_id) if current_filter_owner_id else None,
         "current_filter_institution_id": int(current_filter_institution_id) if current_filter_institution_id else None,
     }
@@ -127,6 +129,8 @@ def create_account_view(request):
             institution_id=request.POST.get('institution_id', ''),
             account_name=request.POST.get('account_name', ''),
             initial_balance=request.POST.get('initial_balance', ''),
+            currency=request.POST.get('currency', ''),
+            initial_balance_date=request.POST.get('initial_balance_date', ''),
         )
         messages.success(request, "Conta cadastrada com sucesso.")
     except ValueError as exc:
@@ -148,6 +152,8 @@ def update_account_view(request, account_id):
             institution_id=request.POST.get('institution_id', ''),
             account_name=request.POST.get('account_name', ''),
             initial_balance=request.POST.get('initial_balance', ''),
+            currency=request.POST.get('currency', ''),
+            initial_balance_date=request.POST.get('initial_balance_date', ''),
         )
         messages.success(request, "Conta atualizada com sucesso.")
     except ValueError as exc:

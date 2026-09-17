@@ -55,21 +55,21 @@
                 <td>{{ t.category.category_name }}</td>
                 <td>{{ t.description }}</td>
                 <td>{% if t.installments > 1 %}{{ t.current_installment }}/{{ t.installments }}{% else %}-{% endif %}</td>
-                {% if t.status == 'realizado' and t.realized_amount != None %}{% if t.entry_type == 'receita' %}<td class="amount {{ t.realized_amount|amount_class }}">{{ t.realized_amount|money_signed }}</td>{% else %}<td class="amount {{ t.realized_amount|neg|amount_class }}">{{ t.realized_amount|neg|money_signed }}</td>{% endif %}{% else %}{% if t.entry_type == 'receita' %}<td class="amount {{ t.entry_amount|amount_class }}">{{ t.entry_amount|money_signed }}</td>{% else %}<td class="amount {{ t.entry_amount|neg|amount_class }}">{{ t.entry_amount|neg|money_signed }}</td>{% endif %}{% endif %}
+                {% if t.status == 'realizado' and t.realized_amount != None %}{% if t.entry_type == 'receita' %}<td class="amount {{ t.realized_amount|amount_class }}">{{ t.realized_amount|money_signed:t.account.currency }}</td>{% else %}<td class="amount {{ t.realized_amount|neg|amount_class }}">{{ t.realized_amount|neg|money_signed:t.account.currency }}</td>{% endif %}{% else %}{% if t.entry_type == 'receita' %}<td class="amount {{ t.entry_amount|amount_class }}">{{ t.entry_amount|money_signed:t.account.currency }}</td>{% else %}<td class="amount {{ t.entry_amount|neg|amount_class }}">{{ t.entry_amount|neg|money_signed:t.account.currency }}</td>{% endif %}{% endif %}
                 {% if view_mode == 'realizado' %}
                 <td class="amount {% if t.realized_amount %}{% if t.entry_type == 'receita' %}{{ t.realized_amount|amount_class }}{% else %}{{ t.realized_amount|neg|amount_class }}{% endif %}{% else %}amount-neutral{% endif %}">
-                    {% if t.realized_amount %}{% if t.entry_type == 'receita' %}{{ t.realized_amount|money_signed }}{% else %}{{ t.realized_amount|neg|money_signed }}{% endif %}{% else %}-{% endif %}
+                    {% if t.realized_amount %}{% if t.entry_type == 'receita' %}{{ t.realized_amount|money_signed:t.account.currency }}{% else %}{{ t.realized_amount|neg|money_signed:t.account.currency }}{% endif %}{% else %}-{% endif %}
                 </td>
                 {% endif %}
                 {% if show_balance_column %}
-                <td class="amount {{ t.running_balance|default:0|amount_class }}">{% if t.is_last_of_day %}{{ t.running_balance|money_signed }}{% endif %}</td>
+                <td class="amount {{ t.running_balance|default:0|amount_class }}">{% if t.is_last_of_day %}{{ t.running_balance|money_signed:t.account.currency }}{% endif %}</td>
                 {% endif %}
                 {% if show_actions_column %}
                 <td class="actions">
                     {% if can_update_transactions %}<button type="button" class="btn btn-sm btn-icon btn-action-edit" title="Editar" data-toggle-edit="tx-edit-{{ t.id }}">{% icon 'edit' %}</button>{% endif %}
                     {% if can_delete_transactions %}<button type="button" class="btn btn-sm btn-icon btn-action-delete" title="Excluir" data-transaction-action="delete" data-delete-url="{% url 'transactions:transaction_delete' t.id %}?{{ request.GET.urlencode }}" data-delete-supports-scope="{% if t.supports_scope %}true{% else %}false{% endif %}" data-delete-current-future-token="{{ t.current_future_confirmation_token }}">{% icon 'delete' %}</button>{% endif %}
                     {% if t.supports_scope and can_view_operations and t.bank_operation_id %}<a class="btn btn-sm btn-icon btn-action-view" title="Ver operação" href="{% url 'transactions:operations_view' %}?operation_id={{ t.bank_operation.operation_key }}&amp;show_entries=1">{% icon 'link' %}</a>{% endif %}
-                    {% if can_realize_transactions and t.status != 'realizado' %}<button type="button" class="btn btn-sm btn-icon btn-action-realize" title="Realizar" data-transaction-action="realize" data-transaction-id="{{ t.id }}" data-due-date="{{ t.due_date|date:'Y-m-d' }}" data-planned-value="{{ t.entry_amount|unlocalize }}">{% icon 'check' %}</button>{% endif %}
+                    {% if can_realize_transactions and t.status != 'realizado' %}<button type="button" class="btn btn-sm btn-icon btn-action-realize" title="Realizar" data-transaction-action="realize" data-transaction-id="{{ t.id }}" data-due-date="{{ t.due_date|date:'Y-m-d' }}" data-planned-value="{{ t.entry_amount|unlocalize }}" data-currency-symbol="{{ t.account.currency|currency_symbol }}">{% icon 'check' %}</button>{% endif %}
                 </td>
                 {% endif %}
             </tr>

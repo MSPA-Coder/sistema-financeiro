@@ -29,6 +29,10 @@ def test_annual_planning_is_reachable_from_reports_menu():
 
 def test_annual_planning_partial_uses_summary_headers_without_transfer_card():
     report = {
+        # `currency` faz parte do contrato desde que a conta passou a ter moeda:
+        # a grade soma titulares e meses, e o símbolo dessa soma vem daqui. Ver
+        # `docs/annual-planning-report.md`.
+        "currency": "BRL",
         "reference_month_label": "mar/2026",
         "owner_columns": [{"id": 1, "name": "Ana"}, {"id": 2, "name": "Bia"}],
         "months": [
@@ -70,7 +74,10 @@ def test_annual_planning_partial_uses_summary_headers_without_transfer_card():
     rendered = render_to_string(
         "reports/partials/annual_planning_content.html",
         {
-            "report": report,
+            # O template recebe uma lista de blocos, um por moeda, desde que a
+            # tela deixou de recusar seleção com mais de uma. Com um bloco só
+            # ela renderiza exatamente o que sempre renderizou.
+            "blocos": [{"currency": "BRL", "report": report}],
             "layout": "calendar",
             "view_mode": "todos",
             "status_options": VIEW_MODE_OPTIONS,

@@ -12,11 +12,11 @@ edição inline da tabela. Espera no contexto: `t` (CashFlowEntry ou None),
         <option value="">Selecione...</option>
         {% if t %}
         {% for acc in update_accounts %}
-        <option value="{{ acc.id }}" {% if t.account_id == acc.id %}selected{% endif %}>{{ acc.owner.name }} / {{ acc.institution.institution_name }} / {{ acc.account_name }}</option>
+        <option value="{{ acc.id }}" data-currency="{{ acc.currency }}" data-currency-symbol="{{ acc.currency|currency_symbol }}" {% if t.account_id == acc.id %}selected{% endif %}>{{ acc.owner.name }} / {{ acc.institution.institution_name }} / {{ acc.account_name }}</option>
         {% endfor %}
         {% else %}
         {% for acc in create_accounts %}
-        <option value="{{ acc.id }}" {% if new_entry_defaults.account_id == acc.id|stringformat:"s" %}selected{% endif %}>{{ acc.owner.name }} / {{ acc.institution.institution_name }} / {{ acc.account_name }}</option>
+        <option value="{{ acc.id }}" data-currency="{{ acc.currency }}" data-currency-symbol="{{ acc.currency|currency_symbol }}" {% if new_entry_defaults.account_id == acc.id|stringformat:"s" %}selected{% endif %}>{{ acc.owner.name }} / {{ acc.institution.institution_name }} / {{ acc.account_name }}</option>
         {% endfor %}
         {% endif %}
     </select>
@@ -54,13 +54,24 @@ edição inline da tabela. Espera no contexto: `t` (CashFlowEntry ou None),
     <select name="counterparty_account_id" aria-label="Conta contraparte">
         <option value="">Selecione...</option>
         {% for acc in counterparty_accounts %}
-        <option value="{{ acc.id }}" {% if t and t.counterparty_account_id == acc.id %}selected{% endif %}>{{ acc.owner.name }} / {{ acc.institution.institution_name }} / {{ acc.account_name }}</option>
+        <option value="{{ acc.id }}" data-currency="{{ acc.currency }}" data-currency-symbol="{{ acc.currency|currency_symbol }}" {% if t and t.counterparty_account_id == acc.id %}selected{% endif %}>{{ acc.owner.name }} / {{ acc.institution.institution_name }} / {{ acc.account_name }}</option>
         {% endfor %}
     </select>
 </div>
 <div>
-    <label>Valor Total (R$)</label>
+    <label>Valor Total (<span data-currency-for="account">{% if t %}{{ t.account.currency|currency_symbol }}{% else %}R${% endif %}</span>)</label>
     <input type="number" step="0.01" name="entry_amount" value="{% if t %}{{ t.entry_amount|unlocalize }}{% endif %}" aria-label="Valor total" required>
+</div>
+{% comment %}
+Só aparece quando a conta de origem e a conta destino estão em moedas
+diferentes: aí as pontas deixam de ser espelhadas e o extrato de cada uma tem
+o seu próprio valor. Fica desabilitado enquanto oculto, porque campo
+desabilitado não é enviado -- e o serviço recusa este valor quando as moedas
+são iguais (`counterparty_amount_for_transfer`).
+{% endcomment %}
+<div class="counterparty-amount-field" data-ui="hidden">
+    <label>Valor creditado no destino (<span data-currency-for="counterparty">US$</span>)</label>
+    <input type="number" step="0.01" name="counterparty_amount" value="{% if t and t.counterparty_entry_amount != None %}{{ t.counterparty_entry_amount|unlocalize }}{% endif %}" aria-label="Valor creditado no destino" disabled>
 </div>
 <div>
     <label>Vencimento</label>
@@ -86,7 +97,7 @@ edição inline da tabela. Espera no contexto: `t` (CashFlowEntry ou None),
     <input type="date" name="realized_date" value="{% if t and t.realized_date %}{{ t.realized_date|date:'Y-m-d' }}{% endif %}" aria-label="Data de realizacao" {% if system_start_date %}min="{{ system_start_date }}"{% endif %}>
 </div>
 <div class="realized-field" data-ui="hidden">
-    <label>Valor realizado (R$)</label>
+    <label>Valor realizado (<span data-currency-for="account">{% if t %}{{ t.account.currency|currency_symbol }}{% else %}R${% endif %}</span>)</label>
     <input type="number" step="0.01" name="realized_amount" value="{% if t and t.realized_amount != None %}{{ t.realized_amount|unlocalize }}{% endif %}" aria-label="Valor realizado">
 </div>
 {% if t and t.supports_scope %}

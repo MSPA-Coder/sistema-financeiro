@@ -39,7 +39,7 @@
                     <td>{{ op.start_date|date:"d/m/Y"|default:"-" }}</td>
                     <td>{{ op.end_date|date:"d/m/Y"|default:"-" }}</td>
                     <td>{{ op.entries_count }}</td>
-                    <td class="amount">{{ op.total_amount|money }}</td>
+                    <td class="amount">{{ op.total_amount|money:op.total_currency }}</td>
                     <td>{{ op.status_summary }}</td>
                     <td class="actions">
                         {% if operation_id == op.operation_id and show_entries %}
@@ -79,9 +79,9 @@
                                             <td>{{ entry.description|default:"-" }}</td>
                                             <td>{% if entry.installments > 1 %}{{ entry.current_installment }}/{{ entry.installments }}{% else %}-{% endif %}</td>
                                             {% if entry.entry_type == 'receita' %}
-                                            <td class="amount {{ entry.entry_amount|amount_class }}">{{ entry.entry_amount|money_signed }}</td>
+                                            <td class="amount {{ entry.entry_amount|amount_class }}">{{ entry.entry_amount|money_signed:entry.account.currency }}</td>
                                             {% else %}
-                                            <td class="amount {{ entry.entry_amount|neg|amount_class }}">{{ entry.entry_amount|neg|money_signed }}</td>
+                                            <td class="amount {{ entry.entry_amount|neg|amount_class }}">{{ entry.entry_amount|neg|money_signed:entry.account.currency }}</td>
                                             {% endif %}
                                             <td>{{ entry.get_status_display }}</td>
                                             <td>{% if entry.source_entry_id %}Contraparte de #{{ entry.source_entry_id }}{% else %}Original{% endif %}</td>

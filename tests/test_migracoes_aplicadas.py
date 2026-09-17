@@ -41,6 +41,7 @@ CONSTRAINTS_ESPERADAS = {
     "ck_account_month_close_year_range",
     "uq_account_month_close_account_period",
     "ck_financial_institution_type_valid",
+    "ck_financial_account_currency_valid",
 }
 
 

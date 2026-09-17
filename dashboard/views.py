@@ -14,8 +14,15 @@ from django.urls import reverse
 
 from accounts.models import AccountOwner
 from accounts.services import accessible_owner_ids, hidden_account_ids
-from core.domain.finance import ENTRY_TYPE_EXPENSE, ENTRY_TYPE_INCOME, STATUS_REALIZED
-from core.htmx import quer_fragmento
+from banking.models import FinancialAccount
+from core.domain.finance import (
+	BASE_CURRENCY,
+	CURRENCY_SYMBOLS,
+	ENTRY_TYPE_EXPENSE,
+	ENTRY_TYPE_INCOME,
+	STATUS_REALIZED,
+)
+from core.htmx import quer_fragmento, recusa_moedas_misturadas
 from core.permissions import permission_required
 from core.services import system_start_date
 from transactions.models import CashFlowEntry
@@ -54,6 +61,7 @@ def _month_label(year: int, month: int) -> str:
 
 @login_required
 @permission_required("dashboard.view")
+@recusa_moedas_misturadas
 def dashboard_view(request):
 	"""Renderiza o dashboard completo ou parcial (HTMX)."""
 	today = date.today()
@@ -102,18 +110,49 @@ def dashboard_view(request):
 	# nao teria mais como escolhe-la para ver isoladamente.
 	selector_qs = entries_qs
 
-	if not account_id:
-		# Preferencia pessoal de Configuracoes > Contas em analises: as contas
-		# marcadas saem dos agregados do dashboard. Vale so para a visao
-		# agregada -- escolher a conta explicitamente no filtro vence, senao a
-		# tela ficaria vazia sem explicar por que.
-		hidden_ids = hidden_account_ids(request.user, "dashboard")
-		if hidden_ids:
-			entries_qs = entries_qs.exclude(account_id__in=hidden_ids)
+	# Preferencia pessoal de Configuracoes > Contas em analises: as contas
+	# marcadas saem dos agregados do dashboard. Vale so para a visao
+	# agregada -- escolher a conta explicitamente no filtro vence, senao a
+	# tela ficaria vazia sem explicar por que.
+	hidden_ids = hidden_account_ids(request.user, "dashboard") if not account_id else set()
+	if hidden_ids:
+		entries_qs = entries_qs.exclude(account_id__in=hidden_ids)
 
 	if view_mode != "todos":
 		entries_qs = entries_qs.filter(status=view_mode)
 		selector_qs = selector_qs.filter(status=view_mode)
+
+	# Tudo daqui para baixo soma lançamentos de várias contas em um número só, e
+	# esse número só existe dentro de uma moeda. O painel é feito de gráficos, e
+	# duas moedas não cabem no mesmo eixo -- não existe o gráfico que compara
+	# uma barra em real com uma barra em dólar. Então aqui a resposta não é
+	# repetir a página: é escolher a moeda, com um seletor visível ao lado dos
+	# demais filtros. O que as telas de tabela fazem é outra coisa: elas
+	# mostram um bloco por moeda, porque linha embaixo de linha cabe.
+	# As opcoes de moeda vêm das CONTAS no escopo, não dos lançamentos: uma conta
+	# em dólar recém-aberta tem saldo e ainda não tem movimento, e ler os
+	# lançamentos esconderia o seletor justamente de quem acabou de abri-la.
+	contas_qs = FinancialAccount.objects.filter(owner_id__in=allowed_owner_ids)
+	if owner_id:
+		contas_qs = contas_qs.filter(owner_id=owner_id)
+	if institution_id:
+		contas_qs = contas_qs.filter(institution_id=institution_id)
+	if account_id:
+		contas_qs = contas_qs.filter(id=account_id)
+	if hidden_ids:
+		contas_qs = contas_qs.exclude(id__in=hidden_ids)
+	moedas = tuple(sorted(
+		set(contas_qs.values_list("currency", flat=True)),
+		key=lambda moeda: (moeda != BASE_CURRENCY, moeda),
+	))
+	# Moeda pedida que não existe na seleção não vence: o filtro de conta manda.
+	# Escolher a corretora em dólar já traz a moeda junto, sem um segundo clique
+	# -- e a tela nunca fica vazia sem explicar por quê.
+	currency = request.GET.get("currency") or ""
+	if currency not in moedas:
+		currency = moedas[0] if moedas else BASE_CURRENCY
+	if moedas:
+		entries_qs = entries_qs.filter(account__currency=currency)
 
 	month_start, month_end = _month_start_end(selected_year, selected_month)
 	month_entries = entries_qs.filter(due_date__gte=month_start, due_date__lte=month_end)
@@ -260,6 +299,9 @@ def dashboard_view(request):
 		"chartExpense": chart_expense,
 		"chartBalance": chart_balance,
 		"selectedPeriod": raw_period,
+		# Os gráficos escreviam `R$` fixo em tooltips e eixos. O símbolo é da
+		# moeda que o painel está mostrando, e quem sabe qual é é o servidor.
+		"currencySymbol": CURRENCY_SYMBOLS.get(currency, CURRENCY_SYMBOLS[BASE_CURRENCY]),
 		"viewMode": view_mode,
 		"filterType": filter_type,
 		"currentOwnerId": owner_id,
@@ -272,6 +314,11 @@ def dashboard_view(request):
 	owner_options = AccountOwner.objects.filter(id__in=allowed_owner_ids).order_by("name")
 
 	context = {
+		"currency": currency,
+		# O seletor só aparece quando há mais de uma moeda ao alcance do
+		# usuário: com uma só, ele seria um controle que nunca muda nada.
+		"currency_options": [(moeda, CURRENCY_SYMBOLS.get(moeda, moeda)) for moeda in moedas],
+		"show_currency_filter": len(moedas) > 1,
 		"selected_period": raw_period,
 		"selected_year": selected_year,
 		"selected_month": selected_month,

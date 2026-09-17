@@ -151,10 +151,19 @@ backups sem autorização inequívoca.
 ## Invariantes essenciais
 
 - valores financeiros usam `Decimal`;
+- a moeda pertence à conta, e conta com lançamento não muda de moeda; o que não
+  tem conta está na moeda base (`BRL`). Converter moeda não é assunto deste
+  sistema, e somar contas de moedas diferentes levanta `MixedCurrencyError` em
+  vez de produzir um total. As telas não chegam a esse erro: elas mostram um
+  bloco de totais por moeda (`banking.services.currency_blocks`), e com uma
+  moeda só ficam idênticas ao que sempre foram;
 - lançamentos armazenam valores positivos, e o tipo define o efeito no saldo;
 - status são `a_vencer`, `vencidos` e `realizado`;
 - transferências internas mantêm contrapartes e saldos consistentes, mas não
-  entram como receita ou despesa gerencial;
+  entram como receita ou despesa gerencial; as duas pontas são espelhadas
+  **apenas** na mesma moeda — entre moedas diferentes cada ponta guarda o seu
+  próprio valor, sem parcelamento nem recorrência, e a taxa efetiva é derivada,
+  nunca gravada;
 - fechamento mensal bloqueia mutações e conciliações do período; reabertura é
   explícita e auditável;
 - operações compostas são atômicas e services delimitam transações;

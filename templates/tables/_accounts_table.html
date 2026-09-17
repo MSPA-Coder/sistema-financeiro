@@ -6,7 +6,9 @@
         <td>{{ account.owner.name }}</td>
         <td>{{ account.institution.institution_name }}</td>
         <td>{{ account.account_name }}</td>
-        <td class="amount {{ account.initial_balance|amount_class }}">{{ account.initial_balance|money }}</td>
+        <td>{{ account.get_currency_display }}</td>
+        <td class="amount {{ account.initial_balance|amount_class }}">{{ account.initial_balance|money:account.currency }}</td>
+        <td>{{ account.initial_balance_date|date:'d/m/Y' }}</td>
         <td class="actions">
             <button type="button" class="btn btn-sm btn-icon btn-action-edit" title="Editar" data-toggle-edit="edit-account-{{ account.id }}">{% icon 'edit' %}</button>
             <form method="post" action="{% url 'banking:delete_account' account.id %}" data-ui="inline">
@@ -20,7 +22,7 @@
         </td>
     </tr>
     <tr id="edit-account-{{ account.id }}" class="edit-row">
-        <td colspan="5">
+        <td colspan="7">
             <form method="post" action="{% url 'banking:update_account' account.id %}" class="edit-form">
                 {% csrf_token %}
                 <select name="owner_id" aria-label="Titular" required data-ui="flex-1">
@@ -34,7 +36,21 @@
                     {% endfor %}
                 </select>
                 <input type="text" name="account_name" value="{{ account.account_name }}" aria-label="Nome da conta" maxlength="100" required data-ui="flex-1">
+{% comment %}
+Conta com lançamento não muda de moeda: quem recusa é o servidor, em
+`banking.services.update_account`. Aqui o campo só vai travado, com o valor
+repetido num `hidden` para o POST continuar completo — campo `disabled` não é
+enviado pelo navegador.
+{% endcomment %}
+                <select name="currency" aria-label="Moeda" required data-ui="w-120"
+                        {% if account.has_entries %}disabled title="Conta com lançamentos não muda de moeda"{% endif %}>
+                    {% for code, label in currencies %}
+                        <option value="{{ code }}" {% if code == account.currency %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                {% if account.has_entries %}<input type="hidden" name="currency" value="{{ account.currency }}">{% endif %}
                 <input type="text" name="initial_balance" value="{{ account.initial_balance }}" aria-label="Saldo inicial" data-ui="w-120">
+                <input type="date" name="initial_balance_date" value="{{ account.initial_balance_date|date:'Y-m-d' }}" aria-label="Data do saldo inicial" data-ui="w-120">
                 <button type="submit" class="btn btn-primary btn-sm"
                         data-sa-confirmar="Salvar as alterações desta conta?"
                         data-sa-titulo="Confirmar alteração"
@@ -45,7 +61,7 @@
     </tr>
 {% empty %}
     <tr>
-        <td colspan="5" class="empty-state">Nenhuma conta cadastrada.</td>
+        <td colspan="7" class="empty-state">Nenhuma conta cadastrada.</td>
     </tr>
 {% endfor %}
 </tbody>

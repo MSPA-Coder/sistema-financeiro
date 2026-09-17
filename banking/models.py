@@ -1,6 +1,9 @@
 from django.db import models
 from django.db.models.functions import Lower
 from django.utils import timezone
+from django.utils.timezone import localdate
+
+from core.domain.finance import CURRENCY_BRL, CURRENCY_OPTIONS, VALID_CURRENCIES
 
 
 class FinancialInstitution(models.Model):
@@ -60,7 +63,20 @@ class FinancialAccount(models.Model):
     owner = models.ForeignKey('accounts.AccountOwner', on_delete=models.PROTECT, related_name='accounts')
     institution = models.ForeignKey(FinancialInstitution, on_delete=models.PROTECT, related_name='accounts')
     account_name = models.CharField(max_length=100)
+    currency = models.CharField(
+        max_length=3,
+        choices=CURRENCY_OPTIONS,
+        default=CURRENCY_BRL,
+        help_text=(
+            'Moeda de todos os valores da conta. Os lançamentos não guardam '
+            'moeda própria: herdam a daqui.'
+        ),
+    )
     initial_balance = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    initial_balance_date = models.DateField(
+        default=localdate,
+        help_text='Data a que o saldo inicial se refere.',
+    )
     is_default = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -72,6 +88,10 @@ class FinancialAccount(models.Model):
             models.CheckConstraint(
                 condition=models.Q(account_name__regex=r'^\s*.+\s*$'),
                 name='ck_financial_account_name_not_blank',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(currency__in=VALID_CURRENCIES),
+                name='ck_financial_account_currency_valid',
             ),
         ]
         indexes = [

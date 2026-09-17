@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from accounts.services import can_use_transfer_destination, transfer_destination_access_ids
 from banking.models import FinancialAccount
-from banking.services import can_access_account
+from banking.services import can_access_account, currency_blocks
 from core.domain.finance import (
     CALC_DIVIDE,
     CALC_REPEAT,
@@ -118,6 +118,9 @@ def realize_transaction(
     ponta da mesma `BankOperation`) é realizada junto, com a mesma data e o
     mesmo valor. Sem isso, conciliar (ou realizar manualmente) apenas uma ponta
     deixaria a outra pendente e violaria a coerencia entre as duas pontas.
+
+    O valor só é o mesmo enquanto as duas contas estão na mesma moeda; quando não
+    estão, cada ponta realiza pelo próprio valor (ver `counterparty_amount_for_transfer`).
     """
     if entry.status == STATUS_REALIZED:
         raise ValueError("Lançamento já está realizado")
@@ -141,6 +144,13 @@ def realize_transaction(
     if final_amount <= 0:
         raise ValueError("O valor realizado deve ser positivo.")
 
+    # Espelhar o valor só vale enquanto as duas pontas estão na mesma moeda. Numa
+    # compra de dólar as pontas nunca foram iguais, e o valor realizado aqui não
+    # diz nada sobre o que entrou lá -- a contraparte realiza pelo valor dela.
+    counterpart_amount = final_amount
+    if realize_counterpart and counterpart.account.currency != entry.account.currency:
+        counterpart_amount = counterpart.entry_amount
+
     entry.status = STATUS_REALIZED
     entry.realized_date = final_date
     entry.realized_amount = final_amount
@@ -149,7 +159,7 @@ def realize_transaction(
     if realize_counterpart:
         counterpart.status = STATUS_REALIZED
         counterpart.realized_date = final_date
-        counterpart.realized_amount = final_amount
+        counterpart.realized_amount = counterpart_amount
         counterpart.save(update_fields=['status', 'realized_date', 'realized_amount', 'updated_at'])
 
     # Atualizar status na operação pai se existir. Origem e destino de uma
@@ -406,6 +416,10 @@ class TransactionRequest:
     realized_date: date | None = None
     realized_amount: Decimal | None = None
     counterparty_account_id: int | None = None
+    # Só existe quando a transferência atravessa moedas: é o que entra na conta
+    # destino, em vez do espelho do valor que saiu da origem. Ver
+    # `counterparty_amount_for_transfer`.
+    counterparty_amount: Decimal | None = None
 
 
 def _opposite_entry_type(entry_type: str) -> str:
@@ -458,6 +472,68 @@ def _parcelas_e_valor(req: TransactionRequest, *, recorrente: bool | None = None
     monthly_amount = _monthly_amount_for(req.entry_amount, installments, req.calc_mode)
     _validate_common_payload(req, monthly_amount, installments)
     return installments, monthly_amount
+
+
+def counterparty_amount_for_transfer(
+    req: TransactionRequest,
+    account: FinancialAccount,
+    counterparty_account: FinancialAccount,
+    *,
+    installments: int,
+) -> Decimal | None:
+    """Quanto entra na contraparte, ou `None` quando as pontas são espelhadas.
+
+    Transferência entre contas na mesma moeda tem um valor só: o que sai de uma
+    entra na outra, e as duas pontas continuam iguais -- invariante antiga e
+    preservada. Entre moedas diferentes não existe espelho. Comprar dólar é sair
+    com reais e entrar com dólares, e os dois números vêm do extrato, não de uma
+    taxa que este sistema teria de inventar na hora de gravar.
+
+    A taxa efetiva não é guardada de propósito: ela é origem ÷ destino, e número
+    derivado que se guarda é número que um dia discorda das pontas -- exatamente
+    o tipo de divergência que ninguém percebe até conferir à mão.
+    """
+    if account.currency == counterparty_account.currency:
+        if req.counterparty_amount is not None:
+            raise ValueError(
+                "As duas contas estão na mesma moeda e a transferência tem um valor só: "
+                "o valor creditado no destino só existe quando as moedas são diferentes."
+            )
+        return None
+
+    # Cada compra de moeda tem a taxa do dia em que aconteceu. Repetir o mesmo
+    # par de valores por 12 meses registraria doze taxas idênticas que nunca
+    # existiram -- recusar é mais honesto do que gravar ficção.
+    if installments > 1 or req.is_recurring:
+        raise ValueError(
+            "Transferência entre moedas diferentes não aceita parcelamento nem recorrência: "
+            "cada ocorrência tem a taxa do seu dia. Lance uma transferência por operação."
+        )
+    if req.counterparty_amount is None:
+        raise ValueError(
+            f"Esta transferência sai em {account.currency} e entra em "
+            f"{counterparty_account.currency}: informe também quanto foi creditado na conta "
+            "destino. Este sistema não converte moeda -- quem diz quanto entrou é o extrato."
+        )
+
+    amount = req.counterparty_amount
+    if not isinstance(amount, Decimal):
+        amount = Decimal(str(amount))
+    amount = amount.quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
+    if amount <= 0:
+        raise ValueError("O valor creditado na conta destino deve ser positivo.")
+    return amount
+
+
+def _counterparty_side_amount(mirrored_amount, counterparty_amount: Decimal | None):
+    """O valor da ponta destino: o da origem quando espelhada, o próprio quando não.
+
+    Vale tanto para o previsto quanto para o realizado, e preserva `None`: ponta
+    não realizada continua sem valor realizado.
+    """
+    if mirrored_amount is None or counterparty_amount is None:
+        return mirrored_amount
+    return counterparty_amount
 
 
 def operation_type_for(req: TransactionRequest, is_internal: bool) -> str:
@@ -739,6 +815,12 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None, user=N
 
     installments, monthly_amount = _parcelas_e_valor(req)
 
+    counterparty_amount = None
+    if is_internal:
+        counterparty_amount = counterparty_amount_for_transfer(
+            req, account, counterparty_account, installments=installments
+        )
+
     description = (req.description or "").strip()[:MAX_TRANSACTION_DESCRIPTION_LENGTH]
     operation_type = operation_type_for(req, is_internal)
 
@@ -797,14 +879,14 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None, user=N
                 category=category,
                 entry_type=_opposite_entry_type(req.entry_type),
                 description=counterparty_description,
-                entry_amount=installment_amount,
+                entry_amount=_counterparty_side_amount(installment_amount, counterparty_amount),
                 installments=installments_total,
                 current_installment=current_installment,
                 due_date=due_date,
                 is_recurring=req.is_recurring,
                 status=status,
                 realized_date=realized_date,
-                realized_amount=realized_amount,
+                realized_amount=_counterparty_side_amount(realized_amount, counterparty_amount),
                 operation_type=operation_type,
                 bank_operation=bank_operation,
                 source_entry=original,
@@ -888,15 +970,22 @@ def _get_counterparty_account_id(tx: CashFlowEntry) -> int | None:
     return None
 
 
-def counterparty_account_map(entries: list[CashFlowEntry]) -> dict[int, int | None]:
-    """Resolve, em lote, a conta contraparte de cada lançamento de transferência interna."""
-    mapping: dict[int, int | None] = {e.id: None for e in entries}
+def counterparty_entry_map(entries: list[CashFlowEntry]) -> dict[int, CashFlowEntry | None]:
+    """Resolve, em lote, a contraparte de cada lançamento de transferência interna.
+
+    Devolve o lançamento inteiro, não só a conta: desde que as pontas podem estar
+    em moedas diferentes, a linha de edição precisa também do valor da outra
+    ponta para reapresentá-lo -- ele não é mais dedutível do valor da origem.
+    """
+    mapping: dict[int, CashFlowEntry | None] = {e.id: None for e in entries}
     targets = [e for e in entries if e.operation_type == OPERATION_INTERNAL_TRANSFER and e.bank_operation_id]
     if not targets:
         return mapping
 
     bank_operation_ids = {e.bank_operation_id for e in targets}
-    op_entries = list(CashFlowEntry.objects.filter(bank_operation_id__in=bank_operation_ids))
+    op_entries = list(
+        CashFlowEntry.objects.select_related("account").filter(bank_operation_id__in=bank_operation_ids)
+    )
     by_operation: dict[int, list[CashFlowEntry]] = {}
     for op_entry in op_entries:
         by_operation.setdefault(op_entry.bank_operation_id, []).append(op_entry)
@@ -906,15 +995,15 @@ def counterparty_account_map(entries: list[CashFlowEntry]) -> dict[int, int | No
         if not rows:
             continue
         if entry.source_entry_id:
-            origin = next((r for r in rows if r.id == entry.source_entry_id), None)
-            mapping[entry.id] = origin.account_id if origin else None
+            mapping[entry.id] = next((r for r in rows if r.id == entry.source_entry_id), None)
             continue
         counterpart = next((r for r in rows if r.source_entry_id == entry.id), None)
         if counterpart:
-            mapping[entry.id] = counterpart.account_id
+            mapping[entry.id] = counterpart
             continue
-        other = next((r for r in rows if r.id != entry.id and r.account_id != entry.account_id), None)
-        mapping[entry.id] = other.account_id if other else None
+        mapping[entry.id] = next(
+            (r for r in rows if r.id != entry.id and r.account_id != entry.account_id), None
+        )
     return mapping
 
 
@@ -997,6 +1086,9 @@ def _convert_single_to_internal_transfer(tx: CashFlowEntry, req: TransactionRequ
         raise ValueError("Acesso negado: conta de origem não autorizada para transferência.")
 
     installments, monthly_amount = _parcelas_e_valor(req)
+    counterparty_amount = counterparty_amount_for_transfer(
+        req, account, counterparty_account, installments=installments
+    )
     validate_month_not_closed(account, req.due_date)
     validate_month_not_closed(counterparty_account, req.due_date)
 
@@ -1031,14 +1123,14 @@ def _convert_single_to_internal_transfer(tx: CashFlowEntry, req: TransactionRequ
         category_id=req.category_id,
         entry_type=_opposite_entry_type(req.entry_type),
         description=counterparty_description,
-        entry_amount=monthly_amount,
+        entry_amount=_counterparty_side_amount(monthly_amount, counterparty_amount),
         installments=installments,
         current_installment=1,
         due_date=req.due_date,
         is_recurring=req.is_recurring,
         status=tx.status,
         realized_date=tx.realized_date,
-        realized_amount=tx.realized_amount,
+        realized_amount=_counterparty_side_amount(tx.realized_amount, counterparty_amount),
         operation_type=OPERATION_INTERNAL_TRANSFER,
         bank_operation=bank_operation,
         source_entry=tx,
@@ -1199,6 +1291,9 @@ def _update_internal_transfer(
     )
     if not can_use_transfer_destination(user, counterparty_account.id):
         raise ValueError("Acesso negado: conta destino não autorizada para transferência.")
+    counterparty_amount = counterparty_amount_for_transfer(
+        req, account, counterparty_account, installments=installments
+    )
     original_description = f"Conta Destino: {_account_label(counterparty_account)}"
     counterparty_description = f"Conta Origem: {_account_label(account)}"
 
@@ -1238,9 +1333,17 @@ def _update_internal_transfer(
             clear_source_entry=True,
         )
         _apply_fields(
-            counterpart, req, due_date=due_date, monthly_amount=entry_amount, installments=installments,
+            counterpart, req, due_date=due_date,
+            monthly_amount=_counterparty_side_amount(entry_amount, counterparty_amount),
+            installments=installments,
             description=counterparty_description, entry_type=_opposite_entry_type(req.entry_type),
             account_id=counterparty_account.id, source_entry=origin,
+        )
+        # `_apply_fields` espelha o realizado da origem, que é o certo para duas
+        # contas na mesma moeda. Quando não são, o realizado da ponta destino é
+        # o dela: copiar gravaria reais numa conta em dólar.
+        counterpart.realized_amount = _counterparty_side_amount(
+            counterpart.realized_amount, counterparty_amount
         )
         origin.operation_type = OPERATION_INTERNAL_TRANSFER
         counterpart.operation_type = OPERATION_INTERNAL_TRANSFER
@@ -1601,38 +1704,65 @@ def build_transactions_view_context(user, get_params, session, *, request=None) 
         operation_key=operation_key, entry_id=entry_id, exclude_internal=dashboard_drilldown,
     )
 
-    counterparty_map = counterparty_account_map(current_txs)
+    counterparty_map = counterparty_entry_map(current_txs)
     attachment_loss_map = current_future_attachment_counts(current_txs)
     for tx in current_txs:
+        counterpart = counterparty_map.get(tx.id)
         tx.display_date = _entry_date_for_view_mode(tx, view_mode)
-        tx.counterparty_account_id = counterparty_map.get(tx.id)
+        tx.counterparty_account_id = counterpart.account_id if counterpart else None
+        # Só faz sentido reapresentar o valor da outra ponta quando ele não é o
+        # mesmo desta: em moeda igual as pontas são espelhadas, e o campo nem
+        # aparece na tela.
+        tx.counterparty_entry_amount = (
+            counterpart.entry_amount
+            if counterpart and counterpart.account.currency != tx.account.currency
+            else None
+        )
         tx.supports_scope = supports_operation_scope(tx)
         tx.current_future_attachment_count = attachment_loss_map.get(tx.id, 0)
         tx.current_future_confirmation_token = current_future_confirmation_token(tx.id)
 
     end_exclusive = end_selected + timedelta(days=1)
-    saldo_inicial = report_services.decimal_period_start_balance(account_ids, start_selected, end_exclusive, view_mode)
-    balance_entries = report_services.entries_for_period(account_ids, start_selected, end_exclusive, view_mode)
 
-    running_for_balance = saldo_inicial
+    # Um bloco de totais por moeda. Cada lançamento pertence a uma conta, logo a
+    # uma moeda: o saldo corrente corre dentro de um grupo e nunca atravessa
+    # para o outro -- uma linha em dólar não entra no saldo em real.
+    blocos: list[dict] = []
     running_by_entry_id: dict[int, Decimal] = {}
-    for tx in balance_entries:
-        if view_mode in {STATUS_PROJECTED, STATUS_PENDING} and tx.status == STATUS_REALIZED:
-            continue
-        realized = tx.status == STATUS_REALIZED
-        val = report_services.to_decimal(tx.realized_amount if realized and tx.realized_amount is not None else tx.entry_amount)
-        if tx.entry_type == ENTRY_TYPE_INCOME:
-            running_for_balance += val
-        else:
-            running_for_balance -= val
-        running_by_entry_id[tx.id] = running_for_balance.quantize(MONEY_QUANT)
+    for currency, ids in currency_blocks(account_ids):
+        saldo_inicial_do_bloco = report_services.decimal_period_start_balance(
+            ids, start_selected, end_exclusive, view_mode
+        )
+        running_for_balance = saldo_inicial_do_bloco
+        for tx in report_services.entries_for_period(ids, start_selected, end_exclusive, view_mode):
+            if view_mode in {STATUS_PROJECTED, STATUS_PENDING} and tx.status == STATUS_REALIZED:
+                continue
+            realized = tx.status == STATUS_REALIZED
+            val = report_services.to_decimal(
+                tx.realized_amount if realized and tx.realized_amount is not None else tx.entry_amount
+            )
+            if tx.entry_type == ENTRY_TYPE_INCOME:
+                running_for_balance += val
+            else:
+                running_for_balance -= val
+            running_by_entry_id[tx.id] = running_for_balance.quantize(MONEY_QUANT)
+        blocos.append({
+            "currency": currency,
+            "account_ids": set(ids),
+            "saldo_inicial": saldo_inicial_do_bloco.quantize(MONEY_QUANT),
+            "saldo_final": running_for_balance.quantize(MONEY_QUANT),
+            "total_receitas": Decimal("0.00"),
+            "total_despesas": Decimal("0.00"),
+            "total_movimentacoes_internas": Decimal("0.00"),
+            "visible_running": saldo_inicial_do_bloco.quantize(MONEY_QUANT),
+        })
 
-    total_receitas = Decimal("0.00")
-    total_despesas = Decimal("0.00")
-    total_movimentacoes_internas = Decimal("0.00")
-    visible_running = saldo_inicial.quantize(MONEY_QUANT)
+    bloco_por_conta = {
+        account_id: bloco for bloco in blocos for account_id in bloco["account_ids"]
+    }
 
     for tx in current_txs:
+        bloco = bloco_por_conta.get(tx.account_id, blocos[0])
         realized_for_mode = view_mode == VIEW_REALIZED or tx.status == STATUS_REALIZED
         val = report_services.to_decimal(
             tx.realized_amount if realized_for_mode and tx.realized_amount is not None else tx.entry_amount
@@ -1640,16 +1770,22 @@ def build_transactions_view_context(user, get_params, session, *, request=None) 
         is_internal = bool(tx.category and tx.category.is_internal)
         if tx.entry_type == ENTRY_TYPE_INCOME:
             if is_internal:
-                total_movimentacoes_internas += val
+                bloco["total_movimentacoes_internas"] += val
             else:
-                total_receitas += val
+                bloco["total_receitas"] += val
         else:
             if is_internal:
-                total_movimentacoes_internas -= val
+                bloco["total_movimentacoes_internas"] -= val
             else:
-                total_despesas += val
-        visible_running = running_by_entry_id.get(tx.id, visible_running)
-        tx.running_balance = visible_running
+                bloco["total_despesas"] += val
+        bloco["visible_running"] = running_by_entry_id.get(tx.id, bloco["visible_running"])
+        tx.running_balance = bloco["visible_running"]
+
+    for bloco in blocos:
+        bloco["geracao_caixa"] = (bloco["total_receitas"] - bloco["total_despesas"]).quantize(MONEY_QUANT)
+        bloco["total_receitas"] = bloco["total_receitas"].quantize(MONEY_QUANT)
+        bloco["total_despesas"] = bloco["total_despesas"].quantize(MONEY_QUANT)
+        bloco["total_movimentacoes_internas"] = bloco["total_movimentacoes_internas"].quantize(MONEY_QUANT)
 
     filters_active = bool(
         filter_date_raw or filter_type or filter_category or operation_key or entry_id or dashboard_drilldown
@@ -1663,17 +1799,12 @@ def build_transactions_view_context(user, get_params, session, *, request=None) 
     })
     available_categories = list_category_names(include_internal=not dashboard_drilldown)
 
-    saldo_final = running_for_balance.quantize(MONEY_QUANT)
-
     return {
         "txs": current_txs,
         "today": today,
-        "total_receitas": total_receitas.quantize(MONEY_QUANT),
-        "total_despesas": total_despesas.quantize(MONEY_QUANT),
-        "total_movimentacoes_internas": total_movimentacoes_internas.quantize(MONEY_QUANT),
-        "geracao_caixa": (total_receitas - total_despesas).quantize(MONEY_QUANT),
-        "saldo_inicial": saldo_inicial.quantize(MONEY_QUANT),
-        "saldo_final": saldo_final,
+        # Uma fileira de cartões por moeda: os totais são das contas
+        # selecionadas, e contas de moedas diferentes não têm um total comum.
+        "blocos": blocos,
         "selected_period": report_services.month_input_value(start_selected),
         "current_period": report_services.month_input_value(date(today.year, today.month, 1)),
         "view_mode": view_mode,

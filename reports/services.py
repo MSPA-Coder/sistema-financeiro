@@ -27,7 +27,9 @@ from django.db.models.functions import Coalesce, TruncMonth
 from accounts.models import AccountOwner
 from accounts.services import accessible_owner_ids, hidden_account_ids
 from banking.models import FinancialAccount, FinancialInstitution
+from banking.services import currency_of_accounts
 from core.domain.finance import (
+    BASE_CURRENCY,
     ENTRY_TYPE_INCOME,
     OPERATION_INTERNAL_TRANSFER,
     STATUS_PENDING,
@@ -193,6 +195,10 @@ class ContextOptions:
     institutions: list[FinancialInstitution]
     accounts: list[FinancialAccount]
     account_ids: list[int]
+    # Não há aqui uma moeda da seleção: a seleção pode ter mais de uma, e a
+    # tela mostra um bloco para cada (ver `banking.services.currency_blocks`).
+    # Quem ainda precisa de uma moeda só são os agregados, e eles a exigem no
+    # próprio corpo, com `currency_of_accounts`.
 
 
 def selected_context(user, params, *, request=None) -> FinancialContext:
@@ -669,8 +675,12 @@ def annual_planning_presentation(
             "summary_rows": [],
             "totals": None,
             "account_ids": [],
+            "currency": BASE_CURRENCY,
         }
     accounts, selected_account_ids = _authorized_planning_accounts(user, owner_ids, account_ids)
+    # A grade soma titulares e meses numa coluna só; contas de moedas
+    # diferentes na mesma seleção não têm total possível aqui.
+    planning_currency = currency_of_accounts(selected_account_ids)
 
     allowed_owner_ids = set(accessible_owner_ids(user, "view"))
     requested_owner_ids = _planning_id_filter(owner_ids)
@@ -899,6 +909,7 @@ def annual_planning_presentation(
             else None
         ),
         "account_ids": selected_account_ids,
+        "currency": planning_currency,
     }
 
 
@@ -950,6 +961,11 @@ def _balance_amount_expr(view_mode: str):
 def _signed_entries_total(account_ids: list[int], *, view_mode: str, start_date: date, end_date: date) -> Decimal:
     if not account_ids or start_date >= end_date:
         return Decimal("0.00")
+    # Última linha de defesa: qualquer caminho que chegue aqui com contas de
+    # moedas diferentes para antes de virar um número. As telas não chegam --
+    # elas pedem um total por moeda, e cada grupo de `currency_blocks` é de uma
+    # moeda só. Esta guarda existe para o próximo agregado escrito sem a regra.
+    currency_of_accounts(account_ids)
     amount_expr = _balance_amount_expr(view_mode)
     signed_expr = Case(
         When(entry_type=ENTRY_TYPE_INCOME, then=amount_expr),
@@ -993,6 +1009,7 @@ def _signed_entries_totals_by_month(
     GROUP BY) que `dashboard_view` já usa para totais multi-mês."""
     if not account_ids or start_date >= end_date:
         return {}
+    currency_of_accounts(account_ids)
     amount_expr = _balance_amount_expr(view_mode)
     signed_expr = Case(
         When(entry_type=ENTRY_TYPE_INCOME, then=amount_expr),
@@ -1014,6 +1031,7 @@ def decimal_base_balance(account_ids: Iterable[int]) -> Decimal:
     ids = list(account_ids)
     if not ids:
         return Decimal("0.00")
+    currency_of_accounts(ids)
     total = FinancialAccount.objects.filter(id__in=ids).aggregate(total=Sum("initial_balance"))["total"]
     return to_decimal(total).quantize(MONEY_QUANT)
 
@@ -1301,6 +1319,11 @@ class AccountCashReportRow:
     owner_name: str
     institution_name: str
     account_name: str
+    # A linha é de uma conta só, então ela carrega a moeda da conta: é o que a
+    # tela precisa para não escrever `R$` em cima de saldo em dólar. O TOTAL da
+    # tabela é outra conversa -- somar contas de moedas diferentes é assunto da
+    # etapa de agregação, não desta.
+    currency: str
     start_balance: Decimal
     cash_generation: Decimal
     internal_transfers: Decimal
@@ -1354,6 +1377,7 @@ def account_cash_report_rows(account_ids: list[int], start_month: date, end_mont
             owner_name=account.owner.name if account.owner else "-",
             institution_name=account.institution.institution_name if account.institution else "-",
             account_name=account.account_name,
+            currency=account.currency,
             start_balance=start_by_account.get(account.id, Decimal("0.00")).quantize(MONEY_QUANT),
             cash_generation=generation_by_account.get(account.id, Decimal("0.00")).quantize(MONEY_QUANT),
             internal_transfers=transfers_by_account.get(account.id, Decimal("0.00")).quantize(MONEY_QUANT),
