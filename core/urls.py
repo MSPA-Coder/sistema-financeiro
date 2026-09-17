@@ -1,13 +1,18 @@
-"""Rotas do shell Django: Permissões e Configurações."""
+"""Rotas do shell Django: Permissões, Configurações e o resumo publicado."""
 
 from django.urls import path
 
-from . import views
+from . import patrimonio, views
 
 app_name = "core"
 
 urlpatterns = [
     path("inicio/", views.inicio_view, name="inicio"),
+
+    # Versão no caminho, e não em cabeçalho: o consolidador é outro deployable,
+    # com outro ciclo de vida, e uma mudança incompatível aqui precisa poder
+    # conviver com a versão antiga enquanto ele não é atualizado.
+    path("patrimonio/v1/resumo", patrimonio.resumo_view, name="resumo_patrimonial"),
 
     path("permissions/", views.permissions_view, name="permissions"),
 

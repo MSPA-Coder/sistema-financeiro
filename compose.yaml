@@ -22,6 +22,9 @@ x-app-environment: &app-environment
   POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
   POSTGRES_DB: ${POSTGRES_DB:-controle_bancario}
   DJANGO_SECRET_KEY_FILE: /run/secrets/django_secret_key
+  # Token da rota /patrimonio/v1/resumo, lida pelo consolidador. A integração é
+  # opcional: sem um token utilizável a rota responde 503 e nada mais muda.
+  PATRIMONIO_TOKEN_FILE: /run/secrets/patrimonio_token
   REQUIRE_FILE_SECRETS: "true"
   TZ: America/Sao_Paulo
   PYTHONUNBUFFERED: "1"
@@ -30,6 +33,7 @@ x-app-secrets: &app-secrets
   secrets:
     - django_secret_key
     - postgres_password
+    - patrimonio_token
 
 x-service-logging: &service-logging
   driver: json-file
@@ -240,3 +244,8 @@ secrets:
     file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/django_secret_key
   postgres_password:
     file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/postgres_password
+  # Gerado por `provision_compose_secrets.ps1` junto com os outros dois. O
+  # arquivo precisa existir para o Compose subir, mas o conteúdo só importa
+  # para quem usa a integração de patrimônio.
+  patrimonio_token:
+    file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/patrimonio_token
