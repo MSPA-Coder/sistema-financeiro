@@ -759,6 +759,26 @@ def _sync_bank_operation_status(bank_operation_id: int | None) -> None:
     BankOperation.objects.filter(id=bank_operation_id).update(status=new_status, updated_at=timezone.now())
 
 
+def _realization_for(
+    req: TransactionRequest, status: str, planned_amount: Decimal
+) -> tuple[date | None, Decimal | None]:
+    """Data e valor realizados que um lançamento com `status` deve gravar.
+
+    Valor realizado vazio vira o previsto do próprio lançamento, como já faz
+    `realize_transaction`. Guardar o vazio deixava cada leitura decidir o que
+    ele significa, e elas não concordavam: o saldo lia o previsto, o
+    planejamento anual lia zero.
+
+    O previsto é o do lançamento, e não o total da requisição: numa parcela
+    dividida ou na ponta destino de uma transferência entre moedas, é outro
+    número. A data já foi exigida por `_validate_common_payload`.
+    """
+    if status != STATUS_REALIZED:
+        return None, None
+    amount = planned_amount if req.realized_amount is None else req.realized_amount
+    return req.realized_date, amount
+
+
 def _apply_fields(
     entry: CashFlowEntry,
     req: TransactionRequest,
@@ -781,8 +801,7 @@ def _apply_fields(
     entry.due_date = due_date
     entry.is_recurring = req.is_recurring
     entry.status = _normalize_open_entry_status(req.status, due_date)
-    entry.realized_date = req.realized_date if entry.status == STATUS_REALIZED else None
-    entry.realized_amount = req.realized_amount if entry.status == STATUS_REALIZED else None
+    entry.realized_date, entry.realized_amount = _realization_for(req, entry.status, monthly_amount)
     if clear_source_entry:
         entry.source_entry = None
     elif source_entry is not None:
@@ -792,6 +811,14 @@ def _apply_fields(
 def _validate_common_payload(req: TransactionRequest, monthly_amount: Decimal, installments: int) -> None:
     if monthly_amount <= 0:
         raise ValueError("O valor do lançamento deve ser positivo.")
+    # O saldo realizado é filtrado pela data de realização: sem ela, o
+    # lançamento não entra em saldo realizado nenhum, e nada avisa. Foi assim
+    # que o #1236 sumiu das telas em produção.
+    if req.status == STATUS_REALIZED and req.realized_date is None:
+        raise ValueError(
+            "Informe a data de realização: sem ela o lançamento realizado "
+            "não aparece no saldo realizado."
+        )
     if req.realized_amount is not None and req.realized_amount <= 0:
         raise ValueError("O valor realizado deve ser positivo.")
     if not 1 <= installments <= MAX_TRANSACTION_INSTALLMENTS:
@@ -881,11 +908,10 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None, user=N
         if eh_transferencia:
             validate_month_not_closed(counterparty_account, due_date)
         status = _normalize_open_entry_status(req.status, due_date)
-        realized_date = req.realized_date if status == STATUS_REALIZED else None
-        realized_amount = req.realized_amount if status == STATUS_REALIZED else None
         installment_amount = installment_amount_for(
             req.entry_amount, installments_total, req.calc_mode, current_installment
         )
+        realized_date, realized_amount = _realization_for(req, status, installment_amount)
         original = CashFlowEntry.objects.create(
             account=account,
             category=category,
@@ -1201,6 +1227,7 @@ def _replace_current_future_block(
             current_installment,
         )
         status = _normalize_open_entry_status(req.status, due_date)
+        realized_date, realized_amount = _realization_for(req, status, entry_amount)
         new_entry = CashFlowEntry.objects.create(
             account=account,
             category_id=req.category_id,
@@ -1212,8 +1239,8 @@ def _replace_current_future_block(
             due_date=due_date,
             is_recurring=req.is_recurring,
             status=status,
-            realized_date=req.realized_date if status == STATUS_REALIZED else None,
-            realized_amount=req.realized_amount if status == STATUS_REALIZED else None,
+            realized_date=realized_date,
+            realized_amount=realized_amount,
             operation_type=operation_type,
             bank_operation=bank_operation,
         )

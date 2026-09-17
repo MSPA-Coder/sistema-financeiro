@@ -9,6 +9,9 @@ function toggleEntryForm(force) {
     card.classList.toggle('is-open', show);
 }
 
+/* A data so e obrigatoria enquanto o campo aparece: campo oculto e
+   obrigatorio travaria o envio sem dizer por que. O servidor recusa o
+   realizado sem data de qualquer jeito; isto so poupa a ida e volta. */
 function toggleRealizedFields(select) {
     if (!select || !select.closest) return;
     var form = select.closest('form');
@@ -16,6 +19,8 @@ function toggleRealizedFields(select) {
     if (!form) return;
     form.querySelectorAll('.realized-field').forEach(function (el) {
         el.classList.toggle('is-visible', show);
+        var dateInput = el.querySelector('input[name="realized_date"]');
+        if (dateInput) dateInput.required = show;
     });
 }
 

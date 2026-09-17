@@ -69,6 +69,14 @@ telas mostram. O número único convertido pertence a quem consolida.
 - Valores monetários usam `Decimal`.
 - `entry_amount` e `realized_amount`, quando informado, são positivos; o tipo
   `receita` ou `despesa` determina o sinal no saldo.
+- Lançamento `realizado` tem data e valor de realização. A data é obrigatória
+  porque o saldo realizado é filtrado por ela: sem data, o lançamento sumia de
+  todos os saldos sem aviso (o #1236, achado em 17/09/2026). Valor realizado
+  vazio grava o previsto do próprio lançamento, como o botão "Realizar" já
+  fazia; decidido assim porque o vazio era lido como o previsto pelo saldo e
+  como zero pelo planejamento anual. O serviço recusa a data vazia, e o banco
+  tem o piso `ck_cash_flow_entry_realized_has_date_and_amount`. Lançamento em
+  aberto não guarda realização: o serviço limpa a data e o valor.
 - Os status de lançamentos e operações são `a_vencer`, `vencidos` e
   `realizado`.
 - O saldo inicial cadastrado na conta integra a base dos cálculos.

@@ -97,6 +97,31 @@ operação. A ação fica na auditoria; repita a verificação depois do rollout
 consultando os eventos `app_user_transfer_destination_access` e
 `bank_operation / assign_responsible`.
 
+## Rollout da exigência de data no realizado
+
+A migration `transactions.0005_realizado_exige_data` acrescenta a constraint
+`ck_cash_flow_entry_realized_has_date_and_amount` e **não corrige dados**.
+Antes de aplicá-la, ela confere se há lançamento `realizado` sem data ou sem
+valor de realização. Se houver, para com a lista dos ids, e a transação desfaz
+tudo. O `deploy.sh` então reverte código e imagem, e o banco fica como estava.
+
+Por isso a correção vem antes do deploy. A consulta abaixo, só de leitura,
+mostra o que a migration recusaria:
+
+```sql
+SELECT id, description, due_date, realized_date, realized_amount
+FROM cash_flow_entry
+WHERE status = 'realizado'
+  AND (realized_date IS NULL OR realized_amount IS NULL)
+ORDER BY id;
+```
+
+Cada linha pede uma decisão caso a caso: se é duplicata, exclua; se falta a
+data e o valor reais, edite; se não foi realizada, volte a ficar em aberto.
+Faça pela tela, para ficar na auditoria. Se o mês estiver fechado, reabra com
+motivo e feche de novo. Em 17/09/2026 a cópia de produção tinha só o #1236,
+duplicata do #1237, e junho estava fechado na conta dele.
+
 ## VPS
 
 A implantação atual usa Ubuntu 24.04 em VPS Oracle. O Nginx publica

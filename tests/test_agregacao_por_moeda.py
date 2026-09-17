@@ -108,6 +108,7 @@ def _lancamento(conta, valor="100.00"):
         entry_amount=Decimal(valor),
         due_date=date(2026, 6, 10),
         realized_date=date(2026, 6, 10),
+        realized_amount=Decimal(valor),
         status=STATUS_REALIZED,
         operation_type=OPERATION_SINGLE,
     )

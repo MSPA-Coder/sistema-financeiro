@@ -37,6 +37,7 @@ CONSTRAINTS_ESPERADAS = {
     "ck_cash_flow_entry_status_valid",
     "ck_cash_flow_entry_type_valid",
     "ck_cash_flow_entry_realized_amount_positive",
+    "ck_cash_flow_entry_realized_has_date_and_amount",
     "ck_account_month_close_month_range",
     "ck_account_month_close_year_range",
     "uq_account_month_close_account_period",
