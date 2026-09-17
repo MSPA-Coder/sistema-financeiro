@@ -83,6 +83,30 @@ duas pontas de transferências preservam o agrupamento durante criação, ediç�
 realização, exclusão e conciliação. Operações compostas são atômicas: uma falha
 reverte o conjunto.
 
+### Vencimento na edição em grupo
+
+O formulário de edição envia os campos da **linha editada**, e o escopo diz
+até onde eles valem. Para os demais campos, "todos os registros do grupo"
+significa repetir o valor; para o vencimento, não — cada ocorrência tem o mês
+dela, e repetir a data gravaria todas no mesmo dia.
+
+O que o grupo acompanha é a **diferença** entre o vencimento novo e o antigo da
+linha editada: tantos meses, e o novo dia quando o dia muda. Ela se aplica à
+data **de cada ocorrência**, não à posição dela na série. Disso decorre o que
+uma edição de grupo nunca faz:
+
+- editar sem tocar no vencimento não move vencimento nenhum;
+- uma ocorrência adiantada ou adiada a mão — fim de semana, feriado —
+  continua onde foi posta, e só acompanha o deslocamento;
+- um mês removido no meio da série continua ausente; a ocorrência seguinte não
+  ocupa o lugar dele.
+
+Vale igualmente para "este registro e os próximos", que renumera o bloco
+apagando e recriando as linhas: os ids mudam, os vencimentos são os antigos
+deslocados. Um dia que o calendário já aparou (31 em fevereiro vira 28) viaja
+aparado: o sistema desloca a data que existe, não uma intenção de "todo dia 31"
+que ele não guarda.
+
 Transferências internas exigem concessão explícita do usuário para a conta de
 destino. Recorrências internas guardam um responsável; a projeção global só as
 estende enquanto a concessão continuar válida. Legados sem responsável ficam
