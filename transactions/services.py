@@ -587,6 +587,35 @@ def _normalize_open_entry_status(status: str, due_date: date, today: date | None
     return status
 
 
+def _group_occurrence_status(requested: str, due_date: date, *, is_target: bool) -> str:
+    """Status de uma ocorrência nova de um grupo (parcela, recorrência ou dupla).
+
+    Realizar é um fato de UMA ocorrência, com a data e o valor dela. Quando o
+    pedido é "realizado", só a ocorrência-alvo o recebe -- a primeira, na
+    criação --, e as demais seguem o vencimento, como a projeção mensal já faz
+    com molde realizado (`_projected_status`). Antes, o grupo inteiro nascia
+    realizado na mesma data, inclusive os meses que ainda não tinham chegado, e
+    o saldo realizado daquele dia perdia o valor tantas vezes quantas eram as
+    ocorrências.
+    """
+    if requested == STATUS_REALIZED and not is_target:
+        requested = STATUS_PROJECTED
+    return _normalize_open_entry_status(requested, due_date)
+
+
+def _kept_realization(entry: CashFlowEntry, due_date: date) -> tuple[str, date | None, Decimal | None]:
+    """Status e realização de uma ocorrência que a edição em grupo não mira.
+
+    O formulário de edição mostra o status da linha editada, e só dela. Aplicado
+    ao grupo, ele realizava meses futuros ou apagava a realização das
+    ocorrências já pagas. A realização existente é fato e fica como está; a que
+    está em aberto só acompanha o vencimento, que a edição pode ter mudado.
+    """
+    if entry.status == STATUS_REALIZED:
+        return entry.status, entry.realized_date, entry.realized_amount
+    return _normalize_open_entry_status(STATUS_PROJECTED, due_date), None, None
+
+
 def supports_operation_scope(entry: CashFlowEntry) -> bool:
     """True se `entry` pertence a um grupo (parcelas/recorrência/transferência
     recorrente ou parcelada) onde faz sentido escolher o escopo da alteração."""
@@ -771,7 +800,15 @@ def _apply_fields(
     account_id: int | None = None,
     source_entry: CashFlowEntry | None = None,
     clear_source_entry: bool = False,
+    keep_realization: bool = False,
 ) -> None:
+    """Aplica o formulário a `entry`.
+
+    `keep_realization` marca uma ocorrência que a edição em grupo não mira: os
+    demais campos vêm do formulário, mas status e realização seguem
+    `_kept_realization`, lidos antes de qualquer campo ser sobrescrito.
+    """
+    kept = _kept_realization(entry, due_date) if keep_realization else None
     entry.account_id = account_id if account_id is not None else req.account_id
     entry.category_id = req.category_id
     entry.entry_type = entry_type if entry_type is not None else req.entry_type
@@ -787,6 +824,8 @@ def _apply_fields(
         entry.source_entry = None
     elif source_entry is not None:
         entry.source_entry = source_entry
+    if kept is not None:
+        entry.status, entry.realized_date, entry.realized_amount = kept
 
 
 def _validate_common_payload(req: TransactionRequest, monthly_amount: Decimal, installments: int) -> None:
@@ -876,11 +915,13 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None, user=N
 
     entries: list[CashFlowEntry] = []
 
-    def _add_pair(due_date: date, current_installment: int, installments_total: int) -> None:
+    def _add_pair(
+        due_date: date, current_installment: int, installments_total: int, *, is_first: bool
+    ) -> None:
         validate_month_not_closed(account, due_date)
         if eh_transferencia:
             validate_month_not_closed(counterparty_account, due_date)
-        status = _normalize_open_entry_status(req.status, due_date)
+        status = _group_occurrence_status(req.status, due_date, is_target=is_first)
         realized_date = req.realized_date if status == STATUS_REALIZED else None
         realized_amount = req.realized_amount if status == STATUS_REALIZED else None
         installment_amount = installment_amount_for(
@@ -930,11 +971,11 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None, user=N
             occurrence_due = add_months(req.due_date, offset)
             if occurrence_due > horizon:
                 break
-            _add_pair(occurrence_due, 1, 1)
+            _add_pair(occurrence_due, 1, 1, is_first=offset == 0)
             offset += 1
     else:
         for i in range(1, installments + 1):
-            _add_pair(add_months(req.due_date, i - 1), i, installments)
+            _add_pair(add_months(req.due_date, i - 1), i, installments, is_first=i == 1)
 
     if bank_operation is not None and entries:
         due_dates = [e.due_date for e in entries]
@@ -942,6 +983,9 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None, user=N
         bank_operation.last_due_date = max(due_dates)
         bank_operation.entry_count = len(entries)
         bank_operation.save(update_fields=["first_due_date", "last_due_date", "entry_count", "updated_at"])
+        # Nasceu com o status pedido, mas só a primeira ocorrência o recebe
+        # quando ele é "realizado": a operação passa a refletir as ocorrências.
+        _sync_bank_operation_status(bank_operation.id)
 
     for entry in entries:
         log_audit_event(
@@ -1201,6 +1245,12 @@ def _replace_current_future_block(
             current_installment,
         )
         status = _normalize_open_entry_status(req.status, due_date)
+        realized_date = req.realized_date if status == STATUS_REALIZED else None
+        realized_amount = req.realized_amount if status == STATUS_REALIZED else None
+        # As linhas antigas já foram apagadas, mas os objetos em `entries`
+        # guardam o estado de antes -- é dele que vem a realização mantida.
+        if entries[offset].id != tx.id:
+            status, realized_date, realized_amount = _kept_realization(entries[offset], due_date)
         new_entry = CashFlowEntry.objects.create(
             account=account,
             category_id=req.category_id,
@@ -1212,8 +1262,8 @@ def _replace_current_future_block(
             due_date=due_date,
             is_recurring=req.is_recurring,
             status=status,
-            realized_date=req.realized_date if status == STATUS_REALIZED else None,
-            realized_amount=req.realized_amount if status == STATUS_REALIZED else None,
+            realized_date=realized_date,
+            realized_amount=realized_amount,
             operation_type=operation_type,
             bank_operation=bank_operation,
         )
@@ -1292,6 +1342,7 @@ def _update_installment_or_recurring(
             due_date=due_date,
             monthly_amount=entry_amount,
             installments=installments,
+            keep_realization=entry.id != tx.id,
         )
         entry.operation_type = operation_type
         entry.save()
@@ -1330,14 +1381,11 @@ def _update_internal_transfer(
     pairs = _origin_counterparty_pairs(scoped_entries(tx, entries, scope))
     updated: list[CashFlowEntry] = []
     for offset, (origin, counterpart) in enumerate(pairs):
-        preserve_future_realization = (
-            req.is_recurring and scope == OPERATION_SCOPE_CURRENT_FUTURE
-            and req.status == STATUS_REALIZED and offset > 0
-        )
-        original_state = (
-            origin.status, origin.realized_date, origin.realized_amount,
-            counterpart.status, counterpart.realized_date, counterpart.realized_amount,
-        )
+        # Só a dupla da linha editada recebe o status do formulário; as outras
+        # mantêm a realização que têm (ver `_kept_realization`). Isto vale para
+        # todo escopo e para parcelado também -- antes, só a recorrente em "este
+        # e os próximos" era protegida, e só no sentido de não realizar.
+        keep_realization = tx.id not in (origin.id, counterpart.id)
         due_date = add_months(req.due_date, offset)
         validate_month_not_closed(account, due_date)
         validate_month_not_closed(counterparty_account, due_date)
@@ -1360,7 +1408,7 @@ def _update_internal_transfer(
         _apply_fields(
             origin, req, due_date=due_date, monthly_amount=entry_amount, installments=installments,
             description=original_description, entry_type=req.entry_type, account_id=account.id,
-            clear_source_entry=True,
+            clear_source_entry=True, keep_realization=keep_realization,
         )
         _apply_fields(
             counterpart, req, due_date=due_date,
@@ -1368,23 +1416,19 @@ def _update_internal_transfer(
             installments=installments,
             description=counterparty_description, entry_type=_opposite_entry_type(req.entry_type),
             account_id=counterparty_account.id, source_entry=origin,
+            keep_realization=keep_realization,
         )
-        # `_apply_fields` espelha o realizado da origem, que é o certo para duas
-        # contas na mesma moeda. Quando não são, o realizado da ponta destino é
-        # o dela: copiar gravaria reais numa conta em dólar.
-        counterpart.realized_amount = _counterparty_side_amount(
-            counterpart.realized_amount, counterparty_amount
-        )
+        if not keep_realization:
+            # `_apply_fields` espelha o realizado da origem, que é o certo para
+            # duas contas na mesma moeda. Quando não são, o realizado da ponta
+            # destino é o dela: copiar gravaria reais numa conta em dólar.
+            counterpart.realized_amount = _counterparty_side_amount(
+                counterpart.realized_amount, counterparty_amount
+            )
         origin.operation_type = OPERATION_INTERNAL_TRANSFER
         counterpart.operation_type = OPERATION_INTERNAL_TRANSFER
         origin.bank_operation = tx.bank_operation
         counterpart.bank_operation = tx.bank_operation
-
-        if preserve_future_realization:
-            (
-                origin.status, origin.realized_date, origin.realized_amount,
-                counterpart.status, counterpart.realized_date, counterpart.realized_amount,
-            ) = original_state
 
         origin.save()
         counterpart.save()
