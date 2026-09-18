@@ -69,6 +69,14 @@ telas mostram. O número único convertido pertence a quem consolida.
 - Valores monetários usam `Decimal`.
 - `entry_amount` e `realized_amount`, quando informado, são positivos; o tipo
   `receita` ou `despesa` determina o sinal no saldo.
+- Lançamento `realizado` tem data e valor de realização. A data é obrigatória
+  porque o saldo realizado é filtrado por ela: sem data, o lançamento sumia de
+  todos os saldos sem aviso (o #1236, achado em 17/09/2026). Valor realizado
+  vazio grava o previsto do próprio lançamento, como o botão "Realizar" já
+  fazia; decidido assim porque o vazio era lido como o previsto pelo saldo e
+  como zero pelo planejamento anual. O serviço recusa a data vazia, e o banco
+  tem o piso `ck_cash_flow_entry_realized_has_date_and_amount`. Lançamento em
+  aberto não guarda realização: o serviço limpa a data e o valor.
 - Os status de lançamentos e operações são `a_vencer`, `vencidos` e
   `realizado`.
 - O saldo inicial cadastrado na conta integra a base dos cálculos.
@@ -82,6 +90,42 @@ telas mostram. O número único convertido pertence a quem consolida.
 duas pontas de transferências preservam o agrupamento durante criação, edição,
 realização, exclusão e conciliação. Operações compostas são atômicas: uma falha
 reverte o conjunto.
+
+Realizar é um fato de uma ocorrência, não do grupo. Criar um parcelado ou um
+recorrente como realizado realiza só a primeira ocorrência, com a data
+informada; as demais seguem o vencimento, como a projeção mensal já fazia. Na
+edição em grupo ("todos" ou "este e os próximos"), status, data e valor
+realizados do formulário valem só para a linha editada e a outra ponta dela;
+as outras ocorrências mantêm a realização que têm, e as em aberto só
+acompanham o vencimento. Decidido assim em 17/09/2026 porque o status pedido
+era aplicado ao grupo inteiro: meses futuros nasciam realizados na mesma data,
+o saldo realizado daquele dia perdia o valor uma vez por ocorrência, e editar o
+grupo a partir de uma linha em aberto apagava a realização das já pagas. A
+`BankOperation` resume o status das ocorrências também na criação.
+
+### Vencimento na edição em grupo
+
+O formulário de edição envia os campos da **linha editada**, e o escopo diz
+até onde eles valem. Para os demais campos, "todos os registros do grupo"
+significa repetir o valor; para o vencimento, não — cada ocorrência tem o mês
+dela, e repetir a data gravaria todas no mesmo dia.
+
+O que o grupo acompanha é a **diferença** entre o vencimento novo e o antigo da
+linha editada: tantos meses, e o novo dia quando o dia muda. Ela se aplica à
+data **de cada ocorrência**, não à posição dela na série. Disso decorre o que
+uma edição de grupo nunca faz:
+
+- editar sem tocar no vencimento não move vencimento nenhum;
+- uma ocorrência adiantada ou adiada a mão — fim de semana, feriado —
+  continua onde foi posta, e só acompanha o deslocamento;
+- um mês removido no meio da série continua ausente; a ocorrência seguinte não
+  ocupa o lugar dele.
+
+Vale igualmente para "este registro e os próximos", que renumera o bloco
+apagando e recriando as linhas: os ids mudam, os vencimentos são os antigos
+deslocados. Um dia que o calendário já aparou (31 em fevereiro vira 28) viaja
+aparado: o sistema desloca a data que existe, não uma intenção de "todo dia 31"
+que ele não guarda.
 
 Transferências internas exigem concessão explícita do usuário para a conta de
 destino. Recorrências internas guardam um responsável; a projeção global só as

@@ -147,9 +147,29 @@ def test_realized_amount_none_uses_planned_amount_without_truthiness_fallback():
 
 @pytest.mark.parametrize("amount", [Decimal("0"), Decimal("-1.00")])
 def test_transaction_payload_rejects_invalid_realized_amount(amount):
-    request = SimpleNamespace(description="válido", realized_amount=amount)
+    # Realizado e com data: o valor é a única coisa errada, então é a regra
+    # dele que tem de recusar.
+    request = SimpleNamespace(
+        description="válido",
+        status=STATUS_REALIZED,
+        realized_date=date(2026, 8, 1),
+        realized_amount=amount,
+    )
 
     with pytest.raises(ValueError, match="positivo"):
+        services._validate_common_payload(request, Decimal("10.00"), 1)
+
+
+def test_transaction_payload_rejects_realized_without_date():
+    """O saldo realizado filtra pela data: sem ela, o lançamento some dele."""
+    request = SimpleNamespace(
+        description="válido",
+        status=STATUS_REALIZED,
+        realized_date=None,
+        realized_amount=Decimal("10.00"),
+    )
+
+    with pytest.raises(ValueError, match="data de realização"):
         services._validate_common_payload(request, Decimal("10.00"), 1)
 
 

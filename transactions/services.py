@@ -1,4 +1,5 @@
 """Serviços de domínio para transações e fluxo de caixa."""
+import calendar
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -587,6 +588,35 @@ def _normalize_open_entry_status(status: str, due_date: date, today: date | None
     return status
 
 
+def _group_occurrence_status(requested: str, due_date: date, *, is_target: bool) -> str:
+    """Status de uma ocorrência nova de um grupo (parcela, recorrência ou dupla).
+
+    Realizar é um fato de UMA ocorrência, com a data e o valor dela. Quando o
+    pedido é "realizado", só a ocorrência-alvo o recebe -- a primeira, na
+    criação --, e as demais seguem o vencimento, como a projeção mensal já faz
+    com molde realizado (`_projected_status`). Antes, o grupo inteiro nascia
+    realizado na mesma data, inclusive os meses que ainda não tinham chegado, e
+    o saldo realizado daquele dia perdia o valor tantas vezes quantas eram as
+    ocorrências.
+    """
+    if requested == STATUS_REALIZED and not is_target:
+        requested = STATUS_PROJECTED
+    return _normalize_open_entry_status(requested, due_date)
+
+
+def _kept_realization(entry: CashFlowEntry, due_date: date) -> tuple[str, date | None, Decimal | None]:
+    """Status e realização de uma ocorrência que a edição em grupo não mira.
+
+    O formulário de edição mostra o status da linha editada, e só dela. Aplicado
+    ao grupo, ele realizava meses futuros ou apagava a realização das
+    ocorrências já pagas. A realização existente é fato e fica como está; a que
+    está em aberto só acompanha o vencimento, que a edição pode ter mudado.
+    """
+    if entry.status == STATUS_REALIZED:
+        return entry.status, entry.realized_date, entry.realized_amount
+    return _normalize_open_entry_status(STATUS_PROJECTED, due_date), None, None
+
+
 def supports_operation_scope(entry: CashFlowEntry) -> bool:
     """True se `entry` pertence a um grupo (parcelas/recorrência/transferência
     recorrente ou parcelada) onde faz sentido escolher o escopo da alteração."""
@@ -759,6 +789,26 @@ def _sync_bank_operation_status(bank_operation_id: int | None) -> None:
     BankOperation.objects.filter(id=bank_operation_id).update(status=new_status, updated_at=timezone.now())
 
 
+def _realization_for(
+    req: TransactionRequest, status: str, planned_amount: Decimal
+) -> tuple[date | None, Decimal | None]:
+    """Data e valor realizados que um lançamento com `status` deve gravar.
+
+    Valor realizado vazio vira o previsto do próprio lançamento, como já faz
+    `realize_transaction`. Guardar o vazio deixava cada leitura decidir o que
+    ele significa, e elas não concordavam: o saldo lia o previsto, o
+    planejamento anual lia zero.
+
+    O previsto é o do lançamento, e não o total da requisição: numa parcela
+    dividida ou na ponta destino de uma transferência entre moedas, é outro
+    número. A data já foi exigida por `_validate_common_payload`.
+    """
+    if status != STATUS_REALIZED:
+        return None, None
+    amount = planned_amount if req.realized_amount is None else req.realized_amount
+    return req.realized_date, amount
+
+
 def _apply_fields(
     entry: CashFlowEntry,
     req: TransactionRequest,
@@ -771,7 +821,15 @@ def _apply_fields(
     account_id: int | None = None,
     source_entry: CashFlowEntry | None = None,
     clear_source_entry: bool = False,
+    keep_realization: bool = False,
 ) -> None:
+    """Aplica o formulário a `entry`.
+
+    `keep_realization` marca uma ocorrência que a edição em grupo não mira: os
+    demais campos vêm do formulário, mas status e realização seguem
+    `_kept_realization`, lidos antes de qualquer campo ser sobrescrito.
+    """
+    kept = _kept_realization(entry, due_date) if keep_realization else None
     entry.account_id = account_id if account_id is not None else req.account_id
     entry.category_id = req.category_id
     entry.entry_type = entry_type if entry_type is not None else req.entry_type
@@ -781,17 +839,26 @@ def _apply_fields(
     entry.due_date = due_date
     entry.is_recurring = req.is_recurring
     entry.status = _normalize_open_entry_status(req.status, due_date)
-    entry.realized_date = req.realized_date if entry.status == STATUS_REALIZED else None
-    entry.realized_amount = req.realized_amount if entry.status == STATUS_REALIZED else None
+    entry.realized_date, entry.realized_amount = _realization_for(req, entry.status, monthly_amount)
     if clear_source_entry:
         entry.source_entry = None
     elif source_entry is not None:
         entry.source_entry = source_entry
+    if kept is not None:
+        entry.status, entry.realized_date, entry.realized_amount = kept
 
 
 def _validate_common_payload(req: TransactionRequest, monthly_amount: Decimal, installments: int) -> None:
     if monthly_amount <= 0:
         raise ValueError("O valor do lançamento deve ser positivo.")
+    # O saldo realizado é filtrado pela data de realização: sem ela, o
+    # lançamento não entra em saldo realizado nenhum, e nada avisa. Foi assim
+    # que o #1236 sumiu das telas em produção.
+    if req.status == STATUS_REALIZED and req.realized_date is None:
+        raise ValueError(
+            "Informe a data de realização: sem ela o lançamento realizado "
+            "não aparece no saldo realizado."
+        )
     if req.realized_amount is not None and req.realized_amount <= 0:
         raise ValueError("O valor realizado deve ser positivo.")
     if not 1 <= installments <= MAX_TRANSACTION_INSTALLMENTS:
@@ -876,16 +943,17 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None, user=N
 
     entries: list[CashFlowEntry] = []
 
-    def _add_pair(due_date: date, current_installment: int, installments_total: int) -> None:
+    def _add_pair(
+        due_date: date, current_installment: int, installments_total: int, *, is_first: bool
+    ) -> None:
         validate_month_not_closed(account, due_date)
         if eh_transferencia:
             validate_month_not_closed(counterparty_account, due_date)
-        status = _normalize_open_entry_status(req.status, due_date)
-        realized_date = req.realized_date if status == STATUS_REALIZED else None
-        realized_amount = req.realized_amount if status == STATUS_REALIZED else None
+        status = _group_occurrence_status(req.status, due_date, is_target=is_first)
         installment_amount = installment_amount_for(
             req.entry_amount, installments_total, req.calc_mode, current_installment
         )
+        realized_date, realized_amount = _realization_for(req, status, installment_amount)
         original = CashFlowEntry.objects.create(
             account=account,
             category=category,
@@ -930,11 +998,11 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None, user=N
             occurrence_due = add_months(req.due_date, offset)
             if occurrence_due > horizon:
                 break
-            _add_pair(occurrence_due, 1, 1)
+            _add_pair(occurrence_due, 1, 1, is_first=offset == 0)
             offset += 1
     else:
         for i in range(1, installments + 1):
-            _add_pair(add_months(req.due_date, i - 1), i, installments)
+            _add_pair(add_months(req.due_date, i - 1), i, installments, is_first=i == 1)
 
     if bank_operation is not None and entries:
         due_dates = [e.due_date for e in entries]
@@ -942,6 +1010,9 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None, user=N
         bank_operation.last_due_date = max(due_dates)
         bank_operation.entry_count = len(entries)
         bank_operation.save(update_fields=["first_due_date", "last_due_date", "entry_count", "updated_at"])
+        # Nasceu com o status pedido, mas só a primeira ocorrência o recebe
+        # quando ele é "realizado": a operação passa a refletir as ocorrências.
+        _sync_bank_operation_status(bank_operation.id)
 
     for entry in entries:
         log_audit_event(
@@ -1081,6 +1152,38 @@ def current_future_attachment_counts(entries: list[CashFlowEntry]) -> dict[int, 
     return mapping
 
 
+def _group_due_date_shift(old_due_date: date, new_due_date: date):
+    """Como cada ocorrência de um grupo se move quando o vencimento da LINHA
+    EDITADA vai de `old_due_date` para `new_due_date`.
+
+    O deslocamento é a diferença -- em meses e, se o dia mudou, no dia -- e se
+    aplica à data DE CADA ocorrência, nunca à posição dela. Antes, uma edição
+    de grupo regerava os vencimentos a partir do vencimento recebido, contando
+    as posições desde a primeira ocorrência: editar a 2ª parcela de 6 só para
+    trocar a descrição empurrava o grupo inteiro um mês adiante.
+
+    Contar pela data de cada ocorrência tem três consequências que contar por
+    posição não tinha: editar sem tocar no vencimento não move nada; um mês
+    adiantado ou adiado a mão continua onde está; e uma ocorrência removida no
+    meio da série continua ausente, em vez de ser preenchida pela seguinte.
+    """
+    from reports.services import add_months
+
+    months = (new_due_date.year - old_due_date.year) * 12 + new_due_date.month - old_due_date.month
+    # Só quando o dia é mexido de propósito ele vale para o grupo: o dia de
+    # cada ocorrência é dela, e pode ter sido ajustado por causa de fim de
+    # semana ou feriado.
+    day = new_due_date.day if new_due_date.day != old_due_date.day else None
+
+    def deslocar(due_date: date) -> date:
+        moved = add_months(due_date, months)
+        if day is None:
+            return moved
+        return moved.replace(day=min(day, calendar.monthrange(moved.year, moved.month)[1]))
+
+    return deslocar
+
+
 def _update_single(tx: CashFlowEntry, req: TransactionRequest, user=None) -> list[CashFlowEntry]:
     category = CashFlowCategory.objects.get(id=req.category_id)
     if category.requires_counterparty:
@@ -1172,12 +1275,21 @@ def _replace_current_future_block(
     tx: CashFlowEntry, req: TransactionRequest, entries: list[CashFlowEntry],
     operation_type: str, installments: int, monthly_amount: Decimal,
 ) -> list[CashFlowEntry]:
-    """Substitui deterministicamente o bloco atual/futuro de uma operação
-    (apaga e recria, já que os offsets de data mudam com o novo vencimento)."""
-    from reports.services import add_months
+    """Substitui deterministicamente o bloco atual/futuro de uma operação.
 
+    Apaga e recria, o que renumera as parcelas do bloco de uma vez. Os
+    vencimentos, porém, vêm das linhas antigas deslocadas por
+    `_group_due_date_shift`, e não de meses consecutivos a partir do vencimento
+    recebido: recriar em sequência apagava os ajustes de dia e fechava as
+    lacunas de quem estava no bloco.
+    """
     if not entries:
         return []
+
+    deslocar = _group_due_date_shift(tx.due_date, req.due_date)
+    # As linhas são apagadas adiante, mas os objetos em `entries` guardam as
+    # datas de antes -- é delas que sai cada vencimento novo.
+    novos_vencimentos = [deslocar(entry.due_date) for entry in entries]
 
     start_installment = entries[0].current_installment or 1
     if operation_type == OPERATION_INSTALLMENT and start_installment + len(entries) - 1 > installments:
@@ -1191,7 +1303,7 @@ def _replace_current_future_block(
 
     rebuilt: list[CashFlowEntry] = []
     for offset in range(len(entries)):
-        due_date = add_months(req.due_date, offset)
+        due_date = novos_vencimentos[offset]
         validate_month_not_closed(account, due_date)
         current_installment = 1 if operation_type == OPERATION_RECURRING else start_installment + offset
         entry_amount = installment_amount_for(
@@ -1201,6 +1313,11 @@ def _replace_current_future_block(
             current_installment,
         )
         status = _normalize_open_entry_status(req.status, due_date)
+        realized_date, realized_amount = _realization_for(req, status, entry_amount)
+        # As linhas antigas já foram apagadas, mas os objetos em `entries`
+        # guardam o estado de antes -- é dele que vem a realização mantida.
+        if entries[offset].id != tx.id:
+            status, realized_date, realized_amount = _kept_realization(entries[offset], due_date)
         new_entry = CashFlowEntry.objects.create(
             account=account,
             category_id=req.category_id,
@@ -1212,8 +1329,8 @@ def _replace_current_future_block(
             due_date=due_date,
             is_recurring=req.is_recurring,
             status=status,
-            realized_date=req.realized_date if status == STATUS_REALIZED else None,
-            realized_amount=req.realized_amount if status == STATUS_REALIZED else None,
+            realized_date=realized_date,
+            realized_amount=realized_amount,
             operation_type=operation_type,
             bank_operation=bank_operation,
         )
@@ -1260,8 +1377,6 @@ def _assert_current_future_confirmation(entry_id: int, token: str | None) -> Non
 def _update_installment_or_recurring(
     tx: CashFlowEntry, req: TransactionRequest, entries: list[CashFlowEntry], scope: str,
 ) -> list[CashFlowEntry]:
-    from reports.services import add_months
-
     operation_type = tx.operation_type or OPERATION_INSTALLMENT
     installments, monthly_amount = _parcelas_e_valor(
         req, recorrente=operation_type == OPERATION_RECURRING
@@ -1275,8 +1390,9 @@ def _update_installment_or_recurring(
         return _replace_current_future_block(tx, req, ordered, operation_type, installments, monthly_amount)
 
     account = FinancialAccount.objects.get(id=req.account_id)
+    deslocar = _group_due_date_shift(tx.due_date, req.due_date)
     for offset, entry in enumerate(ordered):
-        due_date = add_months(req.due_date, offset)
+        due_date = deslocar(entry.due_date)
         validate_month_not_closed(account, due_date)
         if scope == OPERATION_SCOPE_ALL:
             entry.current_installment = offset + 1 if operation_type == OPERATION_INSTALLMENT else 1
@@ -1292,6 +1408,7 @@ def _update_installment_or_recurring(
             due_date=due_date,
             monthly_amount=entry_amount,
             installments=installments,
+            keep_realization=entry.id != tx.id,
         )
         entry.operation_type = operation_type
         entry.save()
@@ -1301,8 +1418,6 @@ def _update_installment_or_recurring(
 def _update_internal_transfer(
     tx: CashFlowEntry, req: TransactionRequest, entries: list[CashFlowEntry], scope: str, user=None,
 ) -> list[CashFlowEntry]:
-    from reports.services import add_months
-
     category = CashFlowCategory.objects.get(id=req.category_id)
     if not category.requires_counterparty:
         raise ValueError("Transferência interna exige categoria do tipo transferência.")
@@ -1328,17 +1443,15 @@ def _update_internal_transfer(
     counterparty_description = f"Conta Origem: {_account_label(account)}"
 
     pairs = _origin_counterparty_pairs(scoped_entries(tx, entries, scope))
+    deslocar = _group_due_date_shift(tx.due_date, req.due_date)
     updated: list[CashFlowEntry] = []
     for offset, (origin, counterpart) in enumerate(pairs):
-        preserve_future_realization = (
-            req.is_recurring and scope == OPERATION_SCOPE_CURRENT_FUTURE
-            and req.status == STATUS_REALIZED and offset > 0
-        )
-        original_state = (
-            origin.status, origin.realized_date, origin.realized_amount,
-            counterpart.status, counterpart.realized_date, counterpart.realized_amount,
-        )
-        due_date = add_months(req.due_date, offset)
+        # Só a dupla da linha editada recebe o status do formulário; as outras
+        # mantêm a realização que têm (ver `_kept_realization`). Isto vale para
+        # todo escopo e para parcelado também -- antes, só a recorrente em "este
+        # e os próximos" era protegida, e só no sentido de não realizar.
+        keep_realization = tx.id not in (origin.id, counterpart.id)
+        due_date = deslocar(origin.due_date)
         validate_month_not_closed(account, due_date)
         validate_month_not_closed(counterparty_account, due_date)
 
@@ -1360,7 +1473,7 @@ def _update_internal_transfer(
         _apply_fields(
             origin, req, due_date=due_date, monthly_amount=entry_amount, installments=installments,
             description=original_description, entry_type=req.entry_type, account_id=account.id,
-            clear_source_entry=True,
+            clear_source_entry=True, keep_realization=keep_realization,
         )
         _apply_fields(
             counterpart, req, due_date=due_date,
@@ -1368,23 +1481,19 @@ def _update_internal_transfer(
             installments=installments,
             description=counterparty_description, entry_type=_opposite_entry_type(req.entry_type),
             account_id=counterparty_account.id, source_entry=origin,
+            keep_realization=keep_realization,
         )
-        # `_apply_fields` espelha o realizado da origem, que é o certo para duas
-        # contas na mesma moeda. Quando não são, o realizado da ponta destino é
-        # o dela: copiar gravaria reais numa conta em dólar.
-        counterpart.realized_amount = _counterparty_side_amount(
-            counterpart.realized_amount, counterparty_amount
-        )
+        if not keep_realization:
+            # `_apply_fields` espelha o realizado da origem, que é o certo para
+            # duas contas na mesma moeda. Quando não são, o realizado da ponta
+            # destino é o dela: copiar gravaria reais numa conta em dólar.
+            counterpart.realized_amount = _counterparty_side_amount(
+                counterpart.realized_amount, counterparty_amount
+            )
         origin.operation_type = OPERATION_INTERNAL_TRANSFER
         counterpart.operation_type = OPERATION_INTERNAL_TRANSFER
         origin.bank_operation = tx.bank_operation
         counterpart.bank_operation = tx.bank_operation
-
-        if preserve_future_realization:
-            (
-                origin.status, origin.realized_date, origin.realized_amount,
-                counterpart.status, counterpart.realized_date, counterpart.realized_amount,
-            ) = original_state
 
         origin.save()
         counterpart.save()

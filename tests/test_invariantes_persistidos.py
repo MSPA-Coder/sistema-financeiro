@@ -40,7 +40,9 @@ from core.domain.finance import (
     CURRENCY_USD,
     ENTRY_TYPE_EXPENSE,
     OPERATION_SINGLE,
+    STATUS_PENDING,
     STATUS_PROJECTED,
+    STATUS_REALIZED,
 )
 from core.domain.identity import USER_TYPE_ADMINISTRATOR
 from transactions import services
@@ -154,6 +156,41 @@ def test_banco_recusa_valor_realizado_nao_positivo(conta, categoria):
     match = "ck_cash_flow_entry_realized_amount_positive"
     with pytest.raises(IntegrityError, match=match), transaction.atomic():
         _lancamento(conta, categoria, realized_amount=Decimal("0.00"))
+
+
+@pytest.mark.parametrize(
+    "faltando",
+    [
+        pytest.param({"realized_amount": Decimal("100.00")}, id="sem-data"),
+        pytest.param({"realized_date": date(2026, 6, 10)}, id="sem-valor"),
+    ],
+)
+def test_banco_recusa_realizado_incompleto(conta, categoria, faltando):
+    """Invariante: realizado tem data e valor de realização.
+
+    O saldo realizado filtra pela data, e um realizado sem ela sumia de todos
+    os saldos sem aviso -- o #1236 de produção. O serviço recusa; este é o piso
+    para o que chegar por fora dele.
+    """
+    match = "ck_cash_flow_entry_realized_has_date_and_amount"
+    with pytest.raises(IntegrityError, match=match), transaction.atomic():
+        _lancamento(conta, categoria, status=STATUS_REALIZED, **faltando)
+
+    assert CashFlowEntry.objects.count() == 0
+
+
+def test_banco_aceita_realizado_completo_e_aberto_sem_realizacao(conta, categoria):
+    """Controle: a constraint não pode ter alcançado os dois estados legítimos."""
+    _lancamento(
+        conta,
+        categoria,
+        status=STATUS_REALIZED,
+        realized_date=date(2026, 6, 10),
+        realized_amount=Decimal("100.00"),
+    )
+    _lancamento(conta, categoria, status=STATUS_PENDING)
+
+    assert CashFlowEntry.objects.count() == 2
 
 
 # ---------------------------------------------------------------------------

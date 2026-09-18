@@ -231,6 +231,13 @@ class CashFlowEntry(models.Model):
                 condition=models.Q(status__in=VALID_STATUSES),
                 name='ck_cash_flow_entry_status_valid',
             ),
+            # O saldo realizado filtra pela data de realização: realizado sem
+            # data some de todos os saldos sem aviso. Ver a migration 0005.
+            models.CheckConstraint(
+                condition=~models.Q(status=STATUS_REALIZED)
+                | models.Q(realized_date__isnull=False, realized_amount__isnull=False),
+                name='ck_cash_flow_entry_realized_has_date_and_amount',
+            ),
             models.CheckConstraint(
                 condition=models.Q(operation_type__in=[OPERATION_SINGLE, OPERATION_INSTALLMENT, OPERATION_RECURRING, OPERATION_INTERNAL_TRANSFER]),
                 name='ck_cash_flow_entry_operation_type_valid',
