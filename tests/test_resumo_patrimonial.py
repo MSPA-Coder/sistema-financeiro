@@ -26,7 +26,15 @@ from django.test import Client
 from accounts.models import AccountOwner
 from banking.models import FinancialAccount, FinancialInstitution
 from core import patrimonio
-from core.domain.finance import ENTRY_TYPE_EXPENSE, ENTRY_TYPE_INCOME, STATUS_REALIZED
+from core.domain.finance import (
+    CATEGORY_KIND_MOVEMENT,
+    CATEGORY_KIND_TRANSFER,
+    ENTRY_TYPE_EXPENSE,
+    ENTRY_TYPE_INCOME,
+    OPERATION_INTERNAL_TRANSFER,
+    STATUS_PROJECTED,
+    STATUS_REALIZED,
+)
 from core.domain.identity import USER_TYPE_ADMINISTRATOR
 from transactions.models import CashFlowCategory, CashFlowEntry
 
@@ -34,6 +42,7 @@ pytestmark = pytest.mark.django_db
 
 TOKEN = "token-de-teste-com-mais-de-trinta-e-dois-caracteres"
 ROTA = "/patrimonio/v1/resumo"
+ROTA_V2 = "/patrimonio/v2/resumo"
 
 
 @pytest.fixture
@@ -87,6 +96,11 @@ def com_token(monkeypatch, tmp_path):
 def pedir(token: str | None = TOKEN, **parametros):
     cabecalhos = {"HTTP_AUTHORIZATION": f"Bearer {token}"} if token is not None else {}
     return Client().get(ROTA, parametros, **cabecalhos)
+
+
+def pedir_v2(token: str | None = TOKEN, **parametros):
+    cabecalhos = {"HTTP_AUTHORIZATION": f"Bearer {token}"} if token is not None else {}
+    return Client().get(ROTA_V2, parametros, **cabecalhos)
 
 
 # --- A chave é a permissão -------------------------------------------------
@@ -297,6 +311,144 @@ def test_sem_data_a_foto_e_de_hoje(contas, com_token):
     corpo = pedir().json()
 
     assert corpo["data_de_referencia"] == timezone.localdate().isoformat()
+
+
+# --- A versão de fluxos ----------------------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+def test_v2_preserva_envelope_e_usa_o_mesmo_bearer(contas, com_token):
+    resposta = pedir_v2(data="2026-03-01", inicio="2026-01-01")
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["contrato"] == "patrimonio/v2"
+    assert corpo["data_de_referencia"] == "2026-03-01"
+    assert corpo["periodo_dos_fluxos"] == {
+        "inicio": "2026-01-01",
+        "fim": "2026-03-01",
+        "criterio": "realizado",
+        "granularidade": "dia",
+    }
+    assert {"contas", "totais_por_moeda", "fluxos"} <= corpo.keys()
+    assert resposta["Cache-Control"] == "no-store"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_v2_sem_bearer_nao_publica_dados(contas, com_token):
+    resposta = pedir_v2(token=None, data="2026-03-01")
+
+    assert resposta.status_code == 401
+    assert "contas" not in resposta.json()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_v2_so_responde_a_get(contas, com_token):
+    resposta = Client().post(ROTA_V2, HTTP_AUTHORIZATION=f"Bearer {TOKEN}")
+
+    assert resposta.status_code == 405
+
+
+@pytest.mark.django_db(transaction=True)
+def test_v2_agrega_realizados_por_data_moeda_e_natureza(contas, com_token):
+    categoria_transferencia = CashFlowCategory.objects.create(
+        category_name="Transferência v2", kind=CATEGORY_KIND_TRANSFER
+    )
+    categoria_movimentacao = CashFlowCategory.objects.create(
+        category_name="Movimentação v2", kind=CATEGORY_KIND_MOVEMENT
+    )
+    CashFlowEntry.objects.create(
+        account=contas["em_reais"], category=categoria_transferencia,
+        entry_type=ENTRY_TYPE_EXPENSE, description="Envio", entry_amount=Decimal("30.00"),
+        due_date=date(2026, 2, 15), realized_date=date(2026, 2, 15),
+        realized_amount=Decimal("30.00"), status=STATUS_REALIZED,
+    )
+    CashFlowEntry.objects.create(
+        account=contas["em_reais"], category=categoria_movimentacao,
+        entry_type=ENTRY_TYPE_INCOME, description="Resgate", entry_amount=Decimal("7.00"),
+        due_date=date(2026, 2, 15), realized_date=date(2026, 2, 15),
+        realized_amount=Decimal("7.00"), status=STATUS_REALIZED,
+    )
+    # Lançamento em aberto e fora do intervalo não podem viajar para a v2.
+    CashFlowEntry.objects.create(
+        account=contas["em_reais"], category=categoria_movimentacao,
+        entry_type=ENTRY_TYPE_INCOME, description="Projetado", entry_amount=Decimal("999.00"),
+        due_date=date(2026, 2, 15), status=STATUS_PROJECTED,
+    )
+
+    corpo = pedir_v2(data="2026-02-15", inicio="2026-02-15").json()
+    fluxos = {(f["moeda"], f["natureza"]): f for f in corpo["fluxos"]}
+    assert fluxos[("BRL", "transferencia")] == {
+        "data": "2026-02-15", "moeda": "BRL", "natureza": "transferencia",
+        "entradas": "0.00", "saidas": "30.00", "liquido": "-30.00", "linhas": 1,
+    }
+    assert fluxos[("BRL", "movimentacao")] == {
+        "data": "2026-02-15", "moeda": "BRL", "natureza": "movimentacao",
+        "entradas": "7.00", "saidas": "0.00", "liquido": "7.00", "linhas": 1,
+    }
+
+
+@pytest.mark.django_db(transaction=True)
+def test_v2_publica_saldo_inicial_do_periodo_como_ajuste_de_base(contas, com_token):
+    FinancialAccount.objects.create(
+        owner=contas["em_reais"].owner, institution=contas["em_reais"].institution,
+        account_name="Conta nova v2", currency="BRL", initial_balance=Decimal("-20.00"),
+        initial_balance_date=date(2026, 2, 1),
+    )
+
+    corpo = pedir_v2(data="2026-02-01", inicio="2026-02-01").json()
+
+    assert corpo["fluxos"] == [{
+        "data": "2026-02-01", "moeda": "BRL", "natureza": "ajuste_de_base",
+        "entradas": "0.00", "saidas": "20.00", "liquido": "-20.00", "linhas": 1,
+    }]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_v2_agrega_no_banco_sem_misturar_moedas_ou_valor_previsto(contas, com_token):
+    categoria = CashFlowCategory.objects.create(category_name="Gerencial USD v2")
+    transferencia_legada = CashFlowCategory.objects.create(
+        category_name="Transferência por operação v2"
+    )
+    for valor in (Decimal("11.11"), Decimal("1.11")):
+        CashFlowEntry.objects.create(
+            account=contas["em_dolar"], category=categoria,
+            entry_type=ENTRY_TYPE_INCOME, description="Receita USD",
+            entry_amount=Decimal("99.00"), due_date=date(2026, 2, 20),
+            realized_date=date(2026, 2, 20), realized_amount=valor,
+            status=STATUS_REALIZED,
+        )
+    CashFlowEntry.objects.create(
+        account=contas["em_reais"], category=transferencia_legada,
+        entry_type=ENTRY_TYPE_EXPENSE, description="Transferência antiga",
+        entry_amount=Decimal("25.00"), due_date=date(2026, 2, 20),
+        realized_date=date(2026, 2, 20), realized_amount=Decimal("20.00"),
+        status=STATUS_REALIZED, operation_type=OPERATION_INTERNAL_TRANSFER,
+    )
+
+    corpo = pedir_v2(data="2026-02-20", inicio="2026-02-20").json()
+    fluxos = {(item["moeda"], item["natureza"]): item for item in corpo["fluxos"]}
+
+    assert fluxos[("USD", "gerencial")]["entradas"] == "12.22"
+    assert fluxos[("USD", "gerencial")]["linhas"] == 2
+    assert fluxos[("BRL", "transferencia")]["saidas"] == "20.00"
+    assert len(fluxos) == 2
+
+
+@pytest.mark.parametrize(
+    ("parametros", "mensagem"),
+    [
+        ({"data": "2026-01-01", "inicio": "2026-01-02"}, "inicio"),
+        ({"data": "2036-01-03", "inicio": "2026-01-01"}, "limite"),
+        ({"data": "01/02/2026"}, "data"),
+    ],
+)
+@pytest.mark.django_db(transaction=True)
+def test_v2_valida_intervalo_e_datas(contas, com_token, parametros, mensagem):
+    resposta = pedir_v2(**parametros)
+
+    assert resposta.status_code == 400
+    assert mensagem in resposta.json()["erro"]
 
 
 # --- O vocabulário ---------------------------------------------------------

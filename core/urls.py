@@ -13,6 +13,7 @@ urlpatterns = [
     # com outro ciclo de vida, e uma mudança incompatível aqui precisa poder
     # conviver com a versão antiga enquanto ele não é atualizado.
     path("patrimonio/v1/resumo", patrimonio.resumo_view, name="resumo_patrimonial"),
+    path("patrimonio/v2/resumo", patrimonio.resumo_v2_view, name="resumo_patrimonial_v2"),
 
     path("permissions/", views.permissions_view, name="permissions"),
 

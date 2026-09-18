@@ -89,3 +89,23 @@ números em pt-BR. A aplicação dos cabeçalhos, a autenticação, o modelo de
 usuário e as permissões continuam pertencendo a este projeto. O repositório do
 SharedAuth é público: o build o instala por Git, na tag fixada no
 `pyproject.toml` e no commit registrado no `uv.lock`, sem credencial.
+
+## Publicação patrimonial v2
+
+`GET /patrimonio/v2/resumo` convive com a v1 e reutiliza o mesmo Bearer
+(`PATRIMONIO_TOKEN`), sem sessão ou escopo por titular. O envelope patrimonial
+da v1 permanece; a v2 apenas troca `contrato` para `patrimonio/v2` e acrescenta
+`periodo_dos_fluxos` (`inicio`/`fim`) e `fluxos`.
+
+`data` é o fim inclusivo da foto e `inicio` é o começo inclusivo dos fluxos.
+Sem `data`, usa-se o dia local; sem `inicio`, o período tem um dia. O intervalo
+aceita no máximo 3.654 dias (dez anos calendáricos, cobrindo os recortes de cinco anos e
+"Tudo" do Dashboard) e não há migration: a consulta lê o schema corrente.
+Cada fluxo é agregado por data, moeda e natureza (`gerencial`, `transferencia`,
+`movimentacao` ou `ajuste_de_base`), com valores monetários serializados como
+texto. Só lançamentos `realizado` com `realized_date` e `realized_amount` entram;
+lançamentos abertos ou projetados são deliberadamente omitidos. O saldo
+inicial cuja data cair no intervalo vira `ajuste_de_base`. Os grupos nunca
+misturam moedas e não expõem movimentos individuais.
+Foto e fluxos são lidos sob o mesmo snapshot `REPEATABLE READ`; a agregação
+dos lançamentos ocorre no PostgreSQL antes de os grupos chegarem à aplicação.

@@ -50,6 +50,10 @@ ROTAS_ABERTAS: dict[str, str] = {
         "titular seria pior que inutil aqui: produziria um patrimonio "
         "consolidado que esconde contas sem avisar."
     ),
+    "patrimonio/v2/resumo": (
+        "integracao maquina a maquina: mesma autorizacao Bearer da v1, com "
+        "agregados diarios realizados; nao ha sessao nem usuario neste sistema."
+    ),
     "change-password/": "todo usuario troca a propria senha, sempre",
     "inicio/": (
         "nao e tela: resolve para onde a pessoa pode ir e redireciona. Exigir "

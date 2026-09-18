@@ -182,6 +182,24 @@ uma linha por conta, com moeda e saldo na data pedida, mais o total **por
 moeda** -- nunca somado entre moedas. É o que o consolidador de patrimônio lê;
 ele não toca no banco daqui, e este sistema não sabe nada sobre ele.
 
+Enquanto o consumidor migra, a v2 convive com a v1 e usa o mesmo Bearer. Ela
+mantém o envelope de patrimônio e acrescenta fluxos diários agregados:
+
+```bash
+printf 'Authorization: Bearer %s\n' "$(sudo cat .secrets/patrimonio_token)" \
+  | curl -s -H @- "https://bancario-mspa.duckdns.org/patrimonio/v2/resumo?inicio=2026-09-01&data=2026-09-16"
+```
+
+`data` é o fim inclusivo e `inicio` o início inclusivo; sem `data`, vale hoje,
+e sem `inicio`, o recorte é de um dia. O limite é de 3.654 dias (dez anos),
+compatível com os recortes de cinco anos e "Tudo" do Dashboard. `fluxos` contém
+somente fatos realizados, agrupados por `data`, `moeda` e `natureza`:
+`gerencial`, `transferencia`, `movimentacao` e `ajuste_de_base`. Cada item traz
+`entradas`, `saidas`, `liquido` e `linhas`; valores são texto e moedas nunca
+são combinadas. Um saldo inicial datado dentro do período aparece como
+`ajuste_de_base`. Não são publicados movimentos individuais nem dados abertos,
+projetados ou fora do intervalo.
+
 ```bash
 printf 'Authorization: Bearer %s\n' "$(sudo cat .secrets/patrimonio_token)" \
   | curl -s -H @- "https://bancario-mspa.duckdns.org/patrimonio/v1/resumo?data=2026-09-16"
