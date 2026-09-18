@@ -10,6 +10,7 @@
         <td class="amount {{ account.initial_balance|amount_class }}">{{ account.initial_balance|money:account.currency }}</td>
         <td>{{ account.initial_balance_date|date:'d/m/Y' }}</td>
         <td class="actions">
+            {% if can_view_account_details %}<a class="btn btn-sm btn-icon btn-action-view" title="Ver posição da conta" href="{% url 'banking:account_detail' account.id %}">{% icon 'eye' %}</a>{% endif %}
             <button type="button" class="btn btn-sm btn-icon btn-action-edit" title="Editar" data-toggle-edit="edit-account-{{ account.id }}">{% icon 'edit' %}</button>
             <form method="post" action="{% url 'banking:delete_account' account.id %}" data-ui="inline">
                 {% csrf_token %}

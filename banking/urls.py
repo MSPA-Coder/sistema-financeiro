@@ -6,6 +6,8 @@ from . import views
 app_name = 'banking'
 
 urlpatterns = [
+    path('banking/accounts/<int:account_id>/', views.account_detail_view, name='account_detail'),
+
     path('tables/banks/', views.institutions_view, name='institutions_view'),
     path('tables/banks/create/', views.create_institution_view, name='create_institution'),
     path('tables/banks/<int:institution_id>/update/', views.update_institution_view, name='update_institution'),

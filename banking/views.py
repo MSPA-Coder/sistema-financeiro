@@ -1,18 +1,26 @@
-"""Views de Cadastros: Instituições e Contas financeiras."""
+"""Views de Cadastros e detalhamento de contas financeiras."""
+from datetime import date, timedelta
+from decimal import Decimal
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from accounts.services import accessible_owner_ids
-from core.domain.finance import CURRENCY_OPTIONS
+from core.domain.finance import CURRENCY_OPTIONS, VIEW_PROJECTED, VIEW_REALIZED
 from core.htmx import quer_fragmento
+from core.patrimonio import saldo_da_conta
 from core.permissions import permission_required
+from transactions.models import AccountMonthClose
+from transactions.services import build_transactions_view_context
 
 from .models import FinancialAccount, FinancialInstitution
 from .services import (
+    can_access_account,
     create_account,
     create_institution,
     delete_account,
@@ -22,6 +30,91 @@ from .services import (
     update_account,
     update_institution,
 )
+
+
+def _referencia_da_conta(request) -> date:
+    """Data pontual para o saldo que o contrato patrimonial publica.
+
+    ``data`` é opcional na navegação normal, mas precisa manter o significado
+    quando o NetWorth abre uma foto histórica. O período mensal continua sendo
+    resolvido pelo contexto de transações.
+    """
+    raw_value = request.GET.get("data", "")
+    if raw_value:
+        try:
+            return date.fromisoformat(raw_value)
+        except ValueError as exc:
+            raise ValueError("Data informada é inválida.") from exc
+
+    raw_period = request.GET.get("period", "")
+    if raw_period:
+        from reports.services import month_bounds, parse_month_input
+
+        period = parse_month_input(raw_period)
+        if period is None:
+            raise ValueError("Período informado é inválido.")
+        # Para um período que ainda está aberto, "fim do mês" ainda não é uma
+        # foto real. O saldo não pode incorporar um futuro que não aconteceu.
+        return min(month_bounds(period.year, period.month)[1] - timedelta(days=1), timezone.localdate())
+    return timezone.localdate()
+
+
+def _contexto_da_conta(request, account_id: int, view_mode: str, referencia: date) -> dict:
+    """Reusa o cálculo único de extrato e totais para uma conta e um modo."""
+    params = request.GET.copy()
+    params["account_id"] = str(account_id)
+    params["mode"] = view_mode
+    # Um endereço publicado traz somente ``data``. Sem este recorte, ele
+    # explicaria o saldo histórico com o extrato do mês atual.
+    if not params.get("period"):
+        params["period"] = referencia.strftime("%Y-%m")
+    return build_transactions_view_context(request.user, params, request.session, request=request)
+
+
+@login_required
+@permission_required("transactions.view")
+def account_detail_view(request, account_id):
+    """Posição de uma conta, com extrato e comparação previsto x realizado."""
+    account = get_object_or_404(
+        FinancialAccount.objects.select_related("owner", "institution"),
+        id=account_id,
+    )
+    # O identificador da conta é opaco fora deste sistema. Responder 404 para
+    # quem não tem acesso evita confirmar que uma conta de outro titular existe.
+    if not can_access_account(request.user, account.id, "view"):
+        raise Http404
+
+    try:
+        referencia = _referencia_da_conta(request)
+        realizado = _contexto_da_conta(request, account.id, VIEW_REALIZED, referencia)
+        previsto = _contexto_da_conta(request, account.id, VIEW_PROJECTED, referencia)
+    except ValueError as exc:
+        from core.htmx import invalid_period_response
+
+        return invalid_period_response(request, str(exc))
+
+    bloco_realizado = realizado["blocos"][0]
+    bloco_previsto = previsto["blocos"][0]
+    ultimo_fechamento = (
+        AccountMonthClose.objects.select_related("closed_by_user")
+        .filter(account=account, active=True)
+        .order_by("-year", "-month")
+        .first()
+    )
+    context = {
+        "account": account,
+        "reference_date": referencia,
+        "saldo_atual": saldo_da_conta(account, referencia),
+        "realizado": bloco_realizado,
+        "previsto": bloco_previsto,
+        "variacao_previsto_realizado": (
+            bloco_previsto["saldo_final"] - bloco_realizado["saldo_final"]
+        ).quantize(Decimal("0.01")),
+        "ultimo_fechamento": ultimo_fechamento,
+        "txs": realizado["txs"],
+        "selected_period": realizado["selected_period"],
+    }
+    return render(request, "banking/account_detail.html", context)
 
 # --- Instituições ---
 
@@ -105,6 +198,7 @@ def accounts_view(request):
         "currencies": CURRENCY_OPTIONS,
         "current_filter_owner_id": int(current_filter_owner_id) if current_filter_owner_id else None,
         "current_filter_institution_id": int(current_filter_institution_id) if current_filter_institution_id else None,
+        "can_view_account_details": request.user.has_perm("transactions.view"),
     }
     if quer_fragmento(request):
         return render(request, 'tables/_accounts_table.html', context)

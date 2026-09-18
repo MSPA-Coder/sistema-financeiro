@@ -35,11 +35,11 @@ sobre aquilo; um consumidor que não visse a chave não saberia de nada.
 
 O ENDEREÇO É DAQUI
 
-Cada conta leva `endereco`: o caminho, relativo à raiz deste sistema, da tela
-onde aquele saldo se explica -- o extrato realizado da conta, no mês da data
-pedida. Quem consome não monta esse caminho a partir do id, que é opaco; ele
-junta o caminho ao endereço público que já conhece e para por aí. Assim, se a
-rota do extrato mudar, muda aqui, e o link do outro lado continua certo.
+Cada conta leva `endereco`: o caminho, relativo à raiz deste sistema, da sua
+própria página na data da foto. Quem consome não monta esse caminho a partir do
+id, que é opaco; ele junta o caminho ao endereço público que já conhece e para
+por aí. Assim, se a rota da conta mudar, muda aqui, e o link do outro lado
+continua certo.
 
 A CHAVE É A PERMISSÃO
 
@@ -138,14 +138,9 @@ def saldo_da_conta(conta: FinancialAccount, referencia: date) -> Decimal:
 
 
 def endereco_da_conta(conta: FinancialAccount, referencia: date) -> str:
-    """O extrato realizado da conta, no mês da data pedida."""
-    parametros = {
-        "account_id": conta.id,
-        "year": referencia.year,
-        "month": referencia.month,
-        "mode": VIEW_REALIZED,
-    }
-    return f"{reverse('transactions:transactions_view')}?{urlencode(parametros)}"
+    """A página da conta na mesma data pontual da foto publicada."""
+    path = reverse("banking:account_detail", kwargs={"account_id": conta.id})
+    return f"{path}?{urlencode({'data': referencia.isoformat()})}"
 
 
 def montar_resumo(referencia: date) -> dict:
