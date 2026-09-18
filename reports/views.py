@@ -9,6 +9,7 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
 from banking.services import currency_blocks
+from core.currency_filter import selected_currency
 from core.domain.finance import (
     VIEW_ALL,
     VIEW_MODE_OPTIONS,
@@ -53,8 +54,9 @@ def projections_view(request):
     # Um bloco por moeda: cada grupo é de uma moeda só, então os agregados
     # continuam recebendo exatamente o que sempre exigiram. Com uma moeda só --
     # que é o caso de hoje -- há um bloco, e a tela sai idêntica.
+    currency_filter = selected_currency(request.GET)
     blocos = []
-    for currency, ids in currency_blocks(options.account_ids):
+    for currency, ids in currency_blocks(options.account_ids, currency_filter):
         month_data = services.projection_months_between(ids, start_month, end_month, view_mode)
         blocos.append({
             "currency": currency,
@@ -99,12 +101,13 @@ def upcoming_movements_view(request):
     view_mode = services.normalize_upcoming_movement_mode(request.GET.get("mode", VIEW_PROJECTED))
     ctx = services.selected_context(request.user, request.GET, request=request)
     options = services.context_options(request.user, ctx)
+    currency_filter = selected_currency(request.GET)
     blocos = [
         {
             "currency": currency,
             "report": services.upcoming_movements_report(ids, start_date, end_date, view_mode),
         }
-        for currency, ids in currency_blocks(options.account_ids)
+        for currency, ids in currency_blocks(options.account_ids, currency_filter)
     ]
 
     status_options = [opt for opt in VIEW_MODE_OPTIONS if opt[0] in services.UPCOMING_MOVEMENT_VIEW_MODES]
@@ -156,8 +159,9 @@ def account_position_view(request):
     rows = services.account_cash_report_rows(options.account_ids, selected_month, selected_month, view_mode)
     # As linhas convivem numa tabela só, cada uma com o símbolo da sua conta --
     # linha por conta nunca foi agregação. O que é por moeda é o TOTAL.
+    currency_filter = selected_currency(request.GET)
     blocos = []
-    for currency, ids in currency_blocks(options.account_ids):
+    for currency, ids in currency_blocks(options.account_ids, currency_filter):
         do_bloco = [row for row in rows if row.account_id in set(ids)]
         blocos.append({
             "currency": currency,
@@ -242,6 +246,7 @@ def annual_planning_view(request):
     # Uma grade por moeda: a grade soma titulares e meses numa coluna só, e essa
     # coluna não existe entre moedas. Passar os ids do grupo é equivalente ao
     # que a apresentação já resolveria sozinha quando há uma moeda só.
+    currency_filter = selected_currency(request.GET)
     blocos = [
         {
             "currency": currency,
@@ -255,7 +260,7 @@ def annual_planning_view(request):
                 show_descriptions=show_descriptions,
             ),
         }
-        for currency, ids in currency_blocks(selected_account_ids)
+        for currency, ids in currency_blocks(selected_account_ids, currency_filter)
     ]
     context = {
         "blocos": blocos,

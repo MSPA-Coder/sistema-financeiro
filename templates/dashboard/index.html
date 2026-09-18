@@ -39,16 +39,6 @@
                 {% endfor %}
             </select>
         </label>
-        {% if show_currency_filter %}
-        <label class="top-filter-field compact">
-            Moeda
-            <select name="currency">
-                {% for value, symbol in currency_options %}
-                <option value="{{ value }}" {% if value == currency %}selected{% endif %}>{{ symbol }}</option>
-                {% endfor %}
-            </select>
-        </label>
-        {% endif %}
         <label class="top-filter-field">
             Conta
             <select name="account_id">

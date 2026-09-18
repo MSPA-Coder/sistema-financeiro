@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from core.currency_filter import parse_currency_filter
+
 
 @dataclass(frozen=True)
 class MenuItem:
@@ -229,6 +231,7 @@ def app_shell(request):
     menu_items = _serialize_menu(_build_menu_items(), user, request.path)
 
     return {
+        "global_currency": parse_currency_filter(request.GET),
         "ui_theme": getattr(user, "ui_theme", "light") if user else "light",
         "table_scroll_rows": getattr(user, "table_scroll_rows", 15) if user else 15,
         "current_active_user": user,
