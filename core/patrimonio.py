@@ -33,6 +33,14 @@ contrato é um só para os dois publicadores, e cada um preenche o que é dele.
 Um consumidor que receba lista vazia sabe que este sistema não tem nada a dizer
 sobre aquilo; um consumidor que não visse a chave não saberia de nada.
 
+O ENDEREÇO É DAQUI
+
+Cada conta leva `endereco`: o caminho, relativo à raiz deste sistema, da tela
+onde aquele saldo se explica -- o extrato realizado da conta, no mês da data
+pedida. Quem consome não monta esse caminho a partir do id, que é opaco; ele
+junta o caminho ao endereço público que já conhece e para por aí. Assim, se a
+rota do extrato mudar, muda aqui, e o link do outro lado continua certo.
+
 A CHAVE É A PERMISSÃO
 
 A rota publica **todas as contas**, sem escopo de usuário, e isso é deliberado:
@@ -50,8 +58,10 @@ import secrets
 import unicodedata
 from datetime import date, timedelta
 from decimal import Decimal
+from urllib.parse import urlencode
 
 from django.http import JsonResponse
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 from sharedauth.secrets import SegredoInvalidoError, resolver_segredo
@@ -127,6 +137,17 @@ def saldo_da_conta(conta: FinancialAccount, referencia: date) -> Decimal:
     return decimal_balance_before([conta.id], referencia + timedelta(days=1), VIEW_REALIZED)
 
 
+def endereco_da_conta(conta: FinancialAccount, referencia: date) -> str:
+    """O extrato realizado da conta, no mês da data pedida."""
+    parametros = {
+        "account_id": conta.id,
+        "year": referencia.year,
+        "month": referencia.month,
+        "mode": VIEW_REALIZED,
+    }
+    return f"{reverse('transactions:transactions_view')}?{urlencode(parametros)}"
+
+
 def montar_resumo(referencia: date) -> dict:
     """A foto deste sistema na data pedida."""
     contas = list(
@@ -160,6 +181,7 @@ def montar_resumo(referencia: date) -> dict:
                 "moeda": conta.currency,
                 "saldo": str(saldo),
                 "saldo_inicial_em": conta.initial_balance_date.isoformat(),
+                "endereco": endereco_da_conta(conta, referencia),
             }
         )
         # `total` e `linhas`, e não `saldo` e `contas`: o mesmo envelope serve
