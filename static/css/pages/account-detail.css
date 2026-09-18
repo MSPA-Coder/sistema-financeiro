@@ -10,6 +10,9 @@
 .account-period-form input { padding: .32rem .45rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--card); color: var(--text); }
 .account-reference, .account-close-summary { color: var(--muted); font-size: .84rem; }
 .account-summary-cards { grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); }
+.account-summary-cards .sa-cartao { min-width: 0; text-align: center; box-shadow: var(--shadow-sm); }
+.account-summary-cards .sa-cartao.card-positive { border-left: 3px solid var(--semantic-positive); background: linear-gradient(90deg, var(--semantic-positive-bg), transparent 70%), var(--card); }
+.account-summary-cards .sa-cartao.card-negative { border-left: 3px solid var(--semantic-negative); background: linear-gradient(90deg, var(--semantic-negative-bg), transparent 70%), var(--card); }
 .account-extract-table { margin: 0; padding: 0; box-shadow: none; }
 
 @media (max-width: 640px) {

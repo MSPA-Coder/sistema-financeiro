@@ -242,7 +242,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3,<10" },
     { name = "pytest-django", marker = "extra == 'dev'", specifier = ">=4.9,<5" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12,<1" },
-    { name = "sharedauth", git = "https://github.com/MSPA-Coder/SharedAuth.git?rev=v0.11.0" },
+    { name = "sharedauth", git = "https://github.com/MSPA-Coder/SharedAuth.git?rev=v0.12.0" },
     { name = "whitenoise", specifier = ">=6.12.0,<7" },
 ]
 provides-extras = ["dev"]
@@ -823,8 +823,8 @@ wheels = [
 
 [[package]]
 name = "sharedauth"
-version = "0.11.0"
-source = { git = "https://github.com/MSPA-Coder/SharedAuth.git?rev=v0.11.0#68f83539a7f9da4c564af108fe5caf30ea249d5e" }
+version = "0.12.0"
+source = { git = "https://github.com/MSPA-Coder/SharedAuth.git?rev=v0.12.0#7d732085d3372c4939b6a1fe8d7b951b1129e3eb" }
 
 [[package]]
 name = "sortedcontainers"

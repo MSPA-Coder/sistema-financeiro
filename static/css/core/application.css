@@ -10,6 +10,15 @@
     --radius-lg:  14px;
     --shadow-sm:  0 1px 2px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04);
     --transition: 0.15s ease;
+    /* SharedAuth entrega a estrutura dos componentes; a paleta continua
+       pertencendo ao tema local e se atualiza junto com cada variação dele. */
+    --sharedauth-surface: var(--card);
+    --sharedauth-text: var(--text);
+    --sharedauth-text-suave: var(--muted);
+    --sharedauth-border: var(--border);
+    --sharedauth-radius: var(--radius);
+    --sharedauth-accent: var(--primary);
+    --sharedauth-foco: var(--primary);
 }
 
 /* --- TEMAS --- */
