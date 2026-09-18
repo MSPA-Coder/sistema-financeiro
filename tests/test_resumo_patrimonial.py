@@ -20,12 +20,14 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from django.contrib.auth import get_user_model
 from django.test import Client
 
 from accounts.models import AccountOwner
 from banking.models import FinancialAccount, FinancialInstitution
 from core import patrimonio
 from core.domain.finance import ENTRY_TYPE_EXPENSE, ENTRY_TYPE_INCOME, STATUS_REALIZED
+from core.domain.identity import USER_TYPE_ADMINISTRATOR
 from transactions.models import CashFlowCategory, CashFlowEntry
 
 pytestmark = pytest.mark.django_db
@@ -209,6 +211,37 @@ def test_a_conta_leva_id_prefixado_pelo_sistema(contas, com_token):
         f"controle-bancario:conta:{contas['em_reais'].id}",
         f"controle-bancario:conta:{contas['em_dolar'].id}",
     }
+
+
+def test_a_conta_leva_ao_proprio_extrato_no_mes_pedido(contas, com_token):
+    """O caminho é relativo: o endereço público é de quem consome."""
+    corpo = pedir(data="2026-03-01").json()
+
+    enderecos = {linha["id"]: linha["endereco"] for linha in corpo["contas"]}
+    em_reais = f"controle-bancario:conta:{contas['em_reais'].id}"
+    assert enderecos[em_reais] == (
+        f"/transactions/?account_id={contas['em_reais'].id}&year=2026&month=3&mode=realizado"
+    )
+
+
+def test_o_endereco_publicado_abre_o_extrato_da_conta(contas, com_token):
+    """O caminho é o que a tela de fato entende, e não uma aproximação dele."""
+    corpo = pedir(data="2026-03-01").json()
+    em_reais = f"controle-bancario:conta:{contas['em_reais'].id}"
+    endereco = next(linha["endereco"] for linha in corpo["contas"] if linha["id"] == em_reais)
+    usuario = get_user_model().objects.create_user(
+        username="dono", password="troca-esta-senha-no-primeiro-acesso",
+        user_type=USER_TYPE_ADMINISTRATOR,
+    )
+    navegador = Client()
+    navegador.force_login(usuario)
+
+    resposta = navegador.get(endereco)
+
+    assert resposta.status_code == 200
+    assert resposta.context["current_account_id"] == contas["em_reais"].id
+    assert resposta.context["selected_period"] == "2026-03"
+    assert resposta.context["view_mode"] == STATUS_REALIZED
 
 
 def test_o_contrato_traz_as_listas_que_o_outro_sistema_preenche(contas, com_token):
