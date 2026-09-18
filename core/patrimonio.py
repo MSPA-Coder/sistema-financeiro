@@ -60,6 +60,8 @@ from datetime import date, timedelta
 from decimal import Decimal
 from urllib.parse import urlencode
 
+from django.db import connection, transaction
+from django.db.models import Case, CharField, Count, F, Sum, Value, When
 from django.http import JsonResponse
 from django.urls import reverse
 from django.utils import timezone
@@ -67,9 +69,19 @@ from django.views.decorators.http import require_GET
 from sharedauth.secrets import SegredoInvalidoError, resolver_segredo
 
 from banking.models import FinancialAccount
-from core.domain.finance import VIEW_REALIZED
+from core.domain.finance import (
+    CATEGORY_KIND_MANAGERIAL,
+    CATEGORY_KIND_MOVEMENT,
+    CATEGORY_KIND_TRANSFER,
+    ENTRY_TYPE_INCOME,
+    OPERATION_INTERNAL_TRANSFER,
+    STATUS_REALIZED,
+    VIEW_REALIZED,
+)
+from transactions.models import CashFlowEntry
 
 CONTRATO = "patrimonio/v1"
+CONTRATO_V2 = "patrimonio/v2"
 SISTEMA = "controle-bancario"
 
 #: O token não tem valor padrão e não é gerado: sem ele configurado, a rota não
@@ -77,6 +89,10 @@ SISTEMA = "controle-bancario"
 #: a impressão de que a integração está configurada quando não está.
 NOME_DO_SEGREDO = "PATRIMONIO_TOKEN"
 COMPRIMENTO_MINIMO_DO_TOKEN = 32
+# O Dashboard oferece recortes de até cinco anos e "Tudo". O teto de dez
+# anos impede uma consulta acidentalmente sem limite sem bloquear esses usos.
+MAX_FLUXO_DIAS = 3654
+MONEY_QUANT = Decimal("0.01")
 
 logger = logging.getLogger(__name__)
 
@@ -238,3 +254,165 @@ def resumo_view(request):
     # intermediário deve guardá-la.
     resposta["Cache-Control"] = "no-store"
     return resposta
+
+
+def _novo_fluxo(data: date, moeda: str, natureza: str) -> dict:
+    return {
+        "data": data.isoformat(),
+        "moeda": moeda,
+        "natureza": natureza,
+        "entradas": Decimal("0.00"),
+        "saidas": Decimal("0.00"),
+        "liquido": Decimal("0.00"),
+        "linhas": 0,
+    }
+
+
+def _adicionar_fluxo(
+    fluxo: dict, valor: Decimal, *, entrada: bool, linhas: int = 1
+) -> None:
+    valor = valor.quantize(MONEY_QUANT)
+    if entrada:
+        fluxo["entradas"] += valor
+        fluxo["liquido"] += valor
+    else:
+        fluxo["saidas"] += valor
+        fluxo["liquido"] -= valor
+    fluxo["linhas"] += linhas
+
+
+def montar_fluxos(inicio: date, fim: date) -> list[dict]:
+    """Agrega fatos realizados e saldos iniciais no período inclusivo.
+
+    A agregação deliberadamente não expõe movimentos individuais: a chave do
+    grupo é data, moeda e natureza. A moeda nunca entra na soma da outra, e
+    somente ``realized_date``/``realized_amount`` são considerados para
+    lançamentos.
+    """
+    agregados: dict[tuple[date, str, str], dict] = {}
+
+    def grupo(data: date, moeda: str, natureza: str) -> dict:
+        chave = (data, moeda, natureza)
+        return agregados.setdefault(chave, _novo_fluxo(data, moeda, natureza))
+
+    # O saldo inicial é um fato datado. Quando a sua data cai no intervalo,
+    # ele aparece como ajuste_de_base; bases anteriores ao período pertencem à
+    # fotografia da conta, não são um fluxo diário deste recorte.
+    contas = FinancialAccount.objects.filter(
+        initial_balance_date__gte=inicio,
+        initial_balance_date__lte=fim,
+    ).only("id", "currency", "initial_balance", "initial_balance_date")
+    for conta in contas:
+        saldo = conta.initial_balance.quantize(MONEY_QUANT)
+        fluxo = grupo(conta.initial_balance_date, conta.currency, "ajuste_de_base")
+        _adicionar_fluxo(fluxo, abs(saldo), entrada=saldo >= 0)
+
+    # O banco reduz primeiro por data/moeda/natureza/tipo. Mesmo um intervalo
+    # de anos devolve apenas os grupos que o contrato publica, e nunca carrega
+    # milhares de movimentos financeiros como objetos Python.
+    natureza = Case(
+        When(
+            operation_type=OPERATION_INTERNAL_TRANSFER,
+            then=Value(CATEGORY_KIND_TRANSFER),
+        ),
+        When(category__kind=CATEGORY_KIND_TRANSFER, then=Value(CATEGORY_KIND_TRANSFER)),
+        When(category__kind=CATEGORY_KIND_MOVEMENT, then=Value(CATEGORY_KIND_MOVEMENT)),
+        default=Value(CATEGORY_KIND_MANAGERIAL),
+        output_field=CharField(),
+    )
+    lancamentos = (
+        CashFlowEntry.objects
+        .filter(
+            status=STATUS_REALIZED,
+            realized_date__gte=inicio,
+            realized_date__lte=fim,
+            realized_amount__isnull=False,
+        )
+        .annotate(moeda=F("account__currency"), natureza_publicada=natureza)
+        .values("realized_date", "moeda", "natureza_publicada", "entry_type")
+        .annotate(total=Sum("realized_amount"), linhas=Count("id"))
+        .order_by("realized_date", "moeda", "natureza_publicada", "entry_type")
+    )
+    for lancamento in lancamentos:
+        fluxo = grupo(
+            lancamento["realized_date"],
+            lancamento["moeda"],
+            lancamento["natureza_publicada"],
+        )
+        _adicionar_fluxo(
+            fluxo,
+            lancamento["total"],
+            entrada=lancamento["entry_type"] == ENTRY_TYPE_INCOME,
+            linhas=lancamento["linhas"],
+        )
+
+    resultado = []
+    for chave in sorted(agregados):
+        fluxo = agregados[chave]
+        resultado.append(
+            {
+                **{campo: fluxo[campo] for campo in ("data", "moeda", "natureza")},
+                "entradas": str(fluxo["entradas"].quantize(MONEY_QUANT)),
+                "saidas": str(fluxo["saidas"].quantize(MONEY_QUANT)),
+                "liquido": str(fluxo["liquido"].quantize(MONEY_QUANT)),
+                "linhas": fluxo["linhas"],
+            }
+        )
+    return resultado
+
+
+def _data_da_query(valor: str, nome: str) -> date:
+    try:
+        return date.fromisoformat(valor)
+    except ValueError:
+        raise ValueError(f"{nome} inválida: use AAAA-MM-DD") from None
+
+
+@require_GET
+def resumo_v2_view(request):
+    """`GET /patrimonio/v2/resumo`, foto no fim e fluxos no intervalo."""
+    esperado = _token_configurado()
+    if not esperado:
+        return JsonResponse(
+            {"erro": "integração de patrimônio não configurada neste servidor"},
+            status=503,
+        )
+
+    recebido = _token_da_requisicao(request)
+    if not recebido or not secrets.compare_digest(recebido, esperado):
+        logger.warning("Resumo patrimonial v2 recusado: token ausente ou inválido.")
+        return JsonResponse({"erro": "não autorizado"}, status=401)
+
+    bruto_fim = request.GET.get("data", "")
+    bruto_inicio = request.GET.get("inicio", "")
+    try:
+        fim = _data_da_query(bruto_fim, "data") if bruto_fim else timezone.localdate()
+        inicio = _data_da_query(bruto_inicio, "inicio") if bruto_inicio else fim
+    except ValueError as erro:
+        return JsonResponse({"erro": str(erro)}, status=400)
+    if inicio > fim:
+        return JsonResponse({"erro": "inicio não pode ser posterior a data"}, status=400)
+    if (fim - inicio).days + 1 > MAX_FLUXO_DIAS:
+        return JsonResponse(
+            {"erro": f"intervalo de fluxos excede o limite de {MAX_FLUXO_DIAS} dias"},
+            status=400,
+        )
+
+    # A foto e os fluxos precisam enxergar o mesmo estado do banco. Sem este
+    # snapshot, uma realização concorrente entre as duas consultas poderia
+    # publicar saldo novo com fluxo antigo (ou o inverso).
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        resposta = montar_resumo(fim)
+        resposta["contrato"] = CONTRATO_V2
+        resposta["periodo_dos_fluxos"] = {
+            "inicio": inicio.isoformat(),
+            "fim": fim.isoformat(),
+            "criterio": STATUS_REALIZED,
+            "granularidade": "dia",
+        }
+        resposta["fluxos"] = montar_fluxos(inicio, fim)
+    resultado = JsonResponse(resposta)
+    resultado["Cache-Control"] = "no-store"
+    return resultado
