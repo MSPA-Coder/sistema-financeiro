@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% load static money_filters icons %}
+{% block title %}Conta • {{ account.account_name }}{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/transactions.css' %}">
+<link rel="stylesheet" href="{% static 'css/pages/account-detail.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>{{ account.account_name }}</h1>
+        <p>{{ account.owner.name }} • {{ account.institution.institution_name }} • {{ account.currency|currency_label }}</p>
+    </div>
+    <a class="btn btn-ghost btn-sm" href="{% url 'transactions:transactions_view' %}?account_id={{ account.id }}&amp;period={{ selected_period }}&amp;mode=realizado">{% icon 'list' %}<span>Ver lançamentos</span></a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="section-card account-period-card">
+    <form method="get" class="account-period-form">
+        <label>Período
+            <input type="month" name="period" value="{{ selected_period }}">
+        </label>
+        <button type="submit" class="btn btn-primary btn-sm">Atualizar</button>
+    </form>
+    <p class="account-reference">Saldo realizado em {{ reference_date|date:"d/m/Y" }}.</p>
+</section>
+
+<section class="summary-cards account-summary-cards" aria-label="Resumo da conta">
+    <div class="financial-card {{ saldo_atual|card_class }}"><div class="card-label">Saldo realizado</div><div class="card-value {{ saldo_atual|amount_class }}" data-sensitive-value="true">{{ saldo_atual|money_signed:account.currency }}</div></div>
+    <div class="financial-card card-positive"><div class="card-label">Receitas no período</div><div class="card-value amount-positive" data-sensitive-value="true">{{ realizado.total_receitas|money_signed:account.currency }}</div></div>
+    <div class="financial-card card-negative"><div class="card-label">Despesas no período</div><div class="card-value amount-negative" data-sensitive-value="true">{{ realizado.total_despesas|neg|money_signed:account.currency }}</div></div>
+    <div class="financial-card {{ previsto.saldo_final|card_class }}"><div class="card-label">Saldo previsto no período</div><div class="card-value {{ previsto.saldo_final|amount_class }}" data-sensitive-value="true">{{ previsto.saldo_final|money_signed:account.currency }}</div></div>
+    <div class="financial-card {{ realizado.saldo_final|card_class }}"><div class="card-label">Saldo realizado no período</div><div class="card-value {{ realizado.saldo_final|amount_class }}" data-sensitive-value="true">{{ realizado.saldo_final|money_signed:account.currency }}</div></div>
+    <div class="financial-card {{ variacao_previsto_realizado|card_class }}"><div class="card-label">Previsão x realizado</div><div class="card-value {{ variacao_previsto_realizado|amount_class }}" data-sensitive-value="true">{{ variacao_previsto_realizado|money_signed:account.currency }}</div></div>
+</section>
+
+<section class="section-card">
+    <h3>Último fechamento mensal</h3>
+    {% if ultimo_fechamento %}
+    <p class="account-close-summary"><strong>{{ ultimo_fechamento.month|stringformat:"02d" }}/{{ ultimo_fechamento.year }}</strong> · saldo fechado <span data-sensitive-value="true">{{ ultimo_fechamento.closing_balance|money:account.currency }}</span>{% if ultimo_fechamento.closed_by_user %} · por {{ ultimo_fechamento.closed_by_user.username }}{% endif %}</p>
+    {% else %}
+    <p class="empty-state">Esta conta ainda não tem fechamento mensal ativo.</p>
+    {% endif %}
+</section>
+
+<section class="section-card">
+    <h3>Extrato realizado</h3>
+    <div class="table-container account-extract-table">
+        <table class="tx-table">
+            <thead><tr><th>Realização</th><th>Tipo</th><th>Categoria</th><th>Descrição</th><th class="amount">Valor</th><th class="amount">Saldo</th></tr></thead>
+            <tbody>
+                {% for t in txs %}
+                <tr>
+                    <td>{{ t.display_date|date:"d/m/Y" }}</td><td>{{ t.entry_type|capfirst }}</td><td>{{ t.category.category_name }}</td><td>{{ t.description }}</td>
+                    {% if t.entry_type == 'receita' %}<td class="amount amount-positive" data-sensitive-value="true">{{ t.realized_amount|money_signed:account.currency }}</td>{% else %}<td class="amount amount-negative" data-sensitive-value="true">{{ t.realized_amount|neg|money_signed:account.currency }}</td>{% endif %}
+                    <td class="amount {{ t.running_balance|amount_class }}" data-sensitive-value="true">{% if t.is_last_of_day %}{{ t.running_balance|money_signed:account.currency }}{% endif %}</td>
+                </tr>
+                {% empty %}<tr><td colspan="6" class="empty-state">Nenhum lançamento realizado neste período.</td></tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

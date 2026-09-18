@@ -213,18 +213,18 @@ def test_a_conta_leva_id_prefixado_pelo_sistema(contas, com_token):
     }
 
 
-def test_a_conta_leva_ao_proprio_extrato_no_mes_pedido(contas, com_token):
+def test_a_conta_leva_a_propria_pagina_na_data_pedida(contas, com_token):
     """O caminho é relativo: o endereço público é de quem consome."""
     corpo = pedir(data="2026-03-01").json()
 
     enderecos = {linha["id"]: linha["endereco"] for linha in corpo["contas"]}
     em_reais = f"controle-bancario:conta:{contas['em_reais'].id}"
     assert enderecos[em_reais] == (
-        f"/transactions/?account_id={contas['em_reais'].id}&year=2026&month=3&mode=realizado"
+        f"/banking/accounts/{contas['em_reais'].id}/?data=2026-03-01"
     )
 
 
-def test_o_endereco_publicado_abre_o_extrato_da_conta(contas, com_token):
+def test_o_endereco_publicado_abre_a_pagina_da_conta(contas, com_token):
     """O caminho é o que a tela de fato entende, e não uma aproximação dele."""
     corpo = pedir(data="2026-03-01").json()
     em_reais = f"controle-bancario:conta:{contas['em_reais'].id}"
@@ -239,9 +239,9 @@ def test_o_endereco_publicado_abre_o_extrato_da_conta(contas, com_token):
     resposta = navegador.get(endereco)
 
     assert resposta.status_code == 200
-    assert resposta.context["current_account_id"] == contas["em_reais"].id
+    assert resposta.context["account"] == contas["em_reais"]
     assert resposta.context["selected_period"] == "2026-03"
-    assert resposta.context["view_mode"] == STATUS_REALIZED
+    assert resposta.context["reference_date"] == date(2026, 3, 1)
 
 
 def test_o_contrato_traz_as_listas_que_o_outro_sistema_preenche(contas, com_token):
