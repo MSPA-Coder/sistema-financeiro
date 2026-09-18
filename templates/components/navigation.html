@@ -9,11 +9,36 @@
         <div class="sidebar-brand-text">
             <div class="sidebar-brand-title-row">
                 <div class="sidebar-brand-title">Controle Bancário</div>
-                <button type="button" class="sidebar-privacy-toggle" data-privacy-toggle aria-pressed="false" aria-label="Ativar modo discreto" title="Ativar modo discreto">
-                    <span data-privacy-icon-visible aria-hidden="true">{% icon 'eye' %}</span>
-                    <span data-privacy-icon-hidden hidden aria-hidden="true">{% icon 'eye-off' %}</span>
-                    <span class="sidebar-privacy-label">Modo discreto</span>
-                </button>
+                <div class="sidebar-global-filters" data-global-filters>
+                    <button type="button" class="sidebar-privacy-toggle sidebar-filter-toggle"
+                            data-global-filters-toggle aria-controls="global-filters-menu"
+                            aria-expanded="false" aria-label="Abrir filtros globais" title="Filtros">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M7 12h10M10 19h4"/></svg>
+                    </button>
+                    <div class="sidebar-global-filters-menu" id="global-filters-menu"
+                         data-global-filters-menu hidden>
+                        <form method="get" action="{{ request.path }}" data-global-currency-form>
+                            <label for="global-currency">Moeda</label>
+                            {% for key, values in request.GET.lists %}
+                                {% if key != 'currency' %}
+                                    {% for value in values %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+                                {% endif %}
+                            {% endfor %}
+                            <select id="global-currency" name="currency" data-global-currency>
+                                <option value="BRL" {% if global_currency == 'BRL' %}selected{% endif %}>Real</option>
+                                <option value="USD" {% if global_currency == 'USD' %}selected{% endif %}>Dólar</option>
+                                <option value="ALL" {% if global_currency == 'ALL' %}selected{% endif %}>Todas</option>
+                            </select>
+                            <button type="submit" class="btn btn-primary btn-sm" data-global-currency-submit>Aplicar</button>
+                        </form>
+                        <button type="button" class="sidebar-privacy-menu-toggle" data-privacy-toggle
+                                aria-pressed="false" aria-label="Ativar modo discreto" title="Ativar modo discreto">
+                            <span data-privacy-icon-visible aria-hidden="true">{% icon 'eye' %}</span>
+                            <span data-privacy-icon-hidden hidden aria-hidden="true">{% icon 'eye-off' %}</span>
+                            <span>Modo discreto</span>
+                        </button>
+                    </div>
+                </div>
             </div>
             <div class="sidebar-brand-subtitle">Fluxo de Caixa</div>
         </div>

@@ -55,6 +55,125 @@
     });
 
     /* ============================================================
+       FILTRO GLOBAL DE MOEDA
+
+       A moeda viaja na URL de cada tela (BRL é o padrão visual). Assim
+       navegações normais, formulários GET e HTMX usam o mesmo contrato sem
+       uma preferência compartilhada entre abas. Cada requisição lê a URL no
+       momento em que é criada; não reutiliza a resposta de outra requisição.
+       ============================================================ */
+    function _currencyFromUrl() {
+        var value = new URL(window.location.href).searchParams.get('currency');
+        return value === 'USD' || value === 'ALL' ? value : 'BRL';
+    }
+
+    function _closeGlobalFilters() {
+        document.querySelectorAll('[data-global-filters-menu]').forEach(function (menu) {
+            menu.hidden = true;
+        });
+        document.querySelectorAll('[data-global-filters-toggle]').forEach(function (toggle) {
+            toggle.setAttribute('aria-expanded', 'false');
+        });
+    }
+
+    document.addEventListener('click', function (event) {
+        var toggle = event.target.closest && event.target.closest('[data-global-filters-toggle]');
+        if (toggle) {
+            var menu = document.getElementById(toggle.getAttribute('aria-controls'));
+            if (!menu) return;
+            var opening = menu.hidden;
+            _closeGlobalFilters();
+            if (opening) {
+                menu.hidden = false;
+                toggle.setAttribute('aria-expanded', 'true');
+                var select = menu.querySelector('[data-global-currency]');
+                if (select) select.focus({ preventScroll: true });
+            }
+            return;
+        }
+        if (!event.target.closest || !event.target.closest('[data-global-filters]')) _closeGlobalFilters();
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape') return;
+        var open = document.querySelector('[data-global-filters-menu]:not([hidden])');
+        if (!open) return;
+        _closeGlobalFilters();
+        var toggle = document.querySelector('[data-global-filters-toggle][aria-controls="' + open.id + '"]');
+        if (toggle) toggle.focus({ preventScroll: true });
+    });
+
+    document.addEventListener('submit', function (event) {
+        var form = event.target;
+        if (form.matches && form.matches('form[method="get"]') && !form.querySelector('[name="currency"]')) {
+            var currency = document.createElement('input');
+            currency.type = 'hidden';
+            currency.name = 'currency';
+            currency.value = _currencyFromUrl();
+            form.appendChild(currency);
+        }
+        if (form.matches && form.matches('[data-global-currency-form]')) {
+            if (form.dataset.submitting === '1') { event.preventDefault(); return; }
+            form.dataset.submitting = '1';
+            var submit = form.querySelector('[data-global-currency-submit]');
+            if (submit) submit.disabled = true;
+        }
+    });
+
+    /* Menus laterais são links nativos. Propague a moeda atual sem reescrever
+       hrefs no servidor nem guardar estado fora da URL. HTMX boost também
+       passa pela guarda de `configRequest` abaixo. */
+    document.addEventListener('click', function (event) {
+        if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        var link = event.target.closest && event.target.closest('a[href]');
+        if (!link || link.hasAttribute('data-no-global-currency')) return;
+        var href;
+        try { href = new URL(link.href, window.location.href); } catch (_) { return; }
+        if (href.origin !== window.location.origin || href.hash || href.searchParams.has('currency')) return;
+        href.searchParams.set('currency', _currencyFromUrl());
+        link.href = href.href;
+    });
+
+    /* GETs disparados pelo HTMX recebem a moeda atual sem exigir que cada
+       formulário declare um hidden input. Se o próprio formulário já traz a
+       moeda (o popover), a escolha explícita vence o valor da URL anterior. */
+    document.addEventListener('htmx:configRequest', function (event) {
+        var detail = event.detail || {};
+        var method = String(detail.verb || detail.requestConfig && detail.requestConfig.verb || '').toLowerCase();
+        if (method !== 'get' || !detail.parameters) return;
+        if (detail.parameters.currency === undefined || detail.parameters.currency === '') {
+            detail.parameters.currency = _currencyFromUrl();
+        }
+    });
+
+    /* O HTMX não impõe ordem entre respostas. Uma troca antiga de #appMain
+       não pode sobrescrever a seleção mais recente; swaps de fragmentos
+       menores mantêm o comportamento independente já existente. */
+    var _navigationGenerations = new WeakMap();
+    var _latestNavigationGeneration = 0;
+    function _isMainNavigation(detail) {
+        var target = detail && detail.target;
+        var requester = detail && detail.elt;
+        var configured = detail && detail.requestConfig && detail.requestConfig.elt;
+        return Boolean(
+            (target && target.id === 'appMain') ||
+            (requester && requester.getAttribute && requester.getAttribute('hx-target') === '#appMain') ||
+            (configured && configured.getAttribute && configured.getAttribute('hx-target') === '#appMain')
+        );
+    }
+    document.addEventListener('htmx:beforeRequest', function (event) {
+        var detail = event.detail;
+        if (!_isMainNavigation(detail) || !detail.xhr) return;
+        _latestNavigationGeneration += 1;
+        _navigationGenerations.set(detail.xhr, _latestNavigationGeneration);
+    });
+    document.addEventListener('htmx:beforeSwap', function (event) {
+        var detail = event.detail;
+        if (!_isMainNavigation(detail)) return;
+        var generation = detail.xhr && _navigationGenerations.get(detail.xhr);
+        if (generation !== undefined && generation !== _latestNavigationGeneration) event.preventDefault();
+    });
+
+    /* ============================================================
        SCROLL RESTORE
        ============================================================ */
     var _scrollKey = 'app_main_scroll_restore';

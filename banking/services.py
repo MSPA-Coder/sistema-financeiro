@@ -196,15 +196,18 @@ def account_ids_by_currency(account_ids) -> dict[str, list[int]]:
     }
 
 
-def currency_blocks(account_ids) -> list[tuple[str, list[int]]]:
+def currency_blocks(account_ids, currency_filter: str | None = None) -> list[tuple[str, list[int]]]:
     """Os grupos de `account_ids_by_currency`, sempre com pelo menos um bloco.
 
     Seleção sem conta nenhuma continua rendendo um bloco em moeda base: a tela
     vazia escreve `R$ 0,00` como sempre escreveu, em vez de sumir.
     """
     grupos = account_ids_by_currency(account_ids)
+    if currency_filter and currency_filter != "ALL":
+        grupos = {currency: ids for currency, ids in grupos.items() if currency == currency_filter}
     if not grupos:
-        return [(BASE_CURRENCY, [])]
+        empty_currency = currency_filter if currency_filter and currency_filter != "ALL" else BASE_CURRENCY
+        return [(empty_currency, [])]
     return list(grupos.items())
 
 

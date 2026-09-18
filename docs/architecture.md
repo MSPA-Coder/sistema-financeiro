@@ -23,6 +23,17 @@ serviço `web`, habilita `DEBUG` e usa `runserver`.
 
 ## Organização do código
 
+### Filtro global de moeda
+
+As telas financeiras leem `currency=BRL|USD|ALL` da query string por meio de
+`core.currency_filter.parse_currency_filter`. O padrão é `BRL`; valores
+desconhecidos respondem 400. O valor é exposto como `global_currency` pelo
+context processor e permanece exclusivamente no request: não é salvo em
+sessão, perfil ou banco. Isso permite que abas concorrentes tenham filtros
+independentes e impede que uma resposta antiga altere o estado de outra.
+As opções específicas restringem os dados antes dos cálculos; `ALL` preserva
+os blocos por moeda, sem conversão ou totais que misturem BRL e USD.
+
 O fluxo de referência é:
 
 ```text

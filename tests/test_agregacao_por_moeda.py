@@ -278,7 +278,7 @@ def test_extrato_monta_um_bloco_por_moeda(usuario, titular, instituicao):
     _lancamento_em(real, "100.00", hoje)
     _lancamento_em(dolar, "50.00", hoje)
 
-    contexto = build_transactions_view_context(usuario, {}, {})
+    contexto = build_transactions_view_context(usuario, {"currency": "ALL"}, {})
     blocos = {bloco["currency"]: bloco for bloco in contexto["blocos"]}
 
     assert list(blocos) == [CURRENCY_BRL, CURRENCY_USD]

@@ -15,6 +15,7 @@ from django.urls import reverse
 from accounts.models import AccountOwner
 from accounts.services import accessible_owner_ids, hidden_account_ids
 from banking.models import FinancialAccount
+from core.currency_filter import ALL_CURRENCIES, parse_currency_filter
 from core.domain.finance import (
 	BASE_CURRENCY,
 	CURRENCY_SYMBOLS,
@@ -148,10 +149,8 @@ def dashboard_view(request):
 	# Moeda pedida que não existe na seleção não vence: o filtro de conta manda.
 	# Escolher a corretora em dólar já traz a moeda junto, sem um segundo clique
 	# -- e a tela nunca fica vazia sem explicar por quê.
-	currency = request.GET.get("currency") or ""
-	if currency not in moedas:
-		currency = moedas[0] if moedas else BASE_CURRENCY
-	if moedas:
+	currency = parse_currency_filter(request.GET)
+	if currency != ALL_CURRENCIES:
 		entries_qs = entries_qs.filter(account__currency=currency)
 
 	month_start, month_end = _month_start_end(selected_year, selected_month)

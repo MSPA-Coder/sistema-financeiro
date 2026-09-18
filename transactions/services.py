@@ -13,6 +13,7 @@ from django.utils import timezone
 from accounts.services import can_use_transfer_destination, transfer_destination_access_ids
 from banking.models import FinancialAccount
 from banking.services import can_access_account, currency_blocks
+from core.currency_filter import selected_currency
 from core.domain.finance import (
     CALC_DIVIDE,
     CALC_REPEAT,
@@ -1868,7 +1869,8 @@ def build_transactions_view_context(user, get_params, session, *, request=None) 
     # para o outro -- uma linha em dólar não entra no saldo em real.
     blocos: list[dict] = []
     running_by_entry_id: dict[int, Decimal] = {}
-    for currency, ids in currency_blocks(account_ids):
+    currency_filter = selected_currency(get_params)
+    for currency, ids in currency_blocks(account_ids, currency_filter):
         saldo_inicial_do_bloco = report_services.decimal_period_start_balance(
             ids, start_selected, end_exclusive, view_mode
         )
