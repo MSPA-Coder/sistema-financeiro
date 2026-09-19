@@ -141,6 +141,7 @@ jobs:
         run: |
           set -euo pipefail
           docker save controle-bancario:local -o "$RUNNER_TEMP/imagem.tar"
+          chmod 644 "$RUNNER_TEMP/imagem.tar"
           # O banco do Trivy tem mais de 100 MiB; 64 MiB fazia a varredura
           # falhar por espaço no tmpfs, não por vulnerabilidade.
           mkdir -p "$RUNNER_TEMP/trivy-cache"
