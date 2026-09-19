@@ -144,6 +144,7 @@ jobs:
           # O banco do Trivy tem mais de 100 MiB; 64 MiB fazia a varredura
           # falhar por espaço no tmpfs, não por vulnerabilidade.
           mkdir -p "$RUNNER_TEMP/trivy-cache"
+          chmod 777 "$RUNNER_TEMP/trivy-cache"
           docker run --rm \
             --read-only \
             --cap-drop=ALL \
