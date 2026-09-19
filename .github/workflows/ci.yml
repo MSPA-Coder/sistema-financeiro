@@ -179,6 +179,9 @@ jobs:
             --cap-drop=ALL \
             --security-opt=no-new-privileges:true \
             --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --tmpfs /workspace/logs:rw,noexec,nosuid,size=16m,uid=999,gid=999,mode=755 \
+            --tmpfs /workspace/staticfiles:rw,noexec,nosuid,size=16m,uid=999,gid=999,mode=755 \
+            --tmpfs /workspace/media:rw,noexec,nosuid,size=16m,uid=999,gid=999,mode=755 \
             --entrypoint sh "$runtime_image" -ec '
             require_read_only() {
               if test -w "$1"; then
