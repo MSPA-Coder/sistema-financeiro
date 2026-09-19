@@ -147,7 +147,7 @@ jobs:
             --read-only \
             --cap-drop=ALL \
             --security-opt=no-new-privileges:true \
-            --tmpfs /tmp:rw,noexec,nosuid,size=256m \
+            --tmpfs /tmp:rw,noexec,nosuid,size=512m \
              -v "$RUNNER_TEMP:/varredura:ro" \
             aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
             --cache-dir /tmp/trivy-cache \
