@@ -21,4 +21,5 @@ urlpatterns = [
     path('banking/attachments/', views.attachments_view, name='attachments_view'),
     path('banking/attachment/', views.create_attachment_view, name='create_attachment'),
     path('banking/attachment/<int:attachment_id>/download/', views.attachment_download_view, name='attachment_download'),
+    path('banking/attachment/<int:attachment_id>/delete/', views.delete_attachment_view, name='delete_attachment'),
 ]

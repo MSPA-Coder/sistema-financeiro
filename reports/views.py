@@ -44,9 +44,12 @@ def projections_view(request):
         projection_detail = "complete"
     show_status_columns = projection_detail == "complete"
 
-    start_month, end_month = services.resolve_projection_month_range(
-        request.GET.get("start_month"), request.GET.get("end_month"), today=today
-    )
+    try:
+        start_month, end_month = services.resolve_projection_month_range(
+            request.GET.get("start_month"), request.GET.get("end_month"), today=today
+        )
+    except (services.InvalidMonthPeriodError, services.ReportSizeLimitError) as exc:
+        return invalid_period_response(request, str(exc))
     default_start_month, default_end_month = services.resolve_projection_month_range(None, None, today=today)
 
     ctx = services.selected_context(request.user, request.GET, request=request)
@@ -56,13 +59,16 @@ def projections_view(request):
     # que é o caso de hoje -- há um bloco, e a tela sai idêntica.
     currency_filter = selected_currency(request.GET)
     blocos = []
-    for currency, ids in currency_blocks(options.account_ids, currency_filter):
-        month_data = services.projection_months_between(ids, start_month, end_month, view_mode)
-        blocos.append({
-            "currency": currency,
-            "month_data": month_data,
-            "period_totals": services.projection_period_totals(month_data),
-        })
+    try:
+        for currency, ids in currency_blocks(options.account_ids, currency_filter):
+            month_data = services.projection_months_between(ids, start_month, end_month, view_mode)
+            blocos.append({
+                "currency": currency,
+                "month_data": month_data,
+                "period_totals": services.projection_period_totals(month_data),
+            })
+    except services.ReportSizeLimitError as exc:
+        return invalid_period_response(request, str(exc))
 
     context = {
         "blocos": blocos,
@@ -95,20 +101,25 @@ def upcoming_movements_view(request):
     default_start, default_end = services.current_week_period()
     start_date = services.parse_iso_date(request.GET.get("start_date")) or default_start
     end_date = services.parse_iso_date(request.GET.get("end_date")) or default_end
-    if end_date < start_date:
-        end_date = start_date
+    try:
+        start_date, end_date = services.bounded_upcoming_period(start_date, end_date)
+    except services.InvalidMonthPeriodError as exc:
+        return invalid_period_response(request, str(exc))
 
     view_mode = services.normalize_upcoming_movement_mode(request.GET.get("mode", VIEW_PROJECTED))
     ctx = services.selected_context(request.user, request.GET, request=request)
     options = services.context_options(request.user, ctx)
     currency_filter = selected_currency(request.GET)
-    blocos = [
-        {
-            "currency": currency,
-            "report": services.upcoming_movements_report(ids, start_date, end_date, view_mode),
-        }
-        for currency, ids in currency_blocks(options.account_ids, currency_filter)
-    ]
+    try:
+        blocos = [
+            {
+                "currency": currency,
+                "report": services.upcoming_movements_report(ids, start_date, end_date, view_mode),
+            }
+            for currency, ids in currency_blocks(options.account_ids, currency_filter)
+        ]
+    except services.ReportSizeLimitError as exc:
+        return invalid_period_response(request, str(exc))
 
     status_options = [opt for opt in VIEW_MODE_OPTIONS if opt[0] in services.UPCOMING_MOVEMENT_VIEW_MODES]
 
@@ -160,9 +171,10 @@ def account_position_view(request):
     # As linhas convivem numa tabela só, cada uma com o símbolo da sua conta --
     # linha por conta nunca foi agregação. O que é por moeda é o TOTAL.
     currency_filter = selected_currency(request.GET)
+    row_by_account = {row.account_id: row for row in rows}
     blocos = []
     for currency, ids in currency_blocks(options.account_ids, currency_filter):
-        do_bloco = [row for row in rows if row.account_id in set(ids)]
+        do_bloco = [row_by_account[account_id] for account_id in ids if account_id in row_by_account]
         blocos.append({
             "currency": currency,
             "rows": do_bloco,

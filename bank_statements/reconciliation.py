@@ -156,16 +156,55 @@ def suggested_category_for_line(line: BankStatementLine) -> CashFlowCategory | N
     return CashFlowCategory.objects.filter(category_name__iexact=_FALLBACK_CATEGORY_NAME).first()
 
 
-def _get_line_in_scope(user, line_id, action: str = "view") -> BankStatementLine:
+def _get_line_in_scope(
+    user, line_id, action: str = "view", *, for_update: bool = False
+) -> BankStatementLine:
     if not line_id:
         raise ValueError("Linha de extrato inválida.")
+    lines = BankStatementLine.objects.select_related("account")
+    if for_update:
+        lines = lines.select_for_update()
     try:
-        line = BankStatementLine.objects.select_related("account").get(id=line_id)
+        line = lines.get(id=line_id)
     except BankStatementLine.DoesNotExist as exc:
         raise ValueError("Linha de extrato não encontrada.") from exc
     if not can_access_account(user, line.account_id, action):
         raise ValueError("Acesso negado para esta linha de extrato.")
     return line
+
+
+def _locked_entry_for_update(entry_id) -> CashFlowEntry:
+    """Carrega o lançamento e, se necessário, toda a transferência sob lock.
+
+    A conciliação de duas linhas concorrentes precisa disputar o mesmo lock do
+    lançamento antes de verificar a unicidade lógica. Para transferências, as
+    duas pontas são bloqueadas numa única consulta, em ordem determinística,
+    evitando que duas operações concorrentes adquiram as pontas em ordens
+    diferentes.
+    """
+    try:
+        snapshot = CashFlowEntry.objects.get(id=entry_id)
+    except CashFlowEntry.DoesNotExist as exc:
+        raise ValueError("Movimento não encontrado.") from exc
+
+    entry_ids = {snapshot.id}
+    if snapshot.source_entry_id:
+        entry_ids.add(snapshot.source_entry_id)
+    elif snapshot.operation_type == "internal_transfer":
+        entry_ids.update(
+            CashFlowEntry.objects.filter(source_entry_id=snapshot.id).values_list("id", flat=True)
+        )
+
+    locked_entries = list(
+        CashFlowEntry.objects.select_for_update()
+        .select_related("account")
+        .filter(id__in=entry_ids)
+        .order_by("id")
+    )
+    for entry in locked_entries:
+        if entry.id == snapshot.id:
+            return entry
+    raise ValueError("Movimento não encontrado.")
 
 
 def reconciliation_view_data(user, target_line_id: int | None = None) -> dict:
@@ -221,13 +260,21 @@ def reconcile_line_with_entry(user, *, line_id, entry_id, audit_context=None) ->
     `transactions.services.realize_transaction` para o tratamento de
     transferências internas (contraparte realizada junto).
     """
-    line = _get_line_in_scope(user, line_id, "update")
+    line = _get_line_in_scope(user, line_id, "update", for_update=True)
     if not entry_id:
         raise ValueError("Selecione a linha do extrato e o movimento a conciliar.")
     try:
-        entry = CashFlowEntry.objects.select_related("account").get(id=entry_id)
+        entry_scope = CashFlowEntry.objects.select_related("account").get(id=entry_id)
     except CashFlowEntry.DoesNotExist as exc:
         raise ValueError("Movimento não encontrado.") from exc
+    if not can_access_account(user, entry_scope.account_id, "update"):
+        raise ValueError("Acesso negado para este movimento.")
+    entry = _locked_entry_for_update(entry_id)
+    # A autorização é revalidada depois dos locks: a leitura feita antes da
+    # operação não pode ser a única barreira para uma mudança concorrente de
+    # permissões ou de concessão de destino de transferência.
+    if not can_access_account(user, line.account_id, "update"):
+        raise ValueError("Acesso negado para esta linha de extrato.")
     if not can_access_account(user, entry.account_id, "update"):
         raise ValueError("Acesso negado para este movimento.")
     # Uma transferência já realizada com a mesma data/valor não chama
@@ -290,11 +337,15 @@ def reconcile_line_with_entry(user, *, line_id, entry_id, audit_context=None) ->
 def undo_reconciliation(user, *, line_id) -> BankStatementLine:
     """Desfaz a conciliação de uma linha, revertendo o lançamento vinculado
     para "vencidos" (e sua contraparte de transferência, se houver)."""
-    line = _get_line_in_scope(user, line_id, "update")
+    line = _get_line_in_scope(user, line_id, "update", for_update=True)
     if line.status != LINE_STATUS_RECONCILED or line.matched_entry_id is None:
         raise ValueError("Linha de extrato não está conciliada.")
 
-    entry = line.matched_entry
+    entry = _locked_entry_for_update(line.matched_entry_id)
+    if not can_access_account(user, line.account_id, "update"):
+        raise ValueError("Acesso negado para esta linha de extrato.")
+    if not can_access_account(user, entry.account_id, "update"):
+        raise ValueError("Acesso negado para este movimento.")
     if entry.status == STATUS_REALIZED:
         unrealize_transaction(entry, user=user)
 
@@ -316,7 +367,16 @@ def create_entry_from_line(user, *, line_id, category_id, audit_context=None) ->
     de realização iguais aos da linha (mesma convenção usada por
     `reconcile_line_with_entry`).
     """
-    line = _get_line_in_scope(user, line_id, "update")
+    line = _get_line_in_scope(user, line_id, "update", for_update=True)
+    return _create_entry_from_locked_line(
+        user, line=line, category_id=category_id, audit_context=audit_context
+    )
+
+
+def _create_entry_from_locked_line(user, *, line, category_id, audit_context=None) -> BankStatementLine:
+    """Implementa a criação com a linha já travada pela transação chamadora."""
+    if not can_access_account(user, line.account_id, "update"):
+        raise ValueError("Acesso negado para esta linha de extrato.")
     if line.status != LINE_STATUS_NEW or line.matched_entry_id is not None:
         raise ValueError("Linha de extrato já conciliada ou ignorada.")
     if not category_id:
@@ -358,12 +418,15 @@ def create_entry_from_line(user, *, line_id, category_id, audit_context=None) ->
 
 def ignore_statement_line(user, *, line_id) -> BankStatementLine:
     """Marca uma linha nova como ignorada (não deve ser conciliada)."""
-    line = _get_line_in_scope(user, line_id, "update")
-    if line.status != LINE_STATUS_NEW or line.matched_entry_id is not None:
-        raise ValueError("Apenas linhas novas e não conciliadas podem ser ignoradas.")
-    line.status = LINE_STATUS_IGNORED
-    line.save(update_fields=["status", "updated_at"])
-    return line
+    with db_transaction.atomic():
+        line = _get_line_in_scope(user, line_id, "update", for_update=True)
+        if not can_access_account(user, line.account_id, "update"):
+            raise ValueError("Acesso negado para esta linha de extrato.")
+        if line.status != LINE_STATUS_NEW or line.matched_entry_id is not None:
+            raise ValueError("Apenas linhas novas e não conciliadas podem ser ignoradas.")
+        line.status = LINE_STATUS_IGNORED
+        line.save(update_fields=["status", "updated_at"])
+        return line
 
 
 def bulk_create_entries_from_lines(user, *, line_ids: Iterable, audit_context=None) -> tuple[int, list[tuple[str, str]]]:

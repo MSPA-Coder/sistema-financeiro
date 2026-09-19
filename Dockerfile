@@ -13,6 +13,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /workspace
 
+FROM base AS build-base
+
 RUN --mount=type=secret,id=local_ca,required=false \
     if [ -f /run/secrets/local_ca ]; then \
         cp /run/secrets/local_ca /usr/local/share/ca-certificates/local-root-ca.crt; \
@@ -31,7 +33,9 @@ RUN --mount=type=secret,id=local_ca,required=false \
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
-    && python -m pip install --no-cache-dir --upgrade pip setuptools
+    && python -m pip install --no-cache-dir \
+        "pip==26.2.1" \
+        "setuptools==80.9.0"
 
 # builder: resolve as dependencias a partir do `uv.lock`, num venv isolado.
 #
@@ -58,7 +62,7 @@ RUN apt-get update \
 #
 # `git` fica so aqui: a imagem final copia o venv e nao herda nem o binario nem
 # o `.gitconfig`. O que saiu foi o token -- o `sharedauth` e publico.
-FROM base AS builder
+FROM build-base AS builder
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git \
@@ -93,7 +97,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # nucleo, que e Python puro (`security` e `formatting`). Pedir o extra traria
 # Flask, Flask-WTF e Flask-Limiter para dentro de uma imagem Django -- e o lock
 # registra essa escolha.
-FROM base AS quality
+FROM build-base AS quality
 
 # O `uv` vem pronto do `builder`: e binario autocontido, e copia-lo custa
 # menos que reinstalar um gerenciador de pacotes.

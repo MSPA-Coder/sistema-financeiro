@@ -35,6 +35,43 @@ x-app-secrets: &app-secrets
     - postgres_password
     - patrimonio_token
 
+# A suíte nunca precisa ler os arquivos usados pelos serviços operacionais.
+# Além de tornar o isolamento explícito, isso evita que uma execução local da
+# quality valide por acidente um segredo real montado no mesmo caminho.
+x-quality-environment: &quality-environment
+  DJANGO_SETTINGS_MODULE: financeiro.settings
+  POSTGRES_HOST: postgres-teste
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: ${POSTGRES_USER:-controle_bancario}
+  POSTGRES_PASSWORD_FILE: /run/secrets/quality_postgres_password
+  POSTGRES_DB: ${POSTGRES_DB:-controle_bancario}
+  DJANGO_SECRET_KEY_FILE: /run/secrets/quality_django_secret_key
+  PATRIMONIO_TOKEN_FILE: /run/secrets/quality_patrimonio_token
+  REQUIRE_FILE_SECRETS: "true"
+  TZ: America/Sao_Paulo
+  PYTHONUNBUFFERED: "1"
+
+x-quality-secrets: &quality-secrets
+  secrets:
+    - quality_django_secret_key
+    - quality_postgres_password
+    - quality_patrimonio_token
+
+# O portão roda em um contêiner descartável, mas ainda deve ter a mesma
+# fronteira de privilégio do runtime. /tmp e logs são os únicos destinos que
+# precisam continuar graváveis durante os testes.
+x-quality-hardening: &quality-hardening
+  user: "65532:65532"
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:mode=1777,rw,noexec,nosuid,size=64m
+    - /workspace/logs:mode=1777,rw,noexec,nosuid,size=16m
+  pids_limit: 256
+
 x-service-logging: &service-logging
   driver: json-file
   options:
@@ -70,7 +107,7 @@ x-postgres-hardening: &postgres-hardening
 services:
   postgres:
     <<: *postgres-hardening
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
     restart: unless-stopped
     cpus: 1.0
     mem_limit: 512m
@@ -171,8 +208,8 @@ services:
   # Sem volume nomeado: os dados vivem em tmpfs e somem com o contêiner. Além
   # de fechar a porta acima, deixa a suíte mais rápida, porque nada toca disco.
   postgres-teste:
-    <<: *postgres-hardening
-    image: postgres:17-alpine
+    <<: [*postgres-hardening, *quality-secrets]
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
     profiles: ["quality"]
     cpus: 1.0
     mem_limit: 512m
@@ -180,17 +217,17 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-controle_bancario}
       POSTGRES_USER: ${POSTGRES_USER:-controle_bancario}
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_PASSWORD_FILE: /run/secrets/quality_postgres_password
       TZ: America/Sao_Paulo
     # O arquivo precisa ser LEGÍVEL PELO UID 70 (o `postgres` da imagem). Um
     # segredo de arquivo é montado preservando dono e modo do host, e `uid`,
     # `gid` e `mode` na sintaxe longa são ignorados fora do Swarm -- o Compose
-    # até avisa. Com `.secrets/postgres_password` em 0600 de outro dono, este
+    # até avisa. Com `.secrets/quality_postgres_password` em 0600 de outro dono, este
     # contêiner morre no arranque com "Permission denied" e o `quality` reporta
     # apenas "dependency failed to start". No Docker Desktop do Windows o
     # problema não aparece, porque lá todo arquivo montado chega como 0777.
     secrets:
-      - postgres_password
+      - quality_postgres_password
     # Sem `ports`: ninguém de fora precisa alcançá-lo, e não publicar é uma
     # porta a menos escutando na máquina de quem roda a suíte.
     #
@@ -214,16 +251,14 @@ services:
       retries: 20
 
   quality:
-    <<: *app-secrets
+    <<: [*quality-hardening, *quality-secrets]
     build:
       context: .
       target: quality
       secrets:
         - local_ca
     environment:
-      <<: *app-environment
-      # Sobrescreve o `postgres` da âncora. A suíte fala com o banco efêmero.
-      POSTGRES_HOST: postgres-teste
+      <<: *quality-environment
     depends_on:
       postgres-teste:
         condition: service_healthy
@@ -249,3 +284,9 @@ secrets:
   # para quem usa a integração de patrimônio.
   patrimonio_token:
     file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/patrimonio_token
+  quality_django_secret_key:
+    file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/quality_django_secret_key
+  quality_postgres_password:
+    file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/quality_postgres_password
+  quality_patrimonio_token:
+    file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/quality_patrimonio_token

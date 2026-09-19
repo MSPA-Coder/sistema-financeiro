@@ -31,14 +31,47 @@ Get-Content -LiteralPath $envFilePath | ForEach-Object {
     }
 }
 
-$secretSources = @{
+function New-UrlSafeSecret {
+    param([int]$ByteCount = 48)
+
+    $bytes = [byte[]]::new($ByteCount)
+    [Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    return [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+}
+
+function Assert-SecretValue {
+    param(
+        [string]$Name,
+        [AllowNull()][string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        throw "$Name deve estar definido e não vazio no arquivo de ambiente."
+    }
+    if ($Value -match '[\r\n]') {
+        throw "$Name não pode conter quebras de linha."
+    }
+
+    # Evita transformar o .env.docker.example em uma credencial operacional
+    # por acidente. O teste é deliberadamente restrito para não impor uma
+    # política de formato além da validação feita pela aplicação.
+    if ($Value.Trim() -match '^(troque-por-|change[-_ ]?me$|replace[-_ ]?me$|changeme$)') {
+        throw "$Name ainda usa um valor-placeholder; defina um segredo real antes da provisão."
+    }
+}
+
+$secretSources = [ordered]@{
     "django_secret_key" = "DJANGO_SECRET_KEY"
     "postgres_password" = "POSTGRES_PASSWORD"
 }
 
-foreach ($source in $secretSources.Values) {
-    if (-not $settings.ContainsKey($source) -or [string]::IsNullOrWhiteSpace($settings[$source])) {
-        throw "$source deve estar definido e não vazio no arquivo de ambiente."
+foreach ($fileName in $secretSources.Keys) {
+    $destination = Join-Path $secretsPath $fileName
+    # Um segredo que já está no diretório é a fonte de verdade. Isso permite
+    # manter uma instalação existente quando o .env foi sanitizado ou deixou
+    # de carregar segredos, sem substituir o valor por vazio ou placeholder.
+    if ($Force -or -not (Test-Path -LiteralPath $destination)) {
+        Assert-SecretValue -Name $secretSources[$fileName] -Value $settings[$secretSources[$fileName]]
     }
 }
 
@@ -48,12 +81,39 @@ foreach ($source in $secretSources.Values) {
 # gerada aqui quando o arquivo de ambiente não a traz, em vez de recusar a
 # provisão. Quem quiser fixar um valor (rotação coordenada com o consolidador,
 # por exemplo) define PATRIMONIO_TOKEN no arquivo de ambiente.
-if (-not $settings.ContainsKey("PATRIMONIO_TOKEN") -or [string]::IsNullOrWhiteSpace($settings["PATRIMONIO_TOKEN"])) {
-    $bytes = [byte[]]::new(48)
-    [Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
-    $settings["PATRIMONIO_TOKEN"] = [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+$patrimonioPath = Join-Path $secretsPath "patrimonio_token"
+if (($Force -or -not (Test-Path -LiteralPath $patrimonioPath)) -and
+    (-not $settings.ContainsKey("PATRIMONIO_TOKEN") -or [string]::IsNullOrWhiteSpace($settings["PATRIMONIO_TOKEN"]))) {
+    $settings["PATRIMONIO_TOKEN"] = New-UrlSafeSecret
+} elseif ($Force -or -not (Test-Path -LiteralPath $patrimonioPath)) {
+    Assert-SecretValue -Name "PATRIMONIO_TOKEN" -Value $settings["PATRIMONIO_TOKEN"]
 }
 $secretSources["patrimonio_token"] = "PATRIMONIO_TOKEN"
+
+# A suíte roda em um banco efêmero e nunca precisa receber os segredos
+# operacionais. Estes valores são sempre novos e vivem em arquivos distintos;
+# não são lidos do .env nem reaproveitados pelos serviços de runtime.
+$settings["QUALITY_DJANGO_SECRET_KEY"] = New-UrlSafeSecret
+$settings["QUALITY_POSTGRES_PASSWORD"] = New-UrlSafeSecret
+$settings["QUALITY_PATRIMONIO_TOKEN"] = New-UrlSafeSecret
+$secretSources["quality_django_secret_key"] = "QUALITY_DJANGO_SECRET_KEY"
+$secretSources["quality_postgres_password"] = "QUALITY_POSTGRES_PASSWORD"
+$secretSources["quality_patrimonio_token"] = "QUALITY_PATRIMONIO_TOKEN"
+
+# Faça toda a validação de destino antes da primeira escrita. Sem este
+# preflight, um arquivo já existente no fim da enumeração poderia deixar a
+# provisão pela metade, misturando uma rotação nova com credenciais antigas.
+$destinations = @($secretSources.Keys | ForEach-Object { Join-Path $secretsPath $_ })
+$destinations += @(
+    (Join-Path $secretsPath "quality_django_secret_key"),
+    (Join-Path $secretsPath "quality_postgres_password"),
+    (Join-Path $secretsPath "quality_patrimonio_token")
+)
+$invalidDestinations = @($destinations | Where-Object { Test-Path -LiteralPath $_ -PathType Container })
+if ($invalidDestinations.Count -gt 0) {
+    $names = $invalidDestinations | ForEach-Object { Split-Path -Leaf $_ }
+    throw "O destino de segredo é um diretório: $($names -join ', ')."
+}
 
 New-Item -ItemType Directory -Path $secretsPath -Force | Out-Null
 $utf8NoBom = [Text.UTF8Encoding]::new($false)
@@ -61,7 +121,7 @@ $utf8NoBom = [Text.UTF8Encoding]::new($false)
 foreach ($fileName in $secretSources.Keys) {
     $destination = Join-Path $secretsPath $fileName
     if ((Test-Path -LiteralPath $destination) -and -not $Force) {
-        throw "Arquivo de segredo já existe. Use -Force somente após confirmar a rotação."
+        continue
     }
 
     $source = $secretSources[$fileName]

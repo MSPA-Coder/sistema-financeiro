@@ -23,10 +23,13 @@ from core.domain.finance import (
 	ENTRY_TYPE_INCOME,
 	STATUS_REALIZED,
 )
-from core.htmx import quer_fragmento, recusa_moedas_misturadas
+from core.htmx import invalid_period_response, quer_fragmento, recusa_moedas_misturadas
 from core.permissions import permission_required
 from core.services import system_start_date
+from reports.services import InvalidMonthPeriodError, month_bounds
 from transactions.models import CashFlowEntry
+
+MONEY_QUANT = Decimal("0.01")
 
 
 def _month_start_end(year: int, month: int) -> tuple[date, date]:
@@ -80,6 +83,11 @@ def dashboard_view(request):
 	valid_modes = {"todos", "a_vencer", "vencidos", "realizado"}
 	if view_mode not in valid_modes:
 		view_mode = "todos"
+	try:
+		month_bounds(selected_year, selected_month)
+		month_bounds(*_shift_month(selected_year, selected_month, 6))
+	except InvalidMonthPeriodError as exc:
+		return invalid_period_response(request, str(exc))
 
 	filter_type = (request.GET.get("filter_type") or ENTRY_TYPE_EXPENSE).strip().lower()
 	if filter_type not in {ENTRY_TYPE_INCOME, ENTRY_TYPE_EXPENSE}:
@@ -163,22 +171,23 @@ def dashboard_view(request):
 		.order_by("-total")
 	)
 	chart_cats_labels = [row["category__category_name"] for row in categories_data]
-	chart_cats_values = [_to_float(row["total"]) for row in categories_data]
+	chart_cats_values_decimal = [row["total"] or Decimal("0.00") for row in categories_data]
 
 	daily_data = list(
 		month_entries.values("due_date", "entry_type").annotate(total=Sum("entry_amount")).order_by("due_date")
 	)
-	daily_delta: dict[date, float] = {}
+	daily_delta: dict[date, Decimal] = {}
 	for row in daily_data:
 		row_date = row["due_date"]
-		signed = _to_float(row["total"]) if row["entry_type"] == ENTRY_TYPE_INCOME else -_to_float(row["total"])
-		daily_delta[row_date] = daily_delta.get(row_date, 0.0) + signed
+		total = row["total"] or Decimal("0.00")
+		signed = total if row["entry_type"] == ENTRY_TYPE_INCOME else -total
+		daily_delta[row_date] = daily_delta.get(row_date, Decimal("0.00")) + signed
 	daily_dates = [d.strftime("%d/%m") for d in sorted(daily_delta)]
-	daily_balance: list[float] = []
-	acc = 0.0
+	daily_balance_decimal: list[Decimal] = []
+	acc = Decimal("0.00")
 	for row_date in sorted(daily_delta):
-		acc += daily_delta[row_date]
-		daily_balance.append(acc)
+		acc = (acc + daily_delta[row_date]).quantize(MONEY_QUANT)
+		daily_balance_decimal.append(acc)
 
 	# Janela comum aos gráficos de projeção e evolução: mês selecionado ±6.
 	# A agregação única evita uma consulta por mês para cada gráfico.
@@ -191,75 +200,75 @@ def dashboard_view(request):
 		.values("bucket_month", "entry_type")
 		.annotate(total=Sum("entry_amount"))
 	)
-	totals_by_month: dict[tuple[int, int], dict[str, float]] = {}
+	totals_by_month: dict[tuple[int, int], dict[str, Decimal]] = {}
 	for row in grouped_by_month:
 		key = (row["bucket_month"].year, row["bucket_month"].month)
-		bucket = totals_by_month.setdefault(key, {"income": 0.0, "expense": 0.0})
+		bucket = totals_by_month.setdefault(key, {"income": Decimal("0.00"), "expense": Decimal("0.00")})
 		if row["entry_type"] == ENTRY_TYPE_INCOME:
-			bucket["income"] = _to_float(row["total"])
+			bucket["income"] = row["total"] or Decimal("0.00")
 		else:
-			bucket["expense"] = _to_float(row["total"])
+			bucket["expense"] = row["total"] or Decimal("0.00")
 
-	monthly_points: list[tuple[str, str, float, float]] = []
+	monthly_points: list[tuple[str, str, Decimal, Decimal]] = []
 	for year_i, month_i in month_offsets:
-		bucket = totals_by_month.get((year_i, month_i), {"income": 0.0, "expense": 0.0})
+		bucket = totals_by_month.get((year_i, month_i), {"income": Decimal("0.00"), "expense": Decimal("0.00")})
 		monthly_points.append((f"{year_i:04d}-{month_i:02d}", _month_label(year_i, month_i), bucket["income"], bucket["expense"]))
 
 	chart_periods = [p[0] for p in monthly_points]
 	chart_labels = [p[1] for p in monthly_points]
-	chart_income = [p[2] for p in monthly_points]
-	chart_expense = [p[3] for p in monthly_points]
-	chart_balance = [round(p[2] - p[3], 2) for p in monthly_points]
+	chart_income_decimal = [p[2].quantize(MONEY_QUANT) for p in monthly_points]
+	chart_expense_decimal = [p[3].quantize(MONEY_QUANT) for p in monthly_points]
+	chart_balance_decimal = [(p[2] - p[3]).quantize(MONEY_QUANT) for p in monthly_points]
 	chart_proj_months = chart_labels[:]
-	chart_proj_receitas = chart_income[:]
-	chart_proj_despesas = chart_expense[:]
-	chart_proj_saldo: list[float] = []
-	running_balance = 0.0
-	for generation in chart_balance:
-		running_balance += generation
-		chart_proj_saldo.append(round(running_balance, 2))
+	chart_proj_receitas_decimal = chart_income_decimal[:]
+	chart_proj_despesas_decimal = chart_expense_decimal[:]
+	chart_proj_saldo_decimal: list[Decimal] = []
+	running_balance = Decimal("0.00")
+	for generation in chart_balance_decimal:
+		running_balance = (running_balance + generation).quantize(MONEY_QUANT)
+		chart_proj_saldo_decimal.append(running_balance)
 
 	health_labels = chart_labels[:]
-	health_coverage: list[float | None] = []
-	health_generation: list[float] = []
-	for income, expense in zip(chart_income, chart_expense, strict=True):
-		generation = round(income - expense, 2)
-		health_generation.append(generation)
+	health_coverage_decimal: list[Decimal | None] = []
+	health_generation_decimal: list[Decimal] = []
+	for income, expense in zip(chart_income_decimal, chart_expense_decimal, strict=True):
+		generation = (income - expense).quantize(MONEY_QUANT)
+		health_generation_decimal.append(generation)
 		if expense <= 0:
-			health_coverage.append(None)
+			health_coverage_decimal.append(None)
 		else:
-			health_coverage.append(round(income / expense, 2))
+			health_coverage_decimal.append((income / expense).quantize(MONEY_QUANT))
 
-	moving_average: list[float | None] = []
-	for idx in range(len(health_generation)):
+	moving_average_decimal: list[Decimal | None] = []
+	for idx in range(len(health_generation_decimal)):
 		if idx < 2:
-			moving_average.append(None)
+			moving_average_decimal.append(None)
 			continue
-		avg3 = sum(health_generation[idx - 2 : idx + 1]) / 3
-		moving_average.append(round(avg3, 2))
+		avg3 = sum(health_generation_decimal[idx - 2 : idx + 1], Decimal("0.00")) / 3
+		moving_average_decimal.append(avg3.quantize(MONEY_QUANT))
 
-	valid_coverage = [v for v in health_coverage if v is not None]
-	avg_coverage_val = (sum(valid_coverage) / len(valid_coverage)) if valid_coverage else 0.0
+	valid_coverage = [v for v in health_coverage_decimal if v is not None]
+	avg_coverage_val = (sum(valid_coverage, Decimal("0.00")) / len(valid_coverage)) if valid_coverage else Decimal("0.00")
 	avg_coverage_class = "amount-positive" if avg_coverage_val >= 1 else "amount-negative"
-	positive_months = len([v for v in health_generation if v >= 0])
-	total_months = len(health_generation)
+	positive_months = len([v for v in health_generation_decimal if v >= 0])
+	total_months = len(health_generation_decimal)
 
-	prev3 = health_generation[-6:-3]
-	last3 = health_generation[-3:]
-	prev_sum = sum(prev3) if prev3 else 0.0
-	last_sum = sum(last3) if last3 else 0.0
+	prev3 = health_generation_decimal[-6:-3]
+	last3 = health_generation_decimal[-3:]
+	prev_sum = sum(prev3, Decimal("0.00")) if prev3 else Decimal("0.00")
+	last_sum = sum(last3, Decimal("0.00")) if last3 else Decimal("0.00")
 	if prev3 and prev_sum != 0:
-		trend_percent = ((last_sum - prev_sum) / abs(prev_sum)) * 100.0
+		trend_percent = ((last_sum - prev_sum) / abs(prev_sum)) * 100
 	elif prev3:
-		trend_percent = 100.0 if last_sum > 0 else 0.0
+		trend_percent = Decimal("100.0") if last_sum > 0 else Decimal("0.0")
 	else:
-		trend_percent = 0.0
+		trend_percent = Decimal("0.0")
 
-	if trend_percent > 5:
+	if trend_percent > Decimal("5"):
 		trend_class = "amount-positive"
 		trend_symbol = "↑"
 		trend_caption = "Melhora consistente"
-	elif trend_percent < -5:
+	elif trend_percent < Decimal("-5"):
 		trend_class = "amount-negative"
 		trend_symbol = "↓"
 		trend_caption = "Queda de geração"
@@ -267,6 +276,19 @@ def dashboard_view(request):
 		trend_class = "amount-neutral"
 		trend_symbol = "→"
 		trend_caption = "Estabilidade"
+
+	# Conversão numérica somente na fronteira com o template/JSON dos gráficos.
+	chart_cats_values = [_to_float(value) for value in chart_cats_values_decimal]
+	chart_income = [_to_float(value) for value in chart_income_decimal]
+	chart_expense = [_to_float(value) for value in chart_expense_decimal]
+	chart_balance = [_to_float(value) for value in chart_balance_decimal]
+	chart_proj_receitas = [_to_float(value) for value in chart_proj_receitas_decimal]
+	chart_proj_despesas = [_to_float(value) for value in chart_proj_despesas_decimal]
+	chart_proj_saldo = [_to_float(value) for value in chart_proj_saldo_decimal]
+	daily_balance = [_to_float(value) for value in daily_balance_decimal]
+	health_coverage = [_to_float(value) if value is not None else None for value in health_coverage_decimal]
+	health_generation = [_to_float(value) for value in health_generation_decimal]
+	moving_average = [_to_float(value) if value is not None else None for value in moving_average_decimal]
 
 	financial_health = {
 		"average_coverage": f"{avg_coverage_val:.2f}x",

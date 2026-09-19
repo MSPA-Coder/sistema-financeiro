@@ -78,6 +78,7 @@ from core.domain.finance import (
     STATUS_REALIZED,
     VIEW_REALIZED,
 )
+from reports.services import decimal_balances_before_by_account
 from transactions.models import CashFlowEntry
 
 CONTRATO = "patrimonio/v1"
@@ -162,18 +163,19 @@ def endereco_da_conta(conta: FinancialAccount, referencia: date) -> str:
 def montar_resumo(referencia: date) -> dict:
     """A foto deste sistema na data pedida."""
     contas = list(
-        FinancialAccount.objects.select_related("owner", "institution").order_by("id")
+        FinancialAccount.objects.select_related("owner", "institution")
+        .filter(initial_balance_date__lte=referencia)
+        .order_by("id")
     )
-    # Conta cujo saldo inicial é posterior à data pedida ainda não existia na
-    # foto, e somá-la traria para o passado um dinheiro que só chegou depois.
-    # Poder responder isso é o que a data no saldo inicial (U04a) comprou.
-    vigentes = [conta for conta in contas if conta.initial_balance_date <= referencia]
+    saldos = decimal_balances_before_by_account(
+        (conta.id for conta in contas), referencia + timedelta(days=1), VIEW_REALIZED
+    )
 
     titulares = {}
     instituicoes = {}
     linhas = []
     totais: dict[str, dict] = {}
-    for conta in vigentes:
+    for conta in contas:
         titular = identidade(conta.owner.name)
         instituicao = identidade(conta.institution.institution_name)
         titulares[titular] = {"id": titular, "nome": conta.owner.name}
@@ -182,7 +184,7 @@ def montar_resumo(referencia: date) -> dict:
             "nome": conta.institution.institution_name,
             "tipo": conta.institution.institution_type,
         }
-        saldo = saldo_da_conta(conta, referencia)
+        saldo = saldos.get(conta.id, Decimal("0.00"))
         linhas.append(
             {
                 "id": f"{SISTEMA}:conta:{conta.id}",

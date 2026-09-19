@@ -26,10 +26,10 @@ arquivos secretos consumidos pelo Compose:
 .\scripts\provision_compose_secrets.ps1
 ```
 
-O arquivo `.certs/local-root-ca.crt` deve existir; deixe-o vazio quando não
-houver uma autoridade certificadora local a acrescentar ou gere-o com
-`.\scripts\export_local_ca.ps1` quando houver interceptação HTTPS compatível
-com o script.
+O arquivo `.certs/local-root-ca.crt` deve existir. Para um ambiente sem CA
+local, crie-o vazio com `New-Item -ItemType File .certs/local-root-ca.crt -Force`;
+quando houver interceptação HTTPS compatível, gere-o com
+`.\scripts\export_local_ca.ps1`.
 
 Suba a pilha operacional:
 

@@ -7,7 +7,11 @@ para atualizações parciais e Chart.js servido localmente. PostgreSQL é o úni
 banco. Gunicorn atende o ambiente operacional e WhiteNoise entrega os arquivos
 estáticos produzidos por `collectstatic`.
 
-Não há API REST, fila, broker, cache externo ou provedor de login social.
+Hoje não há API REST geral, fila, broker, cache externo ou provedor de login
+social. Existem endpoints JSON de publicação patrimonial; esses contratos são
+tratados separadamente. A adoção futura de fila, cache ou outro adaptador é
+permitida quando preservar as invariantes de domínio e tiver decisão
+arquitetural registrada.
 
 O `compose.yaml` define quatro serviços:
 
@@ -55,7 +59,8 @@ urls -> views -> services -> models -> PostgreSQL
 Views tratam HTTP, autenticação, autorização e composição da resposta. Services
 concentram regras financeiras e limites transacionais. Models representam o
 schema e suas restrições. Consultas triviais podem permanecer na view; o
-projeto não usa uma camada de repositories.
+projeto evita repositories pass-through, mas permite query objects ou
+repositories quando reduzirem duplicação, acoplamento ou custo de consulta.
 
 Cada app versiona seu schema em `<app>/migrations/`. Bancos novos e existentes
 são atualizados exclusivamente por `manage.py migrate`; o serviço `migrate`

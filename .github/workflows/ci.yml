@@ -29,6 +29,9 @@ jobs:
     name: Qualidade
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Criar CA efêmera para o build
@@ -55,23 +58,43 @@ jobs:
         # na CI. O valor aqui é uma constante pública deste arquivo e não
         # protege nada.
         #
-        # `patrimonio_token` precisa existir só para o Compose montar o segredo
-        # declarado: sem o arquivo, `run quality` morre antes do primeiro teste.
-        # A suíte não lê este valor -- os testes da rota concedem o próprio
-        # token por arquivo temporário.
+        # Os três arquivos sem prefixo são somente para o smoke da imagem
+        # operacional. A suíte usa outro conjunto, com nomes distintos, para
+        # impedir que um teste tenha acesso acidental a um segredo de runtime.
         run: |
           umask 077
           mkdir -p .secrets
-          printf '%s\n' 'ci-django-secret-key-not-for-production' > .secrets/django_secret_key
-          printf '%s\n' 'ci-postgres-password-not-for-production' > .secrets/postgres_password
-          printf '%s\n' 'ci-patrimonio-token-not-for-production' > .secrets/patrimonio_token
-          chmod 0644 .secrets/postgres_password
+          printf '%s\n' 'ci-runtime-django-secret-not-for-production' > .secrets/django_secret_key
+          printf '%s\n' 'ci-runtime-postgres-password-not-for-production' > .secrets/postgres_password
+          printf '%s\n' 'ci-runtime-patrimonio-token-not-for-production' > .secrets/patrimonio_token
+          printf '%s\n' 'ci-quality-django-secret-not-for-production' > .secrets/quality_django_secret_key
+          printf '%s\n' 'ci-quality-postgres-password-not-for-production' > .secrets/quality_postgres_password
+          printf '%s\n' 'ci-quality-patrimonio-token-not-for-production' > .secrets/quality_patrimonio_token
+          # Compose preserva o modo do arquivo de segredo fora do Swarm. Os
+          # valores são sintéticos e precisam ser legíveis pelos usuários dos
+          # contêineres web e postgres-teste.
+          chmod 0644 .secrets/*
       - name: Validar Compose
         run: docker compose config --quiet
       - name: Construir quality sem cache
         run: docker compose --profile quality build --no-cache quality
       - name: Executar quality
         run: docker compose --profile quality run --rm quality
+
+      - name: Smoke e readiness da imagem operacional
+        run: |
+          set -euo pipefail
+          cleanup() {
+            docker compose down --remove-orphans
+          }
+          trap cleanup EXIT
+
+          # `up --wait` aguarda postgres-teste? Não: aqui o fluxo operacional
+          # sobe postgres, migrate e web; o healthcheck de `/health/` só passa
+          # depois que migrations terminaram e o PostgreSQL responde.
+          docker compose up --build --detach --wait --wait-timeout 120 web
+          curl --fail --silent --show-error --max-time 10 \
+            http://127.0.0.1:5201/health/ | grep -F '"status": "ok"'
 
       # O Dependabot cobre atualizacoes; o pip-audit responde separadamente se
       # a versao instalada tem uma vulnerabilidade conhecida.
@@ -119,7 +142,11 @@ jobs:
           set -euo pipefail
           docker save controle-bancario:local -o "$RUNNER_TEMP/imagem.tar"
           docker run --rm \
-            -v "$RUNNER_TEMP:/varredura:ro" \
+            --read-only \
+            --cap-drop=ALL \
+            --security-opt=no-new-privileges:true \
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+             -v "$RUNNER_TEMP:/varredura:ro" \
             aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
             image --input /varredura/imagem.tar \
                   --scanners vuln \
@@ -140,7 +167,12 @@ jobs:
           runtime_image="$(docker compose config --images | grep -x 'controle-bancario:local' | head -1)"
           test -n "$runtime_image"
 
-          docker run --rm --entrypoint sh "$runtime_image" -ec '
+          docker run --rm \
+            --read-only \
+            --cap-drop=ALL \
+            --security-opt=no-new-privileges:true \
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --entrypoint sh "$runtime_image" -ec '
             require_read_only() {
               if test -w "$1"; then
                 echo "Caminho de codigo gravavel no runtime: $1" >&2

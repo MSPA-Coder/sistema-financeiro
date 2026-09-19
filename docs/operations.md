@@ -17,7 +17,7 @@ Variáveis principais:
 | Variável | Função | Padrão no Compose |
 |---|---|---|
 | `POSTGRES_DB` | banco da aplicação | `controle_bancario` |
-| `POSTGRES_USER` | usuário do banco | `postgres` |
+| `POSTGRES_USER` | usuário dedicado da aplicação | `controle_bancario` |
 | `POSTGRES_PORT` | porta local publicada | `5202` |
 | `APP_PORT` | porta local da aplicação | `5201` |
 | `ALLOWED_HOSTS` | hosts aceitos pelo Django | `localhost,127.0.0.1` |
@@ -52,7 +52,9 @@ automaticamente.
 
 ## Backup e restauração
 
-O backup central do PostgreSQL é feito pelo projeto irmão BackupRestore:
+O backup central do PostgreSQL é feito pelo projeto irmão
+[BackupRestore](../../BackupRestore/), que fica fora deste repositório e deve
+estar disponível no checkout da frota:
 
 ```powershell
 python cli.py backup --projeto controle_bancario --tipos banco
@@ -60,14 +62,17 @@ python cli.py backup --projeto controle_bancario --tipos banco
 
 Esse comando protege o banco e valida que o dump customizado pode ser listado;
 ele não inclui `media_volume` e não demonstra uma restauração completa. Use o
-ensaio oferecido pelo BackupRestore para validar a restauração do banco.
+ensaio oferecido pelo BackupRestore para validar o banco e o procedimento de
+mídia descrito abaixo.
 
-**Lacuna operacional:** não há neste repositório um procedimento automatizado,
-versionado e testado para backup/restauração de `media_volume`. Antes de uma
-operação destrutiva ou de depender dos comprovantes como arquivo recuperável,
-defina e ensaie uma cópia separada desse volume, com retenção e correspondência
-ao backup do banco. Até isso existir, não trate os comprovantes como cobertos
-pelo backup central.
+O banco e `media_volume` são camadas separadas. O backup de produção deve
+capturar os dois com o mesmo identificador de execução: primeiro o dump
+PostgreSQL validado pelo BackupRestore, depois um arquivo do volume de mídia
+publicado por troca atômica e acompanhado de SHA-256. A restauração deve parar
+o `web`, restaurar o banco no sandbox, extrair a mídia em diretório temporário,
+comparar o manifesto de arquivos e só então substituir o volume operacional.
+Até o ensaio automatizado externo do VPS estar disponível, não trate os
+comprovantes como cobertos pelo backup central.
 
 Restaurações são administrativas: pare a aplicação, preserve o estado atual,
 confirme o destino e use um procedimento já ensaiado. Nunca execute
@@ -127,7 +132,8 @@ duplicata do #1237, e junho estava fechado na conta dele.
 A implantação atual usa Ubuntu 24.04 em VPS Oracle. O Nginx publica
 `https://bancario-mspa.duckdns.org`; a aplicação e o PostgreSQL permanecem em
 loopback nas portas `5201` e `5202`. O vhost versionado e o instalador do nginx
-estão em `_manutencao/vps/nginx/` (arquivo `controle-bancario`).
+estão no repositório externo `../../_manutencao/vps/nginx/` (arquivo
+`controle-bancario`), não dentro deste checkout.
 
 O código do servidor é um espelho somente-leitura do branch `main`. Mudanças
 nascem na estação de desenvolvimento, seguem para o GitHub e chegam ao VPS por

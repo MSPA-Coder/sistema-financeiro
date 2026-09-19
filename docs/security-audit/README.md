@@ -16,6 +16,11 @@ São **dois relatórios**, e os dois são entregáveis:
 Para corrigir um achado, reescrever uma recomendação ou acrescentar uma issue,
 edite o JSON e rode o gerador de novo. Não há conteúdo no `.py`.
 
+Os JSONs e PDFs versionados passam por redaction antes de serem publicados:
+credenciais, tokens e valores de secrets não pertencem a um relatório, mesmo
+quando aparecem no material original da auditoria. A redação preserva o
+contexto técnico sem tornar o repositório uma fonte de credenciais.
+
 ## Por que o relatório da auditoria não é atualizado
 
 Um relatório de auditoria vale por registrar **o que foi encontrado na data em

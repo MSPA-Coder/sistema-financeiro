@@ -227,8 +227,9 @@ def _copy_occurrence(
 ) -> int:
     canonico = canonico or {}
     created_by_template_id: dict[int, CashFlowEntry] = {}
+    novos = []
     for template in template_rows:
-        entry = CashFlowEntry.objects.create(
+        novos.append(CashFlowEntry(
             account_id=template.account_id,
             category_id=template.category_id,
             entry_type=template.entry_type,
@@ -243,9 +244,13 @@ def _copy_occurrence(
             realized_amount=None,
             bank_operation_id=template.bank_operation_id,
             operation_type=template.operation_type or OPERATION_RECURRING,
-        )
-        created_by_template_id[template.id] = entry
+        ))
+    CashFlowEntry.objects.bulk_create(novos)
+    created_by_template_id = {
+        template.id: entry for template, entry in zip(template_rows, novos, strict=True)
+    }
 
+    relink = []
     for template in template_rows:
         if template.source_entry_id:
             created = created_by_template_id[template.id]
@@ -255,8 +260,10 @@ def _copy_occurrence(
             id_da_origem = canonico.get(template.source_entry_id, template.source_entry_id)
             source = created_by_template_id.get(id_da_origem)
             if source:
-                created.source_entry = source
-                created.save(update_fields=["source_entry"])
+                created.source_entry_id = source.id
+                relink.append(created)
+    if relink:
+        CashFlowEntry.objects.bulk_update(relink, ["source_entry"])
     return len(created_by_template_id)
 
 
@@ -321,7 +328,7 @@ def ensure_recurring_projection_horizon(
         with connection.cursor() as cursor:
             cursor.execute("SELECT pg_advisory_xact_lock(81288431)")
 
-    all_entries = list(
+    all_entries = (
         CashFlowEntry.objects.filter(
             is_recurring=True,
             bank_operation__isnull=False,
@@ -329,6 +336,7 @@ def ensure_recurring_projection_horizon(
         .exclude(operation_type=OPERATION_INSTALLMENT)
         .select_related("bank_operation__responsible_user")
         .order_by("bank_operation_id", "due_date", "id")
+        .iterator(chunk_size=1000)
     )
 
     generated_count = 0

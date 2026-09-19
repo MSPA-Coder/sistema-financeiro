@@ -7,7 +7,9 @@ projeto é o venv opcional do laço rápido (ver `AGENTS.md`); nada vai para o
 Python global, e PostgreSQL roda só em contêiner.
 
 Prepare `.env.docker` e provisione os secrets de Django e PostgreSQL conforme o
-[README](../README.md). Para iniciar o modo de desenvolvimento:
+[README](../README.md). O script preserva os secrets de runtime existentes e cria
+arquivos separados para o perfil `quality`, evitando que testes reutilizem
+credenciais operacionais. Para iniciar o modo de desenvolvimento:
 
 ```powershell
 docker compose --env-file .env.docker -f compose.yaml -f compose.dev.yaml up --build -d
