@@ -183,6 +183,8 @@ O horizonte e o dia mensal de execução são configurados em Parâmetros. A
 projeção estende cada `BankOperation` recorrente até o fim do horizonte, a
 partir da ocorrência de maior vencimento. Reexecutar para o mesmo horizonte é
 idempotente e uma ocorrência removida no meio da série não é recriada.
+O middleware é o gatilho atual; um scheduler ou worker também é válido se
+preservar idempotência, retry seguro, auditoria e coordenação entre processos.
 
 `transactions.middleware.ProjecaoRecorrenteMensalMiddleware` verifica a
 necessidade em requisições autenticadas. Cada processo consulta no máximo uma
@@ -194,9 +196,10 @@ pelo usuário; uma verificação posterior tenta novamente.
 
 O botão **Executar Projeção Agora** antecipa ou repete a operação a qualquer
 momento. A mesma rotina idempotente é usada, e a mensagem informa quantos
-lançamentos foram gerados. Não há agendador externo: sem requisições
-autenticadas após o dia configurado, a execução automática aguarda o próximo
-acesso.
+lançamentos foram gerados. No desenho atual não há agendador externo: sem
+requisições autenticadas após o dia configurado, a execução automática aguarda
+o próximo acesso. Isso é uma decisão operacional atual, não uma restrição de
+domínio.
 
 ## Datas e visibilidade
 

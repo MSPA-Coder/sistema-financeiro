@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.db.models import Case, DecimalField, F, Q, Sum, Value, When
 from django.db.models.functions import Coalesce, TruncMonth
 
@@ -50,6 +51,10 @@ MAX_SAFE_MONTH = date(9999, 11, 1)
 
 class InvalidMonthPeriodError(ValueError):
     """Parâmetro explícito que não pode ser usado sem estourar cálculos mensais."""
+
+
+class ReportSizeLimitError(ValueError):
+    """O recorte pedido excederia o limite seguro de um relatório."""
 
 
 def to_decimal(value) -> Decimal:
@@ -152,11 +157,17 @@ def bounded_projection_month_range(start_month: date, end_month: date) -> tuple[
     end_month = date(end_month.year, end_month.month, 1)
     if end_month < start_month:
         start_month, end_month = end_month, start_month
-    start_month = min(start_month, MAX_PROJECTION_END_MONTH)
-    end_month = min(end_month, MAX_PROJECTION_END_MONTH)
+    if start_month > MAX_PROJECTION_END_MONTH or end_month > MAX_PROJECTION_END_MONTH:
+        raise InvalidMonthPeriodError("Período informado excede o limite suportado.")
+    max_months = max(
+        1,
+        int(getattr(settings, "REPORT_MAX_PROJECTION_RANGE_MONTHS", MAX_PROJECTION_RANGE_MONTHS)),
+    )
     month_span = (end_month.year - start_month.year) * 12 + end_month.month - start_month.month + 1
-    if month_span > MAX_PROJECTION_RANGE_MONTHS:
-        end_month = add_months(start_month, MAX_PROJECTION_RANGE_MONTHS - 1)
+    if month_span > max_months:
+        raise InvalidMonthPeriodError(
+            f"Período de projeção excede o limite de {max_months} meses."
+        )
     return start_month, end_month
 
 
@@ -176,6 +187,41 @@ def resolve_projection_month_range(start_value: str | None, end_value: str | Non
     if end_month < start_month:
         end_month = start_month
     return bounded_projection_month_range(start_month, end_month)
+
+
+DEFAULT_MAX_UPCOMING_PERIOD_DAYS = 366
+DEFAULT_MAX_REPORT_ENTRIES = 10_000
+DEFAULT_MAX_REPORT_ACCOUNTS = 1_000
+
+
+def _report_limit(setting_name: str, default: int) -> int:
+    """Lê um teto operacional sem exigir alteração das configurações existentes."""
+    try:
+        return max(1, int(getattr(settings, setting_name, default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def bounded_upcoming_period(start_date: date, end_date: date) -> tuple[date, date]:
+    """Valida o período diário do relatório sem truncá-lo silenciosamente."""
+    if end_date < start_date:
+        end_date = start_date
+    max_days = _report_limit("REPORT_MAX_UPCOMING_PERIOD_DAYS", DEFAULT_MAX_UPCOMING_PERIOD_DAYS)
+    if (end_date - start_date).days + 1 > max_days:
+        raise InvalidMonthPeriodError(
+            f"Período de movimentos excede o limite de {max_days} dias."
+        )
+    return start_date, end_date
+
+
+def _limited_list(queryset, *, limit: int, description: str) -> list:
+    """Materializa no máximo ``limit + 1`` linhas para dar erro claro ao exceder."""
+    rows = list(queryset[: limit + 1])
+    if len(rows) > limit:
+        raise ReportSizeLimitError(
+            f"Relatório excede o limite de {limit} {description}; refine os filtros."
+        )
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -863,8 +909,15 @@ def annual_planning_presentation(
     account_ids_by_owner: dict[int, list[int]] = defaultdict(list)
     for account in accounts:
         account_ids_by_owner[account.owner_id].append(account.id)
+    start_by_account = decimal_balances_before_by_account(
+        selected_account_ids, reference_month, selected_view_mode
+    )
     start_owner = [
-        decimal_balance_before(account_ids_by_owner.get(owner.id, []), reference_month, selected_view_mode)
+        sum(
+            (start_by_account.get(account_id, Decimal("0.00"))
+             for account_id in account_ids_by_owner.get(owner.id, [])),
+            Decimal("0.00"),
+        ).quantize(MONEY_QUANT)
         for owner in selected_owners
     ]
     end_owner = [
@@ -1036,12 +1089,43 @@ def decimal_base_balance(account_ids: Iterable[int]) -> Decimal:
     return to_decimal(total).quantize(MONEY_QUANT)
 
 
-def decimal_balance_before(account_ids: list[int], start_date: date, view_mode: str) -> Decimal:
+def decimal_balances_before_by_account(
+    account_ids: Iterable[int], start_date: date, view_mode: str
+) -> dict[int, Decimal]:
+    """Retorna saldos de abertura por conta em duas consultas agregadas.
+
+    Relatórios que exibem uma coluna por titular/conta não devem chamar
+    ``decimal_balance_before`` uma vez por linha. Esta variante mantém cada
+    conta separada (logo não mistura moedas) e deixa o chamador somar somente
+    contas que já sabe serem do mesmo grupo.
+    """
+    ids = list(dict.fromkeys(int(account_id) for account_id in account_ids if account_id))
+    if not ids:
+        return {}
+
+    balances = {
+        row["id"]: to_decimal(row["initial_balance"])
+        for row in FinancialAccount.objects.filter(id__in=ids).values("id", "initial_balance")
+    }
     minimum_date = system_start_date() or date.min
-    balance = decimal_base_balance(account_ids) + _signed_entries_total(
-        account_ids, view_mode=view_mode, start_date=minimum_date, end_date=start_date
+    history_totals = _signed_entries_totals_by_account(
+        ids, view_mode=view_mode, start_date=minimum_date, end_date=start_date
     )
-    return balance.quantize(MONEY_QUANT)
+    for account_id, total in history_totals.items():
+        balances[account_id] = balances.get(account_id, Decimal("0.00")) + total
+    return {
+        account_id: balances.get(account_id, Decimal("0.00")).quantize(MONEY_QUANT)
+        for account_id in ids
+    }
+
+
+def decimal_balance_before(account_ids: list[int], start_date: date, view_mode: str) -> Decimal:
+    ids = [int(account_id) for account_id in account_ids if account_id]
+    if not ids:
+        return Decimal("0.00")
+    currency_of_accounts(ids)
+    balances = decimal_balances_before_by_account(ids, start_date, view_mode)
+    return sum(balances.values(), Decimal("0.00")).quantize(MONEY_QUANT)
 
 
 def decimal_period_start_balance(account_ids: list[int], start_date: date, end_date_exclusive: date, view_mode: str) -> Decimal:
@@ -1068,17 +1152,8 @@ def decimal_period_start_balances_by_account(account_ids: Iterable[int], start_d
     if not ids:
         return {}
 
-    balances = {
-        row["id"]: to_decimal(row["initial_balance"])
-        for row in FinancialAccount.objects.filter(id__in=ids).values("id", "initial_balance")
-    }
-    for account_id in ids:
-        balances.setdefault(account_id, Decimal("0.00"))
-
+    balances = decimal_balances_before_by_account(ids, start_date, view_mode)
     minimum_date = system_start_date() or date.min
-    history_totals = _signed_entries_totals_by_account(ids, view_mode=view_mode, start_date=minimum_date, end_date=start_date)
-    for account_id, total in history_totals.items():
-        balances[account_id] += total
 
     if view_mode in {VIEW_PROJECTED, VIEW_PENDING} and start_date < end_date_exclusive:
         realized_totals = _signed_entries_totals_by_account(
@@ -1134,7 +1209,11 @@ def entries_for_period(account_ids: list[int], start: date, end_exclusive: date,
         # linha errada quando existem vários lançamentos na mesma data.
         .order_by("proj_date", "-entry_type", "category__category_name", "id")
     )
-    return list(qs)
+    return _limited_list(
+        qs,
+        limit=_report_limit("REPORT_MAX_ENTRIES", DEFAULT_MAX_REPORT_ENTRIES),
+        description="lançamentos",
+    )
 
 
 def _entry_amount(entry: CashFlowEntry, *, realized: bool) -> Decimal:
@@ -1487,7 +1566,11 @@ def _list_upcoming_movement_entries(account_ids: list[int], start_date: date, en
         .filter(_listing_status_q(view_mode, date.today()))
         .order_by("proj_date", "-entry_type", "category__category_name", "id")
     )
-    return list(qs)
+    return _limited_list(
+        qs,
+        limit=_report_limit("REPORT_MAX_ENTRIES", DEFAULT_MAX_REPORT_ENTRIES),
+        description="lançamentos",
+    )
 
 
 def _account_action(minimum_balance: Decimal, minimum_balance_date: date, *, has_movements: bool) -> tuple[str, str, str, Decimal]:
@@ -1529,14 +1612,15 @@ def _summary_action(rows: list[UpcomingMovementAccountRow], minimum_balance: Dec
 
 def upcoming_movements_report(account_ids: list[int], start_date: date, end_date: date, view_mode: str) -> UpcomingMovementsReport:
     mode = normalize_upcoming_movement_mode(view_mode)
-    if end_date < start_date:
-        end_date = start_date
+    start_date, end_date = bounded_upcoming_period(start_date, end_date)
     end_exclusive = end_date + timedelta(days=1)
 
-    candidate_accounts = list(
+    candidate_accounts = _limited_list(
         FinancialAccount.objects.select_related("owner", "institution")
         .filter(id__in=[int(a) for a in account_ids if a])
-        .order_by("owner__name", "institution__institution_name", "account_name")
+        .order_by("owner__name", "institution__institution_name", "account_name"),
+        limit=_report_limit("REPORT_MAX_ACCOUNTS", DEFAULT_MAX_REPORT_ACCOUNTS),
+        description="contas",
     )
     candidate_ids = [account.id for account in candidate_accounts]
     entries = _list_upcoming_movement_entries(candidate_ids, start_date, end_exclusive, mode)

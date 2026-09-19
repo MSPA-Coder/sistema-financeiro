@@ -24,6 +24,8 @@ instance/
 backups/
 uploads/
 logs/
+media/
+staticfiles/
 tmp/
 temp/
 *.db
@@ -39,6 +41,7 @@ temp/
 .env.*
 !.env.example
 !.env.docker.example
+!.env.vps.example
 .secrets/
 .certs/
 .idea/

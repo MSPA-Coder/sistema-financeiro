@@ -19,6 +19,13 @@
             <td>{{ attachment.file_size|filesizeformat }}</td>
             <td>
                 <a class="btn btn-ghost btn-sm" href="{% url 'bank_statements:attachment_download' attachment.id %}">Baixar</a>
+                <form method="post" action="{% url 'bank_statements:delete_attachment' attachment.id %}" class="inline-form"
+                      hx-post="{% url 'bank_statements:delete_attachment' attachment.id %}" hx-target="#attachment-results" hx-swap="innerHTML">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger btn-sm"
+                            data-sa-confirmar="Excluir este comprovante do armazenamento?"
+                            data-sa-titulo="Excluir comprovante" data-sa-severidade="danger" data-sa-ok="Excluir">Excluir</button>
+                </form>
             </td>
         </tr>
         {% endwith %}

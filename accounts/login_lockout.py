@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import time
 
+from django.db import transaction as db_transaction
 from django.utils import timezone
 
 from .models import LoginLockout
@@ -48,30 +49,43 @@ def register_failed_login_attempt(username: str | None, remote_addr: str | None)
     identity_key = _identity_key(username, remote_addr)
     normalized = _normalize_username(username)
 
-    row, _created = LoginLockout.objects.get_or_create(
-        identity_key=identity_key,
-        defaults={"normalized_user_name": normalized or None, "remote_addr": (remote_addr or "")[:80] or None},
-    )
-    row.failure_count = (row.failure_count or 0) + 1
-    row.normalized_user_name = normalized or None
-    row.remote_addr = (remote_addr or "")[:80] or None
-    row.last_failed_at = timezone.now()
+    with db_transaction.atomic():
+        row, _created = LoginLockout.objects.get_or_create(
+            identity_key=identity_key,
+            defaults={
+                "normalized_user_name": normalized or None,
+                "remote_addr": (remote_addr or "")[:80] or None,
+            },
+        )
+        # O get_or_create sozinho não protege o incremento seguinte. Trave a
+        # linha efetiva depois da resolução da corrida de criação para que duas
+        # falhas simultâneas nunca sobrescrevam o mesmo contador.
+        row = LoginLockout.objects.select_for_update().get(pk=row.pk)
+        row.failure_count = (row.failure_count or 0) + 1
+        row.normalized_user_name = normalized or None
+        row.remote_addr = (remote_addr or "")[:80] or None
+        row.last_failed_at = timezone.now()
 
-    wait_seconds = None
-    if row.failure_count >= policy.max_failures:
-        wait_seconds = policy.lock_seconds
-        row.locked_until_ts = int(time.time()) + wait_seconds
-        row.failure_count = 0
-    row.save(update_fields=["failure_count", "normalized_user_name", "remote_addr", "locked_until_ts", "last_failed_at", "updated_at"])
+        wait_seconds = None
+        if row.failure_count >= policy.max_failures:
+            wait_seconds = policy.lock_seconds
+            row.locked_until_ts = int(time.time()) + wait_seconds
+            row.failure_count = 0
+        row.save(update_fields=["failure_count", "normalized_user_name", "remote_addr", "locked_until_ts", "last_failed_at", "updated_at"])
 
     attempts_remaining = max(0, policy.max_failures - row.failure_count) if wait_seconds is None else 0
     return attempts_remaining, wait_seconds
 
 
 def clear_login_failures(username: str | None, remote_addr: str | None) -> None:
-    LoginLockout.objects.filter(identity_key=_identity_key(username, remote_addr)).update(
-        failure_count=0, locked_until_ts=None
-    )
+    with db_transaction.atomic():
+        row = LoginLockout.objects.select_for_update().filter(
+            identity_key=_identity_key(username, remote_addr)
+        ).first()
+        if row is not None:
+            row.failure_count = 0
+            row.locked_until_ts = None
+            row.save(update_fields=["failure_count", "locked_until_ts", "updated_at"])
 
 
 def failed_login_message(attempts_remaining: int, wait_seconds: int | None) -> str:

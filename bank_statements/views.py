@@ -15,6 +15,7 @@ from . import reconciliation
 from .attachments import (
     attachment_download_path,
     attachment_for_download,
+    delete_entry_attachment,
     recent_attachments_for_user,
     save_entry_attachment,
 )
@@ -263,6 +264,22 @@ def attachment_download_view(request, attachment_id):
         filename=attachment.original_filename,
         content_type=attachment.mime_type or 'application/octet-stream',
     )
+
+
+@login_required
+@permission_required('banking.attachments.manage', fallback='bank_statements:attachments_view')
+@require_POST
+def delete_attachment_view(request, attachment_id):
+    """Exclui o metadado e o arquivo físico de um comprovante autorizado."""
+    try:
+        delete_entry_attachment(request.user, attachment_id=attachment_id)
+        messages.success(request, "Comprovante excluído.")
+    except ValueError as exc:
+        messages.error(request, str(exc))
+
+    if quer_fragmento(request):
+        return render(request, 'banking/_attachments_table.html', _attachments_context(request))
+    return redirect('bank_statements:attachments_view')
 
 
 @login_required

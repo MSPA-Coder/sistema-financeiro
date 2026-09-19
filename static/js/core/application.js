@@ -76,6 +76,19 @@
         });
     }
 
+    /* A seleção de moeda já é a confirmação da escolha: não há uma segunda
+       ação necessária para aplicar o filtro. `requestSubmit` preserva o
+       comportamento nativo do formulário e a guarda do submit abaixo evita
+       envios duplicados por eventos repetidos. */
+    document.addEventListener('change', function (event) {
+        var select = event.target;
+        if (!select.matches || !select.matches('[data-global-currency]')) return;
+        var form = select.form || select.closest('form');
+        if (!form || form.dataset.submitting === '1') return;
+        if (typeof form.requestSubmit === 'function') form.requestSubmit();
+        else form.submit();
+    });
+
     document.addEventListener('click', function (event) {
         var toggle = event.target.closest && event.target.closest('[data-global-filters-toggle]');
         if (toggle) {
@@ -114,8 +127,6 @@
         if (form.matches && form.matches('[data-global-currency-form]')) {
             if (form.dataset.submitting === '1') { event.preventDefault(); return; }
             form.dataset.submitting = '1';
-            var submit = form.querySelector('[data-global-currency-submit]');
-            if (submit) submit.disabled = true;
         }
     });
 

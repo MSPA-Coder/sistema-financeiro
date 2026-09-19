@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import os
 import re
+from contextlib import suppress
 from pathlib import Path
 from uuid import uuid4
 
 from django.conf import settings
 from django.core.files.uploadedfile import UploadedFile
+from django.db import transaction as db_transaction
 
 from banking.services import accessible_account_ids, can_access_account
 from transactions.models import CashFlowEntry
@@ -76,6 +78,30 @@ def _attachment_path(attachment: EntryAttachment) -> Path:
     return path
 
 
+def _attachment_removal_path(attachment: EntryAttachment) -> Path:
+    """Valida o caminho lexical e não aceita symlink para remoção."""
+    candidate = Path(settings.MEDIA_ROOT) / attachment.stored_path
+    root = attachment_storage_dir().resolve()
+    resolved = candidate.resolve()
+    if root not in resolved.parents or candidate == root or candidate.is_symlink():
+        raise ValueError("Arquivo de anexo fora do armazenamento permitido.")
+    return candidate
+
+
+def _unlink_attachment_file(path: Path) -> None:
+    """Remove somente um arquivo regular dentro da árvore de anexos."""
+    root = attachment_storage_dir().resolve()
+    candidate = Path(path)
+    resolved = candidate.resolve()
+    if root not in resolved.parents or candidate == root:
+        raise ValueError("Arquivo de anexo fora do armazenamento permitido.")
+    # Não siga um symlink durante uma remoção: mesmo que o destino atual esteja
+    # dentro da árvore, a entrada física pode ser trocada entre as verificações.
+    if candidate.is_symlink():
+        raise ValueError("Arquivo de anexo inválido.")
+    candidate.unlink(missing_ok=True)
+
+
 def attachment_download_path(attachment: EntryAttachment) -> Path:
     path = _attachment_path(attachment)
     if not path.is_file():
@@ -122,17 +148,47 @@ def save_entry_attachment(user, entry_id, uploaded_file: UploadedFile | None) ->
             raise ValueError("Arquivo vazio.")
         _validate_attachment_signature(extension, header)
     except Exception:
-        path.unlink(missing_ok=True)
+        with suppress(OSError, ValueError):
+            _unlink_attachment_file(path)
         raise
 
-    return EntryAttachment.objects.create(
-        entry=entry,
-        original_filename=original,
-        stored_filename=stored,
-        stored_path=str(Path("attachments") / stored),
-        mime_type=ATTACHMENT_MIME_TYPES.get(extension) or getattr(uploaded_file, "content_type", None),
-        file_size=size,
-    )
+    try:
+        return EntryAttachment.objects.create(
+            entry=entry,
+            original_filename=original,
+            stored_filename=stored,
+            stored_path=str(Path("attachments") / stored),
+            mime_type=ATTACHMENT_MIME_TYPES.get(extension) or getattr(uploaded_file, "content_type", None),
+            file_size=size,
+        )
+    except Exception:
+        # O arquivo já existe, mas o registro relacional pode falhar (por
+        # exemplo, por indisponibilidade do banco). Não deixe um órfão físico.
+        with suppress(OSError, ValueError):
+            _unlink_attachment_file(path)
+        raise
+
+
+@db_transaction.atomic
+def delete_entry_attachment(user, *, attachment_id) -> None:
+    """Exclui um comprovante autorizado e seu arquivo após o commit.
+
+    O caminho é validado antes de apagar o registro e o unlink é agendado com
+    ``on_commit``. Assim, uma falha no banco não remove um arquivo cujo
+    metadado ainda possa permanecer, e um rollback não cria um novo órfão.
+    """
+    if not attachment_id:
+        raise ValueError("Anexo inválido.")
+    try:
+        attachment = EntryAttachment.objects.select_related("entry").get(id=attachment_id)
+    except (EntryAttachment.DoesNotExist, ValueError, TypeError):
+        raise ValueError("Anexo não encontrado.") from None
+    if not can_access_entry(user, attachment.entry, "update"):
+        raise ValueError("Acesso negado para gerenciar este comprovante.")
+
+    path = _attachment_removal_path(attachment)
+    attachment.delete()
+    db_transaction.on_commit(lambda: _unlink_attachment_file(path))
 
 
 def recent_attachments_for_user(user, target_attachment_id: int | None = None, limit: int = 50):

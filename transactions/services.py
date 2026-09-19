@@ -110,6 +110,110 @@ def assert_transfer_entries_authorized(user, entries: list[CashFlowEntry], actio
             assert_transfer_destination_authorized(user, entry, action)
 
 
+def _lock_accounts(account_ids) -> dict[int, FinancialAccount]:
+    """Tranca contas em ordem canônica e devolve as instâncias atuais.
+
+    A conta é o recurso de coordenação entre lançamentos e fechamento mensal:
+    todo service que pode mudar um lançamento ou criar um fechamento precisa
+    adquirir este lock antes de consultar o período. A ordenação explícita
+    evita que uma transferência A -> B e outra B -> A adquiram locks em ordens
+    opostas.
+    """
+    ids = sorted({int(account_id) for account_id in account_ids if account_id is not None})
+    if not ids:
+        return {}
+    accounts = list(
+        FinancialAccount.objects.select_for_update()
+        .select_related("owner", "institution")
+        .filter(id__in=ids)
+        .order_by("id")
+    )
+    found = {account.id for account in accounts}
+    missing = [account_id for account_id in ids if account_id not in found]
+    if missing:
+        raise ValueError("Conta inválida.")
+    return {account.id: account for account in accounts}
+
+
+def _entry_graph_ids(entry: CashFlowEntry) -> tuple[list[int], list[int]]:
+    """Lê os ids do grafo antes dos locks, sem confiar em caches do objeto."""
+    if entry.bank_operation_id:
+        rows = list(
+            CashFlowEntry.objects.filter(bank_operation_id=entry.bank_operation_id)
+            .order_by("id")
+            .values_list("id", "account_id")
+        )
+        return [row[0] for row in rows], [row[1] for row in rows]
+
+    entry_ids = [entry.pk]
+    account_ids = [entry.account_id]
+    if entry.operation_type == OPERATION_INTERNAL_TRANSFER:
+        if entry.source_entry_id:
+            counterpart_rows = CashFlowEntry.objects.filter(id=entry.source_entry_id).values_list("id", "account_id")
+        else:
+            counterpart_rows = CashFlowEntry.objects.filter(source_entry_id=entry.pk).values_list("id", "account_id")
+        for counterpart_id, account_id in counterpart_rows:
+            entry_ids.append(counterpart_id)
+            account_ids.append(account_id)
+    return entry_ids, account_ids
+
+
+def _lock_entry_graph(
+    entry: CashFlowEntry,
+    *,
+    extra_account_ids=(),
+) -> tuple[CashFlowEntry, list[CashFlowEntry]]:
+    """Adquire locks de uma operação financeira e recarrega seus lançamentos.
+
+    A ordem global é deliberada: contas primeiro (coordenação com fechamento),
+    depois a operação pai e por fim todos os lançamentos por id. O primeiro
+    SELECT só descobre o conjunto; nenhuma decisão financeira é tomada com
+    esses objetos potencialmente obsoletos.
+    """
+    entry_ids, account_ids = _entry_graph_ids(entry)
+    account_ids.extend(extra_account_ids)
+    _lock_accounts(account_ids)
+
+    operation_ids = sorted({entry.bank_operation_id} - {None})
+    if operation_ids:
+        list(
+            BankOperation.objects.select_for_update()
+            .filter(id__in=operation_ids)
+            .order_by("id")
+        )
+
+    if entry.bank_operation_id:
+        locked_entries = list(
+            CashFlowEntry.objects.select_for_update()
+            .select_related("account", "account__owner", "account__institution", "category")
+            .filter(bank_operation_id=entry.bank_operation_id)
+            .order_by("id")
+        )
+    else:
+        locked_entries = list(
+            CashFlowEntry.objects.select_for_update()
+            .select_related("account", "account__owner", "account__institution", "category")
+            .filter(id__in=sorted(set(entry_ids)))
+            .order_by("id")
+        )
+    current = next((locked_entry for locked_entry in locked_entries if locked_entry.id == entry.pk), None)
+    if current is None:
+        raise CashFlowEntry.DoesNotExist
+    return current, locked_entries
+
+
+def _locked_transfer_counterparty(
+    entry: CashFlowEntry,
+    locked_entries: list[CashFlowEntry],
+) -> CashFlowEntry | None:
+    """Resolve a transfer pair using the already locked graph."""
+    if entry.operation_type != OPERATION_INTERNAL_TRANSFER:
+        return None
+    if entry.source_entry_id:
+        return next((candidate for candidate in locked_entries if candidate.id == entry.source_entry_id), None)
+    return next((candidate for candidate in locked_entries if candidate.source_entry_id == entry.id), None)
+
+
 @db_transaction.atomic
 def realize_transaction(
     entry: CashFlowEntry,
@@ -127,6 +231,10 @@ def realize_transaction(
     O valor só é o mesmo enquanto as duas contas estão na mesma moeda; quando não
     estão, cada ponta realiza pelo próprio valor (ver `counterparty_amount_for_transfer`).
     """
+    locked_entries = None
+    if isinstance(entry, CashFlowEntry) and entry.pk is not None:
+        entry, locked_entries = _lock_entry_graph(entry)
+
     if entry.status == STATUS_REALIZED:
         raise ValueError("Lançamento já está realizado")
     if getattr(entry, "operation_type", None) == OPERATION_INTERNAL_TRANSFER:
@@ -139,7 +247,11 @@ def realize_transaction(
     validate_month_not_closed(entry.account, entry.due_date)
     validate_month_not_closed(entry.account, final_date)
 
-    counterpart = transfer_counterparty(entry)
+    counterpart = (
+        _locked_transfer_counterparty(entry, locked_entries)
+        if locked_entries is not None
+        else transfer_counterparty(entry)
+    )
     realize_counterpart = counterpart is not None and counterpart.status != STATUS_REALIZED
     if realize_counterpart:
         validate_month_not_closed(counterpart.account, counterpart.due_date)
@@ -190,6 +302,7 @@ def realize_transaction(
     return entry
 
 
+@db_transaction.atomic
 def unrealize_transaction(entry: CashFlowEntry, user=None) -> CashFlowEntry:
     """Reverte a realização de um lançamento (usado por Bancos > Conciliação
     ao desfazer uma conciliação).
@@ -200,13 +313,21 @@ def unrealize_transaction(entry: CashFlowEntry, user=None) -> CashFlowEntry:
     contraparte de uma transferência interna é revertida junto, a não ser que
     já esteja cancelada.
     """
+    locked_entries = None
+    if isinstance(entry, CashFlowEntry) and entry.pk is not None:
+        entry, locked_entries = _lock_entry_graph(entry)
+
     if entry.status != STATUS_REALIZED:
         raise ValueError("Lançamento não está realizado.")
     if getattr(entry, "operation_type", None) == OPERATION_INTERNAL_TRANSFER:
         assert_transfer_destination_authorized(user, entry, "update")
 
     assert_entry_period_open(entry, action_label="desfazer a realização de")
-    counterpart = transfer_counterparty(entry)
+    counterpart = (
+        _locked_transfer_counterparty(entry, locked_entries)
+        if locked_entries is not None
+        else transfer_counterparty(entry)
+    )
     revert_counterpart = counterpart is not None
     if revert_counterpart:
         assert_entry_period_open(counterpart, action_label="desfazer a realização de")
@@ -250,7 +371,7 @@ def close_month(
     # O registro é único mesmo depois de uma reabertura. Trancar a conta
     # serializa dois fechamentos concorrentes do mesmo período e permite
     # reativar o registro existente em vez de tentar um novo INSERT.
-    account = FinancialAccount.objects.select_for_update().get(pk=account.pk)
+    account = _lock_accounts([account.pk])[account.pk]
     try:
         month_close = AccountMonthClose.objects.select_for_update().get(
             account=account,
@@ -305,6 +426,7 @@ def reopen_month(
     reason = (reason or "").strip()
     if not reason:
         raise ValueError("O motivo da reabertura é obrigatório.")
+    account = _lock_accounts([account.pk])[account.pk]
     try:
         month_close = AccountMonthClose.objects.select_for_update().get(
             account=account,
@@ -911,6 +1033,13 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None, user=N
     if not can_access_account(user, account.id, "create"):
         raise ValueError("Acesso negado: conta de origem não autorizada para transferência.")
 
+    locked_accounts = _lock_accounts(
+        [account.id, counterparty_account.id if counterparty_account is not None else None]
+    )
+    account = locked_accounts[account.id]
+    if counterparty_account is not None:
+        counterparty_account = locked_accounts[counterparty_account.id]
+
     installments, monthly_amount = _parcelas_e_valor(req)
 
     counterparty_amount = None
@@ -1512,7 +1641,13 @@ def update_transaction_operation(
     escopo escolhido: `all`, `single` ou `current_future`."""
     from core.services import log_audit_event
 
-    entries = operation_entries(tx)
+    if isinstance(tx, CashFlowEntry) and tx.pk is not None:
+        tx, entries = _lock_entry_graph(
+            tx,
+            extra_account_ids=(req.account_id, req.counterparty_account_id),
+        )
+    else:
+        entries = operation_entries(tx)
     if operation_scope == OPERATION_SCOPE_CURRENT_FUTURE:
         _assert_current_future_confirmation(tx.id, current_future_confirmation_token)
     scoped = scoped_entries(tx, entries, operation_scope)
@@ -1558,7 +1693,10 @@ def delete_transaction_or_operation(
 
     if operation_scope == OPERATION_SCOPE_CURRENT_FUTURE:
         _assert_current_future_confirmation(tx.id, current_future_confirmation_token)
-    all_entries = operation_entries(tx) if tx.bank_operation_id else [tx]
+    if isinstance(tx, CashFlowEntry) and tx.pk is not None:
+        tx, all_entries = _lock_entry_graph(tx)
+    else:
+        all_entries = operation_entries(tx) if tx.bank_operation_id else [tx]
     scoped = scoped_entries(tx, all_entries, operation_scope)
     operation_type = tx.operation_type or OPERATION_SINGLE
     if operation_type == OPERATION_INTERNAL_TRANSFER:

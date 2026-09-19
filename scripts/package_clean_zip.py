@@ -41,6 +41,8 @@ EXCLUDED_DIRS = {
     "htmlcov",
     "instance",
     "logs",
+    "media",
+    "staticfiles",
     "tmp",
     "temp",
     "uploads",

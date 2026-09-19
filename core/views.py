@@ -241,45 +241,47 @@ def permissions_view(request):
 
         action = request.POST.get('action')
         if action == 'save_function_permissions':
-            old_keys = sorted(allowed_permission_keys(selected_user))
-            allowed_keys = {
-                key for key in PERMISSION_DEFINITIONS
-                if request.POST.get(f'permission_{key}') == 'on'
-            }
-            if selected_user.id == request.user.id and 'permissions.manage' not in allowed_keys:
-                allowed_keys.add('permissions.manage')
-                messages.warning(request, "Proteção aplicada: você não pode remover o próprio acesso a permissions.manage.")
-            save_function_permissions(selected_user, allowed_keys)
-            log_audit_event(
-                "app_user_permissions", selected_user.id, "update",
-                old_values={"permission_keys": old_keys},
-                new_values={"permission_keys": sorted(allowed_permission_keys(selected_user))},
-                user=request.user,
-            )
+            with transaction.atomic():
+                old_keys = sorted(allowed_permission_keys(selected_user))
+                allowed_keys = {
+                    key for key in PERMISSION_DEFINITIONS
+                    if request.POST.get(f'permission_{key}') == 'on'
+                }
+                if selected_user.id == request.user.id and 'permissions.manage' not in allowed_keys:
+                    allowed_keys.add('permissions.manage')
+                    messages.warning(request, "Proteção aplicada: você não pode remover o próprio acesso a permissions.manage.")
+                save_function_permissions(selected_user, allowed_keys)
+                log_audit_event(
+                    "app_user_permissions", selected_user.id, "update",
+                    old_values={"permission_keys": old_keys},
+                    new_values={"permission_keys": sorted(allowed_permission_keys(selected_user))},
+                    user=request.user,
+                )
             messages.success(request, "Permissões funcionais atualizadas.")
         elif action == 'save_owner_access':
-            old_access = [
-                {"owner_id": a.owner_id, "view": a.can_view, "create": a.can_create, "update": a.can_update, "delete": a.can_delete}
-                for a in owner_access_map(selected_user).values()
-            ]
-            owner_flags: dict[int, dict[str, bool]] = {}
-            for owner in AccountOwner.objects.all():
-                owner_flags[owner.id] = {
-                    'view': request.POST.get(f'owner_{owner.id}_view') == 'on',
-                    'create': request.POST.get(f'owner_{owner.id}_create') == 'on',
-                    'update': request.POST.get(f'owner_{owner.id}_update') == 'on',
-                    'delete': request.POST.get(f'owner_{owner.id}_delete') == 'on',
-                }
-            save_owner_access_matrix(selected_user, owner_flags)
-            new_access = [
-                {"owner_id": a.owner_id, "view": a.can_view, "create": a.can_create, "update": a.can_update, "delete": a.can_delete}
-                for a in owner_access_map(selected_user).values()
-            ]
-            log_audit_event(
-                "app_user_owner_access", selected_user.id, "update",
-                old_values={"access": old_access}, new_values={"access": new_access},
-                user=request.user,
-            )
+            with transaction.atomic():
+                old_access = [
+                    {"owner_id": a.owner_id, "view": a.can_view, "create": a.can_create, "update": a.can_update, "delete": a.can_delete}
+                    for a in owner_access_map(selected_user).values()
+                ]
+                owner_flags: dict[int, dict[str, bool]] = {}
+                for owner in AccountOwner.objects.all():
+                    owner_flags[owner.id] = {
+                        'view': request.POST.get(f'owner_{owner.id}_view') == 'on',
+                        'create': request.POST.get(f'owner_{owner.id}_create') == 'on',
+                        'update': request.POST.get(f'owner_{owner.id}_update') == 'on',
+                        'delete': request.POST.get(f'owner_{owner.id}_delete') == 'on',
+                    }
+                save_owner_access_matrix(selected_user, owner_flags)
+                new_access = [
+                    {"owner_id": a.owner_id, "view": a.can_view, "create": a.can_create, "update": a.can_update, "delete": a.can_delete}
+                    for a in owner_access_map(selected_user).values()
+                ]
+                log_audit_event(
+                    "app_user_owner_access", selected_user.id, "update",
+                    old_values={"access": old_access}, new_values={"access": new_access},
+                    user=request.user,
+                )
             messages.success(request, "Acessos por titular atualizados.")
         elif action == 'save_transfer_destinations':
             # A matriz e sua trilha de auditoria formam um único ato

@@ -112,6 +112,7 @@ def test_conceder_privilegio_exige_administrator(acao):
     gravar_titulares.assert_not_called()
 
 
+@pytest.mark.django_db
 def test_administrator_continua_concedendo():
     """A trava fecha o escalonamento sem tirar a tela de quem administra."""
     with (

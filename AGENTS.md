@@ -30,10 +30,12 @@ Antes de alterar, leia a fonte pertinente:
 - `compose.yaml`, `compose.dev.yaml` e `Dockerfile`: execução efetiva;
 - models, migrations e testes: schema e controles automatizados.
 
-Preserve alterações locais não relacionadas. O fluxo atual é
-`urls -> views -> services -> models`, sem camada de repositories: consultas
-vivem nos services e, quando triviais, na view. Uma camada nova é bem-vinda se
-simplificar o código de verdade — registre o motivo em `docs/architecture.md`.
+Preserve alterações locais não relacionadas. O fluxo padrão é
+`urls -> views -> services -> models`; consultas vivem nos services e, quando
+triviais, na view. Não crie repositories ou query objects pass-through por
+convenção, mas eles são permitidos quando encapsularem consultas reutilizadas,
+cache, isolamento de persistência ou uma fronteira de teste que simplifique o
+código de verdade — registre o motivo em `docs/architecture.md`.
 
 ## Comandos válidos
 
@@ -124,9 +126,10 @@ exatas é o `quality`, com `uv sync --locked`. Se o venv se comportar diferente
 do contêiner numa questão de versão, o contêiner é quem está certo.
 
 Os dois ambientes acham defeitos diferentes, então nenhum substitui o outro.
-O venv é Windows; o contêiner é Linux e é o único lugar com `ruff` e
-`pip-audit` na versão que a CI usa. Itere no venv e passe pelo `quality`
-antes de commitar.
+O venv é Windows; o contêiner é Linux e é a fonte oficial das versões de
+`ruff` e `pip-audit` usadas pela CI. Itere no venv e passe pelo `quality` antes
+de commitar; um runner alternativo só é aceitável se reproduzir o mesmo lock,
+as mesmas verificações e o mesmo isolamento.
 
 ## Dados e ações destrutivas
 
@@ -170,9 +173,11 @@ backups sem autorização inequívoca.
 - datas/horas persistidas usam timezone;
 - autorização por titular e permissões são controles de servidor;
 - preferências de visibilidade não são permissões;
-- a projeção recorrente automática é disparada pelo middleware em requisições
-  autenticadas, uma vez no mês a partir do dia configurado; o botão manual
-  permanece disponível e a rotina é idempotente.
+- a projeção recorrente automática é disparada hoje pelo middleware em
+  requisições autenticadas, uma vez no mês a partir do dia configurado; o
+  botão manual permanece disponível e a rotina é idempotente. Um worker,
+  scheduler ou fila pode substituir o gatilho se preservar idempotência,
+  auditoria, retry seguro e execução coordenada entre processos.
 
 Consulte `docs/domain.md` antes de alterar saldos, recorrências, transferências,
 fechamentos, importação ou conciliação.
@@ -232,10 +237,12 @@ qualquer operação de produção.
 As versões suportadas são Python 3.14, PostgreSQL 17 e **Django 6.1**; faixas
 completas ficam em `pyproject.toml` e as versões exatas em `uv.lock`.
 
-O build é reprodutível: as dependências vêm do `uv.lock`, com versão e hash
-SHA-256 fixados, e a imagem base está presa por digest. Só a camada de pacotes
-do sistema flutua, de propósito: o `apt-get upgrade` do `Dockerfile` aplica
-correção de CVE do Debian antes de a imagem oficial ser republicada.
+O conjunto Python é reprodutível: as dependências vêm do `uv.lock`, com versão
+e hash SHA-256 fixados, o instalador `uv`/ferramentas de empacotamento são
+fixados no `Dockerfile` e a imagem base está presa por digest. A camada de
+pacotes do sistema ainda pode flutuar, de propósito, para receber correções;
+se for necessário reproduzir um artefato byte a byte, use uma imagem de
+pacotes atualizada e versionada, ou registre os digests gerados.
 
 O projeto subiu do Django 5.2 para o 6.1 em 08/09/2026, com a suíte inteira
 passando. Ao mexer em algo que dependa de comportamento do framework, confira
