@@ -143,12 +143,14 @@ jobs:
           docker save controle-bancario:local -o "$RUNNER_TEMP/imagem.tar"
           # O banco do Trivy tem mais de 100 MiB; 64 MiB fazia a varredura
           # falhar por espaço no tmpfs, não por vulnerabilidade.
+          mkdir -p "$RUNNER_TEMP/trivy-cache"
           docker run --rm \
             --read-only \
             --cap-drop=ALL \
             --security-opt=no-new-privileges:true \
-            --tmpfs /tmp:rw,noexec,nosuid,size=512m \
-             -v "$RUNNER_TEMP:/varredura:ro" \
+            --tmpfs /tmp:rw,noexec,nosuid,size=256m \
+            -v "$RUNNER_TEMP:/varredura:ro" \
+            -v "$RUNNER_TEMP/trivy-cache:/tmp/trivy-cache:rw" \
             aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
             --cache-dir /tmp/trivy-cache \
             image --input /varredura/imagem.tar \
