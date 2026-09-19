@@ -141,12 +141,12 @@ jobs:
         run: |
           set -euo pipefail
           docker save controle-bancario:local -o "$RUNNER_TEMP/imagem.tar"
+          # O banco do Trivy tem mais de 100 MiB; 64 MiB fazia a varredura
+          # falhar por espaço no tmpfs, não por vulnerabilidade.
           docker run --rm \
             --read-only \
             --cap-drop=ALL \
             --security-opt=no-new-privileges:true \
-            # O banco do Trivy tem mais de 100 MiB; 64 MiB fazia a varredura
-            # falhar por espaço no tmpfs, não por vulnerabilidade.
             --tmpfs /tmp:rw,noexec,nosuid,size=256m \
              -v "$RUNNER_TEMP:/varredura:ro" \
             aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
