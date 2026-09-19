@@ -150,6 +150,10 @@ FROM base AS runtime
 # resolveriam para o interpretador do sistema, que nao tem as dependencias.
 ENV PATH="/opt/venv/bin:${PATH}"
 
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system app \
     && useradd --system --gid app --no-create-home --home-dir /workspace app \
     && mkdir -p /workspace/staticfiles /workspace/logs /workspace/media \
