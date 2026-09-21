@@ -710,6 +710,13 @@ def metadata_v3_view(request):
             "contas": True,
             "atividades": True,
             "categorias": True,
+            # O Controle Bancário possui fatos de caixa, não um livro de
+            # investimentos. Declare as capacidades analíticas para que o
+            # consumidor mostre indisponibilidade, em vez de inferir métricas.
+            "fluxos": True,
+            "renda": False,
+            "performance": False,
+            "eventos": False,
             "escrita": False,
             "paginacao_atividades": True,
         },

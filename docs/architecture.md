@@ -114,3 +114,20 @@ inicial cuja data cair no intervalo vira `ajuste_de_base`. Os grupos nunca
 misturam moedas e não expõem movimentos individuais.
 Foto e fluxos são lidos sob o mesmo snapshot `REPEATABLE READ`; a agregação
 dos lançamentos ocorre no PostgreSQL antes de os grupos chegarem à aplicação.
+
+### Extensão somente leitura v3 para o shell
+
+As rotas `/patrimonio/v3/activities`, `/categories` e `/metadata` ampliam a
+publicação sem alterar v1 ou v2. Atividades são lançamentos persistidos, com
+paginação, filtros e IDs opacos; categorias e metadados permitem ao consumidor
+montar filtros e links sem copiar tabelas.
+
+O metadata declara também as capacidades analíticas da fonte. `fluxos` é
+verdadeiro porque o caixa agregado já é publicado em v2. `renda`,
+`performance` e `eventos` são falsos: este sistema não mantém um livro de
+investimentos, uma série de retorno de carteira ou uma entidade de eventos do
+shell. O consumidor deve exibir o estado indisponível correspondente, sem
+reconstruir essas métricas a partir de saldos ou inventar registros.
+
+Todas as rotas v3 são GET-only, usam o Bearer de patrimônio e não oferecem
+qualquer caminho de escrita.
