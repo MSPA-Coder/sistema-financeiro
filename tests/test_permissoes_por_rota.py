@@ -54,6 +54,18 @@ ROTAS_ABERTAS: dict[str, str] = {
         "integracao maquina a maquina: mesma autorizacao Bearer da v1, com "
         "agregados diarios realizados; nao ha sessao nem usuario neste sistema."
     ),
+    "patrimonio/v3/activities": (
+        "integracao maquina a maquina: mesma autorizacao Bearer da v1/v2, "
+        "somente leitura e sem sessao de usuario."
+    ),
+    "patrimonio/v3/categories": (
+        "integracao maquina a maquina: mesma autorizacao Bearer da v1/v2, "
+        "somente leitura e sem sessao de usuario."
+    ),
+    "patrimonio/v3/metadata": (
+        "integracao maquina a maquina: mesma autorizacao Bearer da v1/v2, "
+        "somente leitura e sem sessao de usuario."
+    ),
     "change-password/": "todo usuario troca a propria senha, sempre",
     "inicio/": (
         "nao e tela: resolve para onde a pessoa pode ir e redireciona. Exigir "

@@ -14,6 +14,9 @@ urlpatterns = [
     # conviver com a versão antiga enquanto ele não é atualizado.
     path("patrimonio/v1/resumo", patrimonio.resumo_view, name="resumo_patrimonial"),
     path("patrimonio/v2/resumo", patrimonio.resumo_v2_view, name="resumo_patrimonial_v2"),
+    path("patrimonio/v3/activities", patrimonio.atividades_v3_view, name="atividades_patrimoniais_v3"),
+    path("patrimonio/v3/categories", patrimonio.categorias_v3_view, name="categorias_patrimoniais_v3"),
+    path("patrimonio/v3/metadata", patrimonio.metadata_v3_view, name="metadata_patrimonial_v3"),
 
     path("permissions/", views.permissions_view, name="permissions"),
 

@@ -43,6 +43,9 @@ pytestmark = pytest.mark.django_db
 TOKEN = "token-de-teste-com-mais-de-trinta-e-dois-caracteres"
 ROTA = "/patrimonio/v1/resumo"
 ROTA_V2 = "/patrimonio/v2/resumo"
+ROTA_V3_ATIVIDADES = "/patrimonio/v3/activities"
+ROTA_V3_CATEGORIAS = "/patrimonio/v3/categories"
+ROTA_V3_METADATA = "/patrimonio/v3/metadata"
 
 
 @pytest.fixture
@@ -101,6 +104,11 @@ def pedir(token: str | None = TOKEN, **parametros):
 def pedir_v2(token: str | None = TOKEN, **parametros):
     cabecalhos = {"HTTP_AUTHORIZATION": f"Bearer {token}"} if token is not None else {}
     return Client().get(ROTA_V2, parametros, **cabecalhos)
+
+
+def pedir_v3(rota, token: str | None = TOKEN, **parametros):
+    cabecalhos = {"HTTP_AUTHORIZATION": f"Bearer {token}"} if token is not None else {}
+    return Client().get(rota, parametros, **cabecalhos)
 
 
 # --- A chave é a permissão -------------------------------------------------
@@ -466,3 +474,84 @@ def test_v2_valida_intervalo_e_datas(contas, com_token, parametros, mensagem):
 )
 def test_identidade_normaliza_o_nome(nome, esperado):
     assert patrimonio.identidade(nome) == esperado
+
+
+# --- A extensão somente leitura v3 ----------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+def test_v3_atividades_sao_detalhadas_ordenadas_e_tem_ids_opacos(contas, com_token):
+    resposta = pedir_v3(ROTA_V3_ATIVIDADES, page_size=10)
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["contrato"] == "patrimonio/v3"
+    assert corpo["recurso"] == "atividades"
+    assert [item["descricao"] for item in corpo["itens"]] == ["Conta de luz", "Salário"]
+    item = corpo["itens"][0]
+    assert item["id"].startswith("controle-bancario:atividade:")
+    assert not item["id"].endswith(str(contas["em_reais"].id))
+    assert item["conta"]["id"].startswith("controle-bancario:conta:")
+    assert item["categoria"]["natureza"] == "gerencial"
+    assert item["deep_link"].startswith("/transaction/")
+    # O link é local e não uma URL arbitrária fornecida por dados externos.
+    assert item["conta"]["deep_link"].startswith("/banking/accounts/")
+
+
+@pytest.mark.django_db(transaction=True)
+def test_v3_atividades_tem_paginacao_deterministica(contas, com_token):
+    primeira = pedir_v3(ROTA_V3_ATIVIDADES, page_size=1, page=1).json()
+    segunda = pedir_v3(ROTA_V3_ATIVIDADES, page_size=1, page=2).json()
+
+    assert primeira["paginacao"] == {
+        "pagina": 1,
+        "tamanho": 1,
+        "total": 2,
+        "paginas": 2,
+        "tem_anterior": False,
+        "tem_proxima": True,
+        "anterior": None,
+        "proxima": "/patrimonio/v3/activities?page=2&page_size=1",
+    }
+    assert segunda["itens"][0]["id"] != primeira["itens"][0]["id"]
+    assert segunda["paginacao"]["tem_anterior"] is True
+
+
+@pytest.mark.django_db(transaction=True)
+def test_v3_categorias_e_metadata_publicam_so_o_que_existe(contas, com_token):
+    categorias = pedir_v3(ROTA_V3_CATEGORIAS).json()
+    metadata = pedir_v3(ROTA_V3_METADATA).json()
+
+    assert categorias["recurso"] == "categorias"
+    assert [item["nome"] for item in categorias["itens"]] == ["Salário"]
+    assert categorias["itens"][0]["id"].startswith("controle-bancario:categoria:")
+    assert categorias["itens"][0]["deep_link"] == "/tables/categories/"
+    assert metadata["capacidades"]["escrita"] is False
+    assert metadata["moedas"] == ["BRL", "USD"]
+    assert len(metadata["contas"]) == 2
+    assert len(metadata["categorias"]) == 1
+    assert metadata["periodo_disponivel"] == {
+        "inicio": "2026-01-10",
+        "fim": "2026-02-10",
+    }
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("rota", [ROTA_V3_ATIVIDADES, ROTA_V3_CATEGORIAS, ROTA_V3_METADATA])
+def test_v3_exige_bearer_e_so_responde_a_get(contas, com_token, rota):
+    sem_token = Client().get(rota)
+    post = Client().post(rota, HTTP_AUTHORIZATION=f"Bearer {TOKEN}")
+
+    assert sem_token.status_code == 401
+    assert post.status_code == 405
+
+
+@pytest.mark.django_db(transaction=True)
+def test_v3_filtra_por_id_opaco_e_recusa_referencia_desconhecida(contas, com_token):
+    metadata = pedir_v3(ROTA_V3_METADATA).json()
+    conta_id = metadata["contas"][0]["id"]
+    resposta = pedir_v3(ROTA_V3_ATIVIDADES, conta=conta_id)
+
+    assert resposta.status_code == 200
+    assert all(item["conta"]["id"] == conta_id for item in resposta.json()["itens"])
+    assert pedir_v3(ROTA_V3_ATIVIDADES, conta="controle-bancario:conta:desconhecida").status_code == 400

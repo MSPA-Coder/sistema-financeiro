@@ -51,6 +51,7 @@ de todas as contas deste sistema. Guarde-o como se guarda uma senha de banco.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
@@ -60,8 +61,9 @@ from datetime import date, timedelta
 from decimal import Decimal
 from urllib.parse import urlencode
 
+from django.core.paginator import Paginator
 from django.db import connection, transaction
-from django.db.models import Case, CharField, Count, F, Sum, Value, When
+from django.db.models import Case, CharField, Count, DateField, F, Max, Min, Sum, Value, When
 from django.http import JsonResponse
 from django.urls import reverse
 from django.utils import timezone
@@ -75,14 +77,17 @@ from core.domain.finance import (
     CATEGORY_KIND_TRANSFER,
     ENTRY_TYPE_INCOME,
     OPERATION_INTERNAL_TRANSFER,
+    STATUS_PENDING,
+    STATUS_PROJECTED,
     STATUS_REALIZED,
     VIEW_REALIZED,
 )
 from reports.services import decimal_balances_before_by_account
-from transactions.models import CashFlowEntry
+from transactions.models import CashFlowCategory, CashFlowEntry
 
 CONTRATO = "patrimonio/v1"
 CONTRATO_V2 = "patrimonio/v2"
+CONTRATO_V3 = "patrimonio/v3"
 SISTEMA = "controle-bancario"
 
 #: O token não tem valor padrão e não é gerado: sem ele configurado, a rota não
@@ -94,8 +99,84 @@ COMPRIMENTO_MINIMO_DO_TOKEN = 32
 # anos impede uma consulta acidentalmente sem limite sem bloquear esses usos.
 MAX_FLUXO_DIAS = 3654
 MONEY_QUANT = Decimal("0.01")
+V3_PAGE_SIZE = 50
+V3_MAX_PAGE_SIZE = 100
 
 logger = logging.getLogger(__name__)
+
+
+def _id_v3(recurso: str, valor: int) -> str:
+    """Identificador estável que não revela a chave primária do banco.
+
+    O contrato não precisa resolver esses ids de volta: os links publicados
+    pela fonte apontam para a tela local. Assim a API pode manter ids opacos
+    sem adicionar uma tabela de mapeamento ou uma segunda verdade persistida.
+    """
+    material = f"{SISTEMA}:{recurso}:{valor}".encode()
+    digest = hashlib.sha256(material).hexdigest()[:24]
+    return f"{SISTEMA}:{recurso}:{digest}"
+
+
+def _autorizacao_v3(request):
+    """Retorna uma resposta de erro ou ``None`` quando o Bearer é válido."""
+    esperado = _token_configurado()
+    if not esperado:
+        return JsonResponse(
+            {"erro": "integração de patrimônio não configurada neste servidor"},
+            status=503,
+        )
+    recebido = _token_da_requisicao(request)
+    if not recebido or not secrets.compare_digest(recebido, esperado):
+        logger.warning("Contrato patrimonial v3 recusado: token ausente ou inválido.")
+        return JsonResponse({"erro": "não autorizado"}, status=401)
+    return None
+
+
+def _paginacao_v3(request):
+    """Lê os parâmetros de página, mantendo aliases em português."""
+    bruto_pagina = request.GET.get("page", request.GET.get("pagina", "1"))
+    bruto_tamanho = request.GET.get("page_size", request.GET.get("tamanho", str(V3_PAGE_SIZE)))
+    try:
+        pagina = int(bruto_pagina)
+        tamanho = int(bruto_tamanho)
+    except (TypeError, ValueError):
+        raise ValueError("page e page_size devem ser inteiros positivos") from None
+    if pagina < 1 or tamanho < 1 or tamanho > V3_MAX_PAGE_SIZE:
+        raise ValueError(f"page deve ser positivo e page_size deve estar entre 1 e {V3_MAX_PAGE_SIZE}")
+    return pagina, tamanho
+
+
+def _link_pagina_v3(request, numero: int) -> str:
+    params = request.GET.copy()
+    params.pop("page", None)
+    params.pop("pagina", None)
+    pares = [("page", str(numero))]
+    for chave in sorted(params):
+        pares.extend((chave, valor) for valor in params.getlist(chave))
+    return f"{request.path}?{urlencode(pares)}"
+
+
+def _intervalo_v3(request, *, required: bool = False) -> tuple[date | None, date | None]:
+    bruto_inicio = request.GET.get("inicio", "")
+    bruto_fim = request.GET.get("fim", "")
+    if required and not bruto_inicio and not bruto_fim:
+        raise ValueError("informe inicio ou fim para o período")
+    try:
+        inicio = _data_da_query(bruto_inicio, "inicio") if bruto_inicio else None
+        fim = _data_da_query(bruto_fim, "fim") if bruto_fim else None
+    except ValueError as erro:
+        raise ValueError(str(erro)) from None
+    if inicio and fim and inicio > fim:
+        raise ValueError("inicio não pode ser posterior a fim")
+    if inicio and fim and (fim - inicio).days + 1 > MAX_FLUXO_DIAS:
+        raise ValueError(f"intervalo excede o limite de {MAX_FLUXO_DIAS} dias")
+    return inicio, fim
+
+
+def _resposta_v3(payload: dict) -> JsonResponse:
+    resposta = JsonResponse(payload)
+    resposta["Cache-Control"] = "no-store"
+    return resposta
 
 
 def identidade(nome: str) -> str:
@@ -418,3 +499,226 @@ def resumo_v2_view(request):
     resultado = JsonResponse(resposta)
     resultado["Cache-Control"] = "no-store"
     return resultado
+
+
+def _contas_v3() -> list[FinancialAccount]:
+    return list(
+        FinancialAccount.objects.select_related("owner", "institution").order_by("id")
+    )
+
+
+def _conta_v3(conta: FinancialAccount) -> dict:
+    return {
+        "id": _id_v3("conta", conta.id),
+        "nome": conta.account_name,
+        "moeda": conta.currency,
+        "titular": identidade(conta.owner.name),
+        "instituicao": identidade(conta.institution.institution_name),
+        "deep_link": endereco_da_conta(conta, timezone.localdate()),
+    }
+
+
+def _categoria_v3(categoria) -> dict:
+    return {
+        "id": _id_v3("categoria", categoria.id),
+        "nome": categoria.category_name,
+        "natureza": categoria.kind,
+        "criada_em": categoria.created_at.isoformat(),
+        "atualizada_em": categoria.updated_at.isoformat(),
+        "deep_link": reverse("transactions:categories_view"),
+    }
+
+
+def _mapa_ids_v3(model, recurso: str) -> dict[str, int]:
+    return {
+        _id_v3(recurso, int(pk)): int(pk)
+        for pk in model.objects.values_list("id", flat=True)
+    }
+
+
+def _atividade_v3(entry: CashFlowEntry) -> dict:
+    conta = entry.account
+    categoria = entry.category
+    data_atividade = entry.realized_date or entry.due_date
+    operacao = None
+    if entry.bank_operation_id:
+        operacao = {
+            "id": _id_v3("operacao", entry.bank_operation_id),
+            "tipo": entry.operation_type,
+            "parcela": entry.current_installment,
+            "total_parcelas": entry.installments,
+        }
+    return {
+        "id": _id_v3("atividade", entry.id),
+        "data": data_atividade.isoformat(),
+        "data_vencimento": entry.due_date.isoformat(),
+        "data_realizacao": entry.realized_date.isoformat() if entry.realized_date else None,
+        "descricao": entry.description,
+        "tipo": entry.entry_type,
+        "status": entry.status,
+        "moeda": conta.currency,
+        "valor_previsto": str(entry.entry_amount.quantize(MONEY_QUANT)),
+        "valor_realizado": (
+            str(entry.realized_amount.quantize(MONEY_QUANT))
+            if entry.realized_amount is not None
+            else None
+        ),
+        "conta": {
+            "id": _id_v3("conta", conta.id),
+            "nome": conta.account_name,
+            "titular": identidade(conta.owner.name),
+            "instituicao": identidade(conta.institution.institution_name),
+            "deep_link": endereco_da_conta(conta, data_atividade),
+        },
+        "categoria": {
+            "id": _id_v3("categoria", categoria.id),
+            "nome": categoria.category_name,
+            "natureza": categoria.kind,
+            "deep_link": reverse("transactions:categories_view"),
+        },
+        "operacao": operacao,
+        "deep_link": reverse("transactions:transaction_edit", kwargs={"tx_id": entry.id}),
+    }
+
+
+@require_GET
+def atividades_v3_view(request):
+    """Atividades individuais, somente leitura e com paginação estável.
+
+    A rota usa o mesmo Bearer global dos contratos patrimoniais existentes.
+    Ela não cria escopo de titular novo nem oferece mutações; a exposição é
+    deliberadamente limitada aos campos já persistidos no lançamento.
+    """
+    erro = _autorizacao_v3(request)
+    if erro:
+        return erro
+    try:
+        inicio, fim = _intervalo_v3(request)
+        pagina, tamanho = _paginacao_v3(request)
+    except ValueError as exc:
+        return JsonResponse({"erro": str(exc)}, status=400)
+
+    account_ids = _mapa_ids_v3(FinancialAccount, "conta")
+    category_ids = _mapa_ids_v3(CashFlowCategory, "categoria")
+    conta_ref = request.GET.get("conta", "")
+    categoria_ref = request.GET.get("categoria", "")
+    try:
+        conta_id = account_ids[conta_ref] if conta_ref else None
+        categoria_id = category_ids[categoria_ref] if categoria_ref else None
+    except KeyError:
+        return JsonResponse({"erro": "conta ou categoria desconhecida"}, status=400)
+
+    status = request.GET.get("status", "")
+    if status and status not in {STATUS_PROJECTED, STATUS_PENDING, STATUS_REALIZED}:
+        return JsonResponse({"erro": "status inválido"}, status=400)
+    natureza_filtro = request.GET.get("natureza", "")
+    naturezas = {CATEGORY_KIND_MANAGERIAL, CATEGORY_KIND_MOVEMENT, CATEGORY_KIND_TRANSFER}
+    if natureza_filtro and natureza_filtro not in naturezas:
+        return JsonResponse({"erro": "natureza inválida"}, status=400)
+
+    data_atividade = Case(
+        When(realized_date__isnull=False, then=F("realized_date")),
+        default=F("due_date"),
+        output_field=DateField(),
+    )
+    queryset = (
+        CashFlowEntry.objects.select_related("account__owner", "account__institution", "category")
+        .annotate(data_atividade=data_atividade)
+        .order_by("-data_atividade", "-id")
+    )
+    if inicio:
+        queryset = queryset.filter(data_atividade__gte=inicio)
+    if fim:
+        queryset = queryset.filter(data_atividade__lte=fim)
+    if conta_id:
+        queryset = queryset.filter(account_id=conta_id)
+    if categoria_id:
+        queryset = queryset.filter(category_id=categoria_id)
+    if status:
+        queryset = queryset.filter(status=status)
+    if natureza_filtro:
+        queryset = queryset.filter(category__kind=natureza_filtro)
+
+    paginado = Paginator(queryset, tamanho).get_page(pagina)
+    numero_paginas = paginado.paginator.num_pages
+    paginacao = {
+        "pagina": paginado.number,
+        "tamanho": tamanho,
+        "total": paginado.paginator.count,
+        "paginas": numero_paginas,
+        "tem_anterior": paginado.has_previous(),
+        "tem_proxima": paginado.has_next(),
+        "anterior": _link_pagina_v3(request, paginado.previous_page_number()) if paginado.has_previous() else None,
+        "proxima": _link_pagina_v3(request, paginado.next_page_number()) if paginado.has_next() else None,
+    }
+    return _resposta_v3({
+        "contrato": CONTRATO_V3,
+        "recurso": "atividades",
+        "sistema": SISTEMA,
+        "gerado_em": timezone.now().isoformat(),
+        "filtros": {
+            "inicio": inicio.isoformat() if inicio else None,
+            "fim": fim.isoformat() if fim else None,
+            "conta": conta_ref or None,
+            "categoria": categoria_ref or None,
+            "status": status or None,
+            "natureza": natureza_filtro or None,
+        },
+        "paginacao": paginacao,
+        "itens": [_atividade_v3(entry) for entry in paginado.object_list],
+    })
+
+
+@require_GET
+def categorias_v3_view(request):
+    """Categorias persistidas, em ordem determinística e somente leitura."""
+    erro = _autorizacao_v3(request)
+    if erro:
+        return erro
+    categorias = CashFlowCategory.objects.order_by("category_name", "id")
+    natureza = request.GET.get("natureza", "")
+    if natureza:
+        if natureza not in {CATEGORY_KIND_MANAGERIAL, CATEGORY_KIND_MOVEMENT, CATEGORY_KIND_TRANSFER}:
+            return JsonResponse({"erro": "natureza inválida"}, status=400)
+        categorias = categorias.filter(kind=natureza)
+    return _resposta_v3({
+        "contrato": CONTRATO_V3,
+        "recurso": "categorias",
+        "sistema": SISTEMA,
+        "gerado_em": timezone.now().isoformat(),
+        "itens": [_categoria_v3(categoria) for categoria in categorias],
+    })
+
+
+@require_GET
+def metadata_v3_view(request):
+    """Metadados estáveis para montar filtros e links sem duplicar o domínio."""
+    erro = _autorizacao_v3(request)
+    if erro:
+        return erro
+    contas = _contas_v3()
+    categorias = list(CashFlowCategory.objects.order_by("category_name", "id"))
+    datas = CashFlowEntry.objects.aggregate(
+        inicio=Min("due_date"), fim=Max("due_date")
+    )
+    return _resposta_v3({
+        "contrato": CONTRATO_V3,
+        "recurso": "metadata",
+        "sistema": SISTEMA,
+        "gerado_em": timezone.now().isoformat(),
+        "capacidades": {
+            "contas": True,
+            "atividades": True,
+            "categorias": True,
+            "escrita": False,
+            "paginacao_atividades": True,
+        },
+        "paginacao": {"padrao": V3_PAGE_SIZE, "maximo": V3_MAX_PAGE_SIZE},
+        "periodo_disponivel": {
+            "inicio": datas["inicio"].isoformat() if datas["inicio"] else None,
+            "fim": datas["fim"].isoformat() if datas["fim"] else None,
+        },
+        "moedas": sorted({conta.currency for conta in contas}),
+        "contas": [_conta_v3(conta) for conta in contas],
+        "categorias": [_categoria_v3(categoria) for categoria in categorias],
+    })
