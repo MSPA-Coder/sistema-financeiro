@@ -540,6 +540,17 @@ def test_v3_categorias_e_metadata_publicam_so_o_que_existe(contas, com_token):
     }
 
 
+def test_v3_categoria_tolera_timestamp_legado_ausente(contas):
+    categoria = CashFlowCategory.objects.first()
+    categoria.created_at = None
+    categoria.updated_at = None
+
+    payload = patrimonio._categoria_v3(categoria)
+
+    assert payload["criada_em"] is None
+    assert payload["atualizada_em"] is None
+
+
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.parametrize("rota", [ROTA_V3_ATIVIDADES, ROTA_V3_CATEGORIAS, ROTA_V3_METADATA])
 def test_v3_exige_bearer_e_so_responde_a_get(contas, com_token, rota):
