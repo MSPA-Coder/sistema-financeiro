@@ -523,8 +523,10 @@ def _categoria_v3(categoria) -> dict:
         "id": _id_v3("categoria", categoria.id),
         "nome": categoria.category_name,
         "natureza": categoria.kind,
-        "criada_em": categoria.created_at.isoformat(),
-        "atualizada_em": categoria.updated_at.isoformat(),
+        # Registros legados podem não ter os timestamps preenchidos. O
+        # contrato publica a ausência como null em vez de derrubar metadata.
+        "criada_em": categoria.created_at.isoformat() if categoria.created_at else None,
+        "atualizada_em": categoria.updated_at.isoformat() if categoria.updated_at else None,
         "deep_link": reverse("transactions:categories_view"),
     }
 
