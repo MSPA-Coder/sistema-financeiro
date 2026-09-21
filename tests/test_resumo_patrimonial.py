@@ -527,6 +527,10 @@ def test_v3_categorias_e_metadata_publicam_so_o_que_existe(contas, com_token):
     assert categorias["itens"][0]["id"].startswith("controle-bancario:categoria:")
     assert categorias["itens"][0]["deep_link"] == "/tables/categories/"
     assert metadata["capacidades"]["escrita"] is False
+    assert metadata["capacidades"]["fluxos"] is True
+    assert metadata["capacidades"]["renda"] is False
+    assert metadata["capacidades"]["performance"] is False
+    assert metadata["capacidades"]["eventos"] is False
     assert metadata["moedas"] == ["BRL", "USD"]
     assert len(metadata["contas"]) == 2
     assert len(metadata["categorias"]) == 1
