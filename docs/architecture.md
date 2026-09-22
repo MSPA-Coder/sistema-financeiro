@@ -88,6 +88,30 @@ Lançamentos usa (edição inline e opções de filtro/formulário). O detalhe d
 conta resolve o recorte uma vez e calcula previsto e realizado sobre ele, sem
 tocar a sessão.
 
+### Custo em consultas: o que foi medido e o que ficou de fora
+
+`tests/test_teto_consultas.py` guarda Lançamentos e dashboard de dois jeitos:
+um teto por tela e um teste de escala, que compara a mesma tela com uma e com
+cinco rodadas de lançamentos (simples, parcelado e transferência). Em
+22/09/2026 as duas telas não cresciam com as linhas -- não havia N+1.
+
+No mesmo dia, `EXPLAIN ANALYZE` sobre a cópia local do banco (742 lançamentos,
+552 kB; a conta maior com 206) deu entre 0,1 e 0,2 ms para a listagem e para o
+saldo de abertura nos modos realizado, todos e a vencer, sempre por índice.
+Por isso ficaram de fora, de propósito:
+
+- índices novos, inclusive o funcional sobre a data de saldo
+  (`CASE status WHEN realizado THEN realized_date ELSE due_date`), que o modo
+  todos filtra depois do índice por conta. Ele só passa a valer com dezenas de
+  milhares de linhas por conta;
+- paginação do extrato: o saldo corrente precisa de todas as linhas do período,
+  que já é de um mês e tem o teto `REPORT_MAX_ENTRIES`;
+- reaproveitar em `compute_statement` as linhas que `list_transactions_for_view`
+  e `entries_for_period` leem do mesmo período. Economiza uma consulta
+  submilissegundo e mexe no saldo corrente.
+
+Se o volume mudar de ordem de grandeza, refaça a medição antes de otimizar.
+
 Cada app versiona seu schema em `<app>/migrations/`. Bancos novos e existentes
 são atualizados exclusivamente por `manage.py migrate`; o serviço `migrate`
 termina com sucesso antes de `web` iniciar.
