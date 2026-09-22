@@ -93,6 +93,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # Antes de tudo que lê configuração, inclusive a projeção recorrente no
+    # fim da lista: o memo tem de estar aberto enquanto a requisição corre.
+    'core.memo_requisicao.MemoRequisicaoMiddleware',
     # WhiteNoise serve o STATIC_ROOT gerado por `collectstatic`. Em
     # desenvolvimento esse diretorio nao existe (quem serve e o app
     # `staticfiles`), entao o middleware e inserido logo abaixo apenas quando

@@ -4,15 +4,25 @@ from decimal import Decimal
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from accounts.models import AccountOwner, UserOwnerAccess
 from accounts.services import save_function_permissions
 from banking.models import FinancialAccount, FinancialInstitution
-from core.domain.finance import ENTRY_TYPE_EXPENSE, ENTRY_TYPE_INCOME, STATUS_REALIZED
+from core.domain.finance import (
+    ENTRY_TYPE_EXPENSE,
+    ENTRY_TYPE_INCOME,
+    STATUS_PROJECTED,
+    STATUS_REALIZED,
+    VIEW_PROJECTED,
+    VIEW_REALIZED,
+)
 from core.domain.identity import USER_TYPE_USER
 from transactions.models import AccountMonthClose, CashFlowCategory, CashFlowEntry
+from transactions.services import build_transactions_view_context
 
 pytestmark = pytest.mark.django_db
 
@@ -76,6 +86,67 @@ def test_account_detail_uses_the_end_of_a_selected_closed_month(account_detail_s
 
     assert response.status_code == 200
     assert response.context["reference_date"] == date(2026, 3, 31)
+
+
+@pytest.mark.parametrize("mode, chave", [(VIEW_REALIZED, "realizado"), (VIEW_PROJECTED, "previsto")])
+def test_account_detail_totals_match_the_transactions_screen(account_detail_setup, mode, chave):
+    """Detalhe e Lançamentos calculam o mesmo extrato; os totais não divergem.
+
+    O detalhe resolve o recorte uma vez e calcula os dois modos sobre ele. Este
+    teste é o que garante que o atalho não mudou o resultado.
+    """
+    user, account = account_detail_setup
+    hoje = date.today()
+    # Previsto só lista o que vence de hoje em diante; um lançamento no mês
+    # corrente é o que faz o bloco previsto diferir do realizado.
+    CashFlowEntry.objects.create(
+        account=account, category=CashFlowCategory.objects.get(), entry_type=ENTRY_TYPE_EXPENSE,
+        description="Conta futura", entry_amount=Decimal("30.00"), due_date=hoje, status=STATUS_PROJECTED,
+    )
+    periodo = hoje.strftime("%Y-%m")
+    client = Client()
+    client.force_login(user)
+
+    detalhe = client.get(f"/banking/accounts/{account.id}/?period={periodo}").context[chave]
+    lancamentos = build_transactions_view_context(
+        user, {"account_id": str(account.id), "period": periodo, "mode": mode}, {}
+    )["blocos"][0]
+
+    for campo in ("saldo_inicial", "saldo_final", "total_receitas", "total_despesas"):
+        assert detalhe[campo] == lancamentos[campo], campo
+
+
+def test_account_detail_query_budget(account_detail_setup):
+    """Um teto para o custo da página, que chegou a 89 consultas.
+
+    Eram dois contextos inteiros da tela Lançamentos -- seletores, contas de
+    formulário e edição inline incluídos --, uma consulta por `has_perm` no
+    menu, a data inicial do sistema relida a cada serviço e uma gravação de
+    sessão. Subir este número é uma decisão, não um acidente.
+    """
+    user, account = account_detail_setup
+    client = Client()
+    client.force_login(user)
+    url = f"/banking/accounts/{account.id}/?data=2026-03-05"
+    client.get(url)
+
+    with CaptureQueriesContext(connection) as queries:
+        assert client.get(url).status_code == 200
+
+    # 34 quando o teto foi fixado.
+    assert len(queries) <= 36
+
+
+def test_account_detail_keeps_the_month_remembered_by_the_transactions_screen(account_detail_setup):
+    user, account = account_detail_setup
+    client = Client()
+    client.force_login(user)
+    client.get("/transactions/?period=2026-05")
+    lembrado = (client.session["tx_sel_year"], client.session["tx_sel_month"])
+
+    assert client.get(f"/banking/accounts/{account.id}/?period=2026-03").status_code == 200
+
+    assert (client.session["tx_sel_year"], client.session["tx_sel_month"]) == lembrado == (2026, 5)
 
 
 def test_account_detail_does_not_reveal_a_foreign_account(account_detail_setup):

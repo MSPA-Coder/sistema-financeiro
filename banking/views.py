@@ -15,8 +15,9 @@ from core.domain.finance import CURRENCY_OPTIONS, VIEW_PROJECTED, VIEW_REALIZED
 from core.htmx import quer_fragmento
 from core.patrimonio import saldo_da_conta
 from core.permissions import permission_required
+from reports.services import month_input_value
 from transactions.models import AccountMonthClose
-from transactions.services import build_transactions_view_context
+from transactions.services import compute_statement, resolve_statement_request
 
 from .models import FinancialAccount, FinancialInstitution
 from .services import (
@@ -59,16 +60,22 @@ def _referencia_da_conta(request) -> date:
     return timezone.localdate()
 
 
-def _contexto_da_conta(request, account_id: int, view_mode: str, referencia: date) -> dict:
-    """Reusa o cálculo único de extrato e totais para uma conta e um modo."""
+def _recorte_da_conta(request, account_id: int, referencia: date):
+    """Recorte do extrato de uma conta, o mesmo da tela Lançamentos.
+
+    É resolvido uma vez e serve aos dois modos: previsto e realizado diferem só
+    no cálculo, não em conta, período ou filtros.
+    """
     params = request.GET.copy()
     params["account_id"] = str(account_id)
-    params["mode"] = view_mode
     # Um endereço publicado traz somente ``data``. Sem este recorte, ele
     # explicaria o saldo histórico com o extrato do mês atual.
     if not params.get("period"):
         params["period"] = referencia.strftime("%Y-%m")
-    return build_transactions_view_context(request.user, params, request.session, request=request)
+    # Sessão descartável: com ``period`` sempre presente, a sessão não é lida,
+    # e gravá-la faria esta página trocar o mês lembrado pela tela Lançamentos.
+    # O link "Ver lançamentos" já leva o período na URL.
+    return resolve_statement_request(request.user, params, {}, request=request).scope
 
 
 @login_required
@@ -86,15 +93,18 @@ def account_detail_view(request, account_id):
 
     try:
         referencia = _referencia_da_conta(request)
-        realizado = _contexto_da_conta(request, account.id, VIEW_REALIZED, referencia)
-        previsto = _contexto_da_conta(request, account.id, VIEW_PROJECTED, referencia)
+        recorte = _recorte_da_conta(request, account.id, referencia)
+        # O cálculo também pode recusar o recorte (`ReportSizeLimitError` é um
+        # `ValueError`), e a recusa tem de chegar como a mesma resposta.
+        txs, blocos_realizados = compute_statement(recorte, VIEW_REALIZED)
+        _txs_previstas, blocos_previstos = compute_statement(recorte, VIEW_PROJECTED)
     except ValueError as exc:
         from core.htmx import invalid_period_response
 
         return invalid_period_response(request, str(exc))
 
-    bloco_realizado = realizado["blocos"][0]
-    bloco_previsto = previsto["blocos"][0]
+    bloco_realizado = blocos_realizados[0]
+    bloco_previsto = blocos_previstos[0]
     ultimo_fechamento = (
         AccountMonthClose.objects.select_related("closed_by_user")
         .filter(account=account, active=True)
@@ -111,8 +121,8 @@ def account_detail_view(request, account_id):
             bloco_previsto["saldo_final"] - bloco_realizado["saldo_final"]
         ).quantize(Decimal("0.01")),
         "ultimo_fechamento": ultimo_fechamento,
-        "txs": realizado["txs"],
-        "selected_period": realizado["selected_period"],
+        "txs": txs,
+        "selected_period": month_input_value(recorte.start_selected),
     }
     return render(request, "banking/account_detail.html", context)
 

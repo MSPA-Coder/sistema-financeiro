@@ -1908,17 +1908,53 @@ def _new_entry_defaults(get_params, today: date) -> dict[str, str]:
     }
 
 
-def build_transactions_view_context(user, get_params, session, *, request=None) -> dict:
-    """Monta o contexto completo da tela Movimentação > Lançamentos.
+@dataclass(frozen=True)
+class StatementScope:
+    """Recorte já resolvido de um extrato: contas, período e filtros.
 
-    Resolve período/mês, `view_mode`, filtros por coluna, saldo corrente por
-    linha (`running_balance`), totais de resumo e as opções dos seletores de
-    filtro e formulário.
-
-    Concentrar isso aqui mantém a view fina e garante que o `running_balance`
-    seja calculado sobre exatamente o mesmo recorte que a tela exibe.
+    Não depende de `view_mode`. Com ele em mãos, o mesmo extrato pode ser
+    calculado em outro modo sem reler sessão, parâmetros e contexto do usuário
+    -- é o que o detalhe da conta faz para comparar previsto e realizado.
     """
-    from core.domain.finance import VIEW_REALIZED, normalize_view_mode
+
+    account_ids: tuple[int, ...]
+    start_selected: date
+    end_selected: date
+    currency_filter: str
+    filter_type: str = ""
+    filter_category: str = ""
+    filter_date: date | None = None
+    operation_key: str = ""
+    entry_id: int | None = None
+    exclude_internal: bool = False
+
+    @property
+    def filters_active(self) -> bool:
+        return bool(
+            self.filter_date or self.filter_type or self.filter_category
+            or self.operation_key or self.entry_id or self.exclude_internal
+        )
+
+
+@dataclass(frozen=True)
+class StatementRequest:
+    """O que `resolve_statement_request` extrai da requisição."""
+
+    today: date
+    view_mode: str
+    scope: StatementScope
+    ctx: object
+    options: object
+    filter_date_raw: str
+    minimum_date: date | None
+
+
+def resolve_statement_request(user, get_params, session, *, request=None) -> StatementRequest:
+    """Resolve período/mês, `view_mode`, filtros e contas de um extrato.
+
+    Grava na sessão o mês escolhido, como a tela Lançamentos sempre fez.
+    """
+    from core.domain.finance import normalize_view_mode
     from core.services import system_start_date
     from reports import services as report_services
 
@@ -1936,16 +1972,13 @@ def build_transactions_view_context(user, get_params, session, *, request=None) 
     session["tx_sel_month"] = month
 
     view_mode = normalize_view_mode(get_params.get("mode", STATUS_PROJECTED))
-    filter_type = get_params.get("filter_type", "")
-    filter_category = get_params.get("filter_category", "")
-    filter_date_raw = get_params.get("filter_date", "")
     operation_key = get_params.get("operation_id", "")
     entry_id = _parse_int(get_params.get("entry_id"))
     if entry_id is not None and entry_id <= 0:
         entry_id = None
-    dashboard_drilldown = get_params.get("dashboard_drilldown") == "1"
 
     minimum_date = system_start_date()
+    filter_date_raw = get_params.get("filter_date", "")
     filter_date_parsed = report_services.parse_iso_date(filter_date_raw) if filter_date_raw else None
     if filter_date_raw and (filter_date_parsed is None or (minimum_date and filter_date_parsed < minimum_date)):
         filter_date_raw = ""
@@ -1976,39 +2009,54 @@ def build_transactions_view_context(user, get_params, session, *, request=None) 
     if minimum_date and end_selected < minimum_date:
         end_selected = minimum_date
 
-    current_txs = list_transactions_for_view(
-        account_ids=account_ids, view_mode=view_mode, start_selected=start_selected, end_selected=end_selected,
-        filter_type=filter_type, filter_category=filter_category, filter_date=filter_date_parsed,
-        operation_key=operation_key, entry_id=entry_id, exclude_internal=dashboard_drilldown,
+    scope = StatementScope(
+        account_ids=tuple(account_ids),
+        start_selected=start_selected,
+        end_selected=end_selected,
+        currency_filter=selected_currency(get_params),
+        filter_type=get_params.get("filter_type", ""),
+        filter_category=get_params.get("filter_category", ""),
+        filter_date=filter_date_parsed,
+        operation_key=operation_key,
+        entry_id=entry_id,
+        exclude_internal=get_params.get("dashboard_drilldown") == "1",
+    )
+    return StatementRequest(
+        today=today, view_mode=view_mode, scope=scope, ctx=ctx, options=options,
+        filter_date_raw=filter_date_raw, minimum_date=minimum_date,
     )
 
-    counterparty_map = counterparty_entry_map(current_txs)
-    attachment_loss_map = current_future_attachment_counts(current_txs)
-    for tx in current_txs:
-        counterpart = counterparty_map.get(tx.id)
-        tx.display_date = _entry_date_for_view_mode(tx, view_mode)
-        tx.counterparty_account_id = counterpart.account_id if counterpart else None
-        # Só faz sentido reapresentar o valor da outra ponta quando ele não é o
-        # mesmo desta: em moeda igual as pontas são espelhadas, e o campo nem
-        # aparece na tela.
-        tx.counterparty_entry_amount = (
-            counterpart.entry_amount
-            if counterpart and counterpart.account.currency != tx.account.currency
-            else None
-        )
-        tx.supports_scope = supports_operation_scope(tx)
-        tx.current_future_attachment_count = attachment_loss_map.get(tx.id, 0)
-        tx.current_future_confirmation_token = current_future_confirmation_token(tx.id)
 
-    end_exclusive = end_selected + timedelta(days=1)
+def compute_statement(scope: StatementScope, view_mode: str) -> tuple[list[CashFlowEntry], list[dict]]:
+    """Linhas do extrato, com saldo corrente, e um bloco de totais por moeda.
+
+    É o cálculo único por trás da tela Lançamentos e do detalhe da conta: o
+    `running_balance` sai exatamente do mesmo recorte que a tela exibe. As
+    linhas saem só com o necessário para ler o extrato; o que a edição precisa
+    (contraparte, anexos, token) fica em `_decorate_rows_for_editing`.
+    """
+    from core.domain.finance import VIEW_REALIZED
+    from reports import services as report_services
+
+    account_ids = list(scope.account_ids)
+    current_txs = list_transactions_for_view(
+        account_ids=account_ids, view_mode=view_mode,
+        start_selected=scope.start_selected, end_selected=scope.end_selected,
+        filter_type=scope.filter_type, filter_category=scope.filter_category, filter_date=scope.filter_date,
+        operation_key=scope.operation_key, entry_id=scope.entry_id, exclude_internal=scope.exclude_internal,
+    )
+    for tx in current_txs:
+        tx.display_date = _entry_date_for_view_mode(tx, view_mode)
+
+    start_selected = scope.start_selected
+    end_exclusive = scope.end_selected + timedelta(days=1)
 
     # Um bloco de totais por moeda. Cada lançamento pertence a uma conta, logo a
     # uma moeda: o saldo corrente corre dentro de um grupo e nunca atravessa
     # para o outro -- uma linha em dólar não entra no saldo em real.
     blocos: list[dict] = []
     running_by_entry_id: dict[int, Decimal] = {}
-    currency_filter = selected_currency(get_params)
-    for currency, ids in currency_blocks(account_ids, currency_filter):
+    for currency, ids in currency_blocks(account_ids, scope.currency_filter):
         saldo_inicial_do_bloco = report_services.decimal_period_start_balance(
             ids, start_selected, end_exclusive, view_mode
         )
@@ -2066,17 +2114,56 @@ def build_transactions_view_context(user, get_params, session, *, request=None) 
         bloco["total_despesas"] = bloco["total_despesas"].quantize(MONEY_QUANT)
         bloco["total_movimentacoes_internas"] = bloco["total_movimentacoes_internas"].quantize(MONEY_QUANT)
 
-    filters_active = bool(
-        filter_date_raw or filter_type or filter_category or operation_key or entry_id or dashboard_drilldown
-    )
-    _mark_last_of_day(current_txs, filters_active)
+    _mark_last_of_day(current_txs, scope.filters_active)
+    return current_txs, blocos
+
+
+def _decorate_rows_for_editing(current_txs: list[CashFlowEntry]) -> None:
+    """Anota nas linhas o que a edição inline da tela Lançamentos consulta."""
+    counterparty_map = counterparty_entry_map(current_txs)
+    attachment_loss_map = current_future_attachment_counts(current_txs)
+    for tx in current_txs:
+        counterpart = counterparty_map.get(tx.id)
+        tx.counterparty_account_id = counterpart.account_id if counterpart else None
+        # Só faz sentido reapresentar o valor da outra ponta quando ele não é o
+        # mesmo desta: em moeda igual as pontas são espelhadas, e o campo nem
+        # aparece na tela.
+        tx.counterparty_entry_amount = (
+            counterpart.entry_amount
+            if counterpart and counterpart.account.currency != tx.account.currency
+            else None
+        )
+        tx.supports_scope = supports_operation_scope(tx)
+        tx.current_future_attachment_count = attachment_loss_map.get(tx.id, 0)
+        tx.current_future_confirmation_token = current_future_confirmation_token(tx.id)
+
+
+def build_transactions_view_context(user, get_params, session, *, request=None) -> dict:
+    """Monta o contexto completo da tela Movimentação > Lançamentos.
+
+    Extrato e totais vêm de `compute_statement`; aqui entra só o que a tela
+    acrescenta: a edição inline de cada linha e as opções dos seletores de
+    filtro e formulário.
+    """
+    from reports import services as report_services
+
+    resolved = resolve_statement_request(user, get_params, session, request=request)
+    scope = resolved.scope
+    view_mode = resolved.view_mode
+    today = resolved.today
+    ctx = resolved.ctx
+    options = resolved.options
+    minimum_date = resolved.minimum_date
+
+    current_txs, blocos = compute_statement(scope, view_mode)
+    _decorate_rows_for_editing(current_txs)
 
     available_types = sorted({tx.entry_type for tx in current_txs})
     available_dates = sorted({
         _entry_date_for_view_mode(tx, view_mode).isoformat()
         for tx in current_txs if _entry_date_for_view_mode(tx, view_mode)
     })
-    available_categories = list_category_names(include_internal=not dashboard_drilldown)
+    available_categories = list_category_names(include_internal=not scope.exclude_internal)
 
     return {
         "txs": current_txs,
@@ -2084,15 +2171,15 @@ def build_transactions_view_context(user, get_params, session, *, request=None) 
         # Uma fileira de cartões por moeda: os totais são das contas
         # selecionadas, e contas de moedas diferentes não têm um total comum.
         "blocos": blocos,
-        "selected_period": report_services.month_input_value(start_selected),
+        "selected_period": report_services.month_input_value(scope.start_selected),
         "current_period": report_services.month_input_value(date(today.year, today.month, 1)),
         "view_mode": view_mode,
-        "filter_type": filter_type,
-        "filter_category": filter_category,
-        "filter_date": filter_date_raw,
-        "operation_id": operation_key,
-        "entry_id": entry_id,
-        "dashboard_drilldown": dashboard_drilldown,
+        "filter_type": scope.filter_type,
+        "filter_category": scope.filter_category,
+        "filter_date": resolved.filter_date_raw,
+        "operation_id": scope.operation_key,
+        "entry_id": scope.entry_id,
+        "dashboard_drilldown": scope.exclude_internal,
         "available_types": available_types,
         "available_categories": available_categories,
         "available_dates": available_dates,
