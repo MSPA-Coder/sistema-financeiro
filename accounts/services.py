@@ -112,11 +112,25 @@ def has_function_permission(user, permission_key: str) -> bool:
         return False
     if getattr(user, "user_type", None) == USER_TYPE_ADMINISTRATOR:
         return True
+    return permission_key in _granted_permission_closure(user)
 
-    granted_keys = set(
-        UserPermission.objects.filter(user=user, allowed=True).values_list("permission__name", flat=True)
-    )
-    return any(permission_key in _implied_closure(key) for key in granted_keys)
+
+# Cache no próprio objeto, como o `_perm_cache` do `ModelBackend`. O menu e as
+# telas perguntam `has_perm` dezenas de vezes por requisição, e sem ele cada
+# pergunta era uma consulta. `request.user` nasce a cada requisição, então o
+# cache não sobrevive a ela; `save_function_permissions` o descarta.
+_FUNCTION_PERMISSION_CACHE = "_function_permission_cache"
+
+
+def _granted_permission_closure(user) -> frozenset[str]:
+    cached = getattr(user, _FUNCTION_PERMISSION_CACHE, None)
+    if cached is None:
+        granted_keys = UserPermission.objects.filter(user=user, allowed=True).values_list(
+            "permission__name", flat=True
+        )
+        cached = frozenset(expand_permission_keys(granted_keys))
+        setattr(user, _FUNCTION_PERMISSION_CACHE, cached)
+    return cached
 
 
 def expand_permission_keys(keys) -> set[str]:
@@ -491,6 +505,8 @@ def save_function_permissions(user: AppUser, allowed_keys: set[str]) -> None:
         elif link.allowed != allowed:
             link.allowed = allowed
             link.save(update_fields=["allowed", "updated_at"])
+    if hasattr(user, _FUNCTION_PERMISSION_CACHE):
+        delattr(user, _FUNCTION_PERMISSION_CACHE)
 
 
 def owner_access_map(user: AppUser) -> dict[int, UserOwnerAccess]:

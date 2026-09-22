@@ -27,6 +27,7 @@ from core.domain.settings import (
     normalize_table_scroll_rows,
     normalize_ui_theme,
 )
+from core.memo_requisicao import esquecer, lembrar
 from core.models import AppSetting
 
 
@@ -55,12 +56,17 @@ def parse_system_start_date(value: object) -> date | None:
 
 
 def system_start_date() -> date | None:
-    return parse_system_start_date(get_app_setting(APP_SETTING_SYSTEM_START_DATE))
+    # Lida uma vez por requisição; ver `core.memo_requisicao`.
+    return lembrar(
+        APP_SETTING_SYSTEM_START_DATE,
+        lambda: parse_system_start_date(get_app_setting(APP_SETTING_SYSTEM_START_DATE)),
+    )
 
 
 def update_system_start_date(value: object) -> date | None:
     parsed = parse_system_start_date(value)
     upsert_app_setting(APP_SETTING_SYSTEM_START_DATE, parsed.isoformat() if parsed else "")
+    esquecer(APP_SETTING_SYSTEM_START_DATE)
     return parsed
 
 

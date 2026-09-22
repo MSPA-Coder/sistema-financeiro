@@ -62,6 +62,32 @@ schema e suas restrições. Consultas triviais podem permanecer na view; o
 projeto evita repositories pass-through, mas permite query objects ou
 repositories quando reduzirem duplicação, acoplamento ou custo de consulta.
 
+### Leituras memorizadas por requisição
+
+Não há cache de processo nem externo. Duas leituras repetidas em quase toda
+tela são guardadas **só durante a requisição**, porque um cache de processo
+deixaria cada worker do Gunicorn com uma cópia que os outros não veem mudar:
+
+- a data inicial do sistema (`core.services.system_start_date`), pelo memo de
+  `core/memo_requisicao.py`, aberto por `MemoRequisicaoMiddleware`; fora de
+  requisição, comandos e testes leem direto do banco;
+  `update_system_start_date` descarta o valor guardado;
+- as permissões funcionais do usuário (`accounts.services.has_function_permission`),
+  guardadas no próprio objeto do usuário, como o `_perm_cache` do Django;
+  `save_function_permissions` as descarta.
+
+Um novo valor só entra nesse memo se quem o grava o descartar em seguida.
+
+### Extrato: recorte, cálculo e tela
+
+`transactions.services` separa o extrato em três passos:
+`resolve_statement_request` lê período, sessão, contas e filtros;
+`compute_statement` calcula linhas, saldo corrente e blocos por moeda para um
+`view_mode`; e `build_transactions_view_context` acrescenta o que só a tela
+Lançamentos usa (edição inline e opções de filtro/formulário). O detalhe da
+conta resolve o recorte uma vez e calcula previsto e realizado sobre ele, sem
+tocar a sessão.
+
 Cada app versiona seu schema em `<app>/migrations/`. Bancos novos e existentes
 são atualizados exclusivamente por `manage.py migrate`; o serviço `migrate`
 termina com sucesso antes de `web` iniciar.
