@@ -273,6 +273,18 @@ projeção estende cada `BankOperation` recorrente até o fim do horizonte, a
 partir da ocorrência de maior vencimento. Reexecutar para o mesmo horizonte é
 idempotente e uma ocorrência removida no meio da série não é recriada.
 
+A projeção só estende. Por isso, salvar os Parâmetros recolhe as séries ao
+horizonte atual (`recolher_alem_do_horizonte`): as ocorrências recorrentes
+não realizadas além do fim são apagadas, com auditoria, e a série não é
+encerrada -- volta a crescer quando o horizonte avançar. Sem isso, diminuir o
+horizonte deixava os meses além do novo fim com só as séries antigas, e o
+saldo projetado desses meses perdia o sentido. Fica tudo até a última
+ocorrência que recebeu atenção própria (conciliada, com comprovante, etiqueta
+ou projeto, ou editada em "somente este"), para não abrir um buraco que a
+extensão não preenche. Parcelas não são recolhidas: são dívida contratada. O
+contrato de projeção publica `ultima_recorrencia` limitada ao fim do
+horizonte.
+
 Excluir uma recorrência com o escopo "este e os próximos", ou editá-la nesse
 escopo desmarcando "recorrente", encerra a série: a `BankOperation` guarda o vencimento do corte em `recurrence_ended_on` e a
 projeção deixa de estendê-la. Vale para a recorrente simples e para a

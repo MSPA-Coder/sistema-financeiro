@@ -70,7 +70,7 @@ from core.services import (
     update_user_ui_theme,
 )
 from transactions.models import AccountMonthClose, BankOperation, CashFlowEntry
-from transactions.recurring_projection import ensure_recurring_projection_horizon
+from transactions.recurring_projection import ensure_recurring_projection_horizon, recolher_alem_do_horizonte
 from transactions.services import close_month, reopen_month
 
 # --- Permissões (tela) ---
@@ -791,10 +791,19 @@ def settings_update_recurring_projection_view(request):
                 run_day=request.POST.get('run_day'),
             )
             update_system_start_date(request.POST.get('system_start_date'))
+            # A projeção só estende; o que um horizonte maior criou antes
+            # precisa sair quando ele diminui. Ver `recolher_alem_do_horizonte`.
+            recolhido = recolher_alem_do_horizonte(audit_context=audit_request_context(request))
+            aviso = ""
+            if recolhido.removed_count:
+                aviso = (
+                    f" {recolhido.removed_count} ocorrência(s) recorrente(s) depois de "
+                    f"{recolhido.horizon_end.strftime('%d/%m/%Y')} removida(s)."
+                )
             messages.success(
                 request,
                 f"Projeção de recorrências ajustada para {settings.horizon_months} mês(es), "
-                f"execução no dia {settings.run_day}.",
+                f"execução no dia {settings.run_day}.{aviso}",
             )
         except ValueError as exc:
             messages.error(request, str(exc))
