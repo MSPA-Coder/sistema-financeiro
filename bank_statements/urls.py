@@ -7,6 +7,7 @@ app_name = 'bank_statements'
 
 urlpatterns = [
     path('banking/imports/', views.imports_view, name='imports_view'),
+    path('banking/cards/', views.faturas_view, name='faturas'),
     path('banking/import/', views.create_import_view, name='create_import'),
     path('banking/import/status/<int:batch_id>/', views.import_status_view, name='import_status'),
     path('banking/import/<int:batch_id>/fatura/', views.fatura_view, name='fatura'),

@@ -1,0 +1,39 @@
+{% load money_filters %}
+    <h3>Próximas faturas (projeção)</h3>
+    <table class="tx-table">
+        <thead>
+            <tr>
+                <th>Fecha</th>
+                <th>Vence</th>
+                <th>Parcelas e lançado</th>
+                <th>Gasto estimado</th>
+                <th>Total projetado</th>
+                <th>Pagamento</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for fp in projetadas %}
+            <tr>
+                <td>{{ fp.fechamento|date:"d/m/Y" }}</td>
+                <td>{{ fp.vencimento|date:"d/m/Y" }}</td>
+                <td class="amount">{{ fp.lancado|money:conta.currency }}</td>
+                <td class="amount">{{ fp.estimativa.valor|money:conta.currency }}</td>
+                <td class="amount"><strong>{{ fp.total|money:conta.currency }}</strong></td>
+                <td>{% if fp.agendado %}já agendado: {{ fp.agendado|money:conta.currency }}
+                    {% elif fp.pagamento %}de {{ fp.conta_de_pagamento.account_name }}
+                    {% elif not fp.conta_de_pagamento %}sem conta de pagamento
+                    {% else %}—{% endif %}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    <p class="help-text">
+        {% with base=projetadas.0.estimativa %}
+        {% if base.origem == "fixado" %}O gasto estimado é o valor fixado no cadastro do cartão.
+        {% elif base.origem == "mediana" %}O gasto estimado é a mediana do gasto novo das últimas {{ base.faturas }} faturas importadas: o que cada uma cobrou e ainda não era conhecido tantos fechamentos antes. Por isso cresce nas faturas mais distantes.
+        {% else %}Ainda não há faturas importadas suficientes (mínimo 3) para estimar o gasto novo; só entram as parcelas. Dá para fixar um valor no cadastro do cartão.
+        {% endif %}
+        {% endwith %}
+        Os lançamentos da projeção são refeitos a cada fatura processada e a cada execução da projeção, até o horizonte de Parâmetros.
+        {% if not conta.card_payment_account %}Sem conta de pagamento padrão no cadastro do cartão, o pagamento projetado não é criado.{% endif %}
+    </p>

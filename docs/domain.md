@@ -274,6 +274,10 @@ uma fatura, ao salvar o cartão ou os Parâmetros e a cada execução da projeç
 de recorrências. Marcado como realizado, o lançamento projetado deixa de ser
 projeção: a chave ganha o prefixo `realizado-` e ele fica.
 
+Banking › Faturas (`/banking/cards/`) reúne, por cartão, o saldo realizado, as
+últimas faturas importadas (com o link para cada uma) e as próximas faturas
+projetadas.
+
 ## Fechamento mensal
 
 O fechamento pertence a uma conta e a um mês. Enquanto estiver ativo, bloqueia

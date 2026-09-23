@@ -57,6 +57,13 @@ def _build_menu_items() -> list[MenuItem]:
                             required_permission="banking.import",
                         ),
                         MenuItem(
+                            "Faturas",
+                            "/banking/cards/",
+                            "\U0001F4B3",
+                            "/banking/cards/",
+                            required_permission="banking.view",
+                        ),
+                        MenuItem(
                             "Conciliação",
                             "/banking/reconciliation/",
                             "\U0001F517",
