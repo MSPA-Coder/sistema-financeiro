@@ -134,7 +134,18 @@ def test_serie_diaria_por_moeda_inclui_vencidos_no_dia_base(cenario):
         ("2026-04-05", "1350.00"),
         ("2026-04-10", "1050.00"),
     ]
-    assert _por_moeda(corpo["serie"], "USD") == [{"moeda": "USD", "data": "2026-03-15", "saldo": "1250.00"}]
+    assert _por_moeda(corpo["serie"], "USD") == [
+        {"moeda": "USD", "data": "2026-03-15", "saldo": "1250.00", "investido_acumulado": "0.00"}
+    ]
+
+
+def test_serie_acumula_o_investido_no_dia_do_aporte(cenario):
+    corpo = patrimonio.montar_projecao(HOJE, FIM)
+
+    investido = [(item["data"], item["investido_acumulado"]) for item in _por_moeda(corpo["serie"], "BRL")]
+    # O aporte de 10/04 tira 300 do caixa e põe 300 no investido no MESMO dia:
+    # caixa + investido fica igual, e o patrimônio projetado não cai.
+    assert investido[-2:] == [("2026-04-05", "0.00"), ("2026-04-10", "300.00")]
 
 
 def test_excluir_vencidos_muda_so_o_ponto_de_partida(cenario):

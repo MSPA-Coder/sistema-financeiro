@@ -872,8 +872,13 @@ def montar_projecao(hoje: date, fim: date, *, incluir_vencidos: bool = True) -> 
             saldo_da_conta[entry.account_id] += _assinado(entry)
 
     menor_da_conta = {conta_id: (saldo, hoje) for conta_id, saldo in saldo_da_conta.items()}
-    serie = {moeda: [(hoje, saldo_da_moeda(moeda))] for moeda in moedas}
-    menor_da_moeda = {moeda: serie[moeda][0] for moeda in moedas}
+    # Cada ponto da série é (dia, saldo da moeda, investido até o dia): o
+    # investido acumula o que saiu do caixa para investimento menos o que voltou
+    # dele. O consumidor soma esse valor aos investimentos no mesmo dia em que o
+    # caixa cai -- sem ele, o patrimônio projetado despencaria no dia do aporte.
+    investido = {moeda: Decimal("0.00") for moeda in moedas}
+    serie = {moeda: [(hoje, saldo_da_moeda(moeda), investido[moeda])] for moeda in moedas}
+    menor_da_moeda = {moeda: (hoje, serie[moeda][0][1]) for moeda in moedas}
 
     meses: dict[tuple[date, str], dict] = {}
     mes = _primeiro_dia(hoje)
@@ -887,7 +892,12 @@ def montar_projecao(hoje: date, fim: date, *, incluir_vencidos: bool = True) -> 
     for indice, entry in enumerate(futuros):
         saldo_da_conta[entry.account_id] += _assinado(entry)
         moeda = moeda_da_conta[entry.account_id]
-        meses[(_primeiro_dia(entry.due_date), moeda)][_coluna_do_lancamento(entry)] += entry.entry_amount
+        coluna = _coluna_do_lancamento(entry)
+        meses[(_primeiro_dia(entry.due_date), moeda)][coluna] += entry.entry_amount
+        if coluna == "investimentos_saida":
+            investido[moeda] += entry.entry_amount
+        elif coluna == "investimentos_entrada":
+            investido[moeda] -= entry.entry_amount
 
         proximo = futuros[indice + 1] if indice + 1 < len(futuros) else None
         if proximo is not None and proximo.due_date == entry.due_date:
@@ -897,15 +907,16 @@ def montar_projecao(hoje: date, fim: date, *, incluir_vencidos: bool = True) -> 
                 menor_da_conta[conta_id] = (saldo, entry.due_date)
         for moeda_do_dia in moedas:
             atual = saldo_da_moeda(moeda_do_dia)
-            if atual != serie[moeda_do_dia][-1][1]:
-                serie[moeda_do_dia].append((entry.due_date, atual))
+            _dia, saldo_anterior, investido_anterior = serie[moeda_do_dia][-1]
+            if (atual, investido[moeda_do_dia]) != (saldo_anterior, investido_anterior):
+                serie[moeda_do_dia].append((entry.due_date, atual, investido[moeda_do_dia]))
             if atual < menor_da_moeda[moeda_do_dia][1]:
                 menor_da_moeda[moeda_do_dia] = (entry.due_date, atual)
 
     # O saldo no fim de cada mês é o último ponto da série até aquele mês.
     for (mes, moeda), linha in meses.items():
         fim_do_mes = _proximo_mes(mes) - timedelta(days=1)
-        linha["saldo_final"] = [valor for dia, valor in serie[moeda] if dia <= fim_do_mes][-1]
+        linha["saldo_final"] = [valor for dia, valor, _investido in serie[moeda] if dia <= fim_do_mes][-1]
 
     configuracao = get_recurring_projection_settings()
     ultima_recorrencia = CashFlowEntry.objects.filter(
@@ -957,9 +968,14 @@ def montar_projecao(hoje: date, fim: date, *, incluir_vencidos: bool = True) -> 
             for moeda in moedas
         ],
         "serie": [
-            {"moeda": moeda, "data": dia.isoformat(), "saldo": _dinheiro(valor)}
+            {
+                "moeda": moeda,
+                "data": dia.isoformat(),
+                "saldo": _dinheiro(valor),
+                "investido_acumulado": _dinheiro(acumulado),
+            }
             for moeda in moedas
-            for dia, valor in serie[moeda]
+            for dia, valor, acumulado in serie[moeda]
         ],
         "meses": [
             {
