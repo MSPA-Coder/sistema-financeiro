@@ -6,8 +6,8 @@ lançamento recorrente. O agrupamento é por `bank_operation_id`.
 A execução manual é idempotente e não tem guarda de "já rodou este mês".
 
 Idempotente porque `_extend_operation` só olha para frente: parte da MAIOR
-data existente do grupo e preenche até o horizonte, pulando data que já
-existe. Três consequências, todas testadas em
+data recorrente do grupo e preenche até o horizonte, pulando mês que já tem
+linha da operação -- recorrente ou não. Três consequências, todas testadas em
 `tests/test_projecao_recorrente_idempotente.py`:
 
 - reexecutar no mesmo mês gera zero, porque o horizonte não se move dentro do
@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import calendar
 import logging
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from itertools import groupby
@@ -275,19 +276,39 @@ def _copy_occurrence(
     return len(created_by_template_id)
 
 
-def _extend_operation(entries: list[CashFlowEntry], horizon_end: date, today: date) -> int:
+def _mes(data: date) -> tuple[int, int]:
+    return data.year, data.month
+
+
+def _extend_operation(
+    entries: list[CashFlowEntry],
+    horizon_end: date,
+    today: date,
+    meses_avulsos: set[tuple[int, int]] | None = None,
+) -> int:
+    """Estende uma operação a partir da maior data recorrente.
+
+    A recorrência é mensal, então a guarda é por MÊS, não por data exata: um
+    mês que já tem linha da operação não ganha outra. `meses_avulsos` traz os
+    meses das linhas da mesma operação que deixaram de ser recorrentes
+    ("somente este" com "recorrente" desmarcado). Elas não entram em `entries`
+    -- não servem de molde nem movem a maior data --, mas ocupam o mês: sem
+    isso, desmarcar a ÚLTIMA ocorrência fazia a projeção recriá-la por cima,
+    com o dia trocado ou não.
+    """
     existing_dates = {entry.due_date for entry in entries}
     latest_due_date = max(existing_dates)
     if latest_due_date >= horizon_end:
         return 0
 
+    meses_ocupados = {_mes(data) for data in existing_dates} | (meses_avulsos or set())
     next_due_date = add_months(latest_due_date, 1)
     generated_count = 0
     template_rows: list[CashFlowEntry] | None = None
     canonico: dict[int, int] = {}
 
     while next_due_date <= horizon_end:
-        if next_due_date not in existing_dates:
+        if _mes(next_due_date) not in meses_ocupados:
             if template_rows is None:
                 # O molde é montado só quando há mesmo o que criar. Além de
                 # evitar trabalho no caso comum (nada a fazer), isso preserva
@@ -301,7 +322,7 @@ def _extend_operation(entries: list[CashFlowEntry], horizon_end: date, today: da
             generated_count += _copy_occurrence(
                 template_rows, next_due_date, today, canonico
             )
-            existing_dates.add(next_due_date)
+            meses_ocupados.add(_mes(next_due_date))
         next_due_date = add_months(next_due_date, 1)
     return generated_count
 
@@ -348,13 +369,27 @@ def ensure_recurring_projection_horizon(
         .iterator(chunk_size=1000)
     )
 
+    meses_avulsos: dict[int, set[tuple[int, int]]] = defaultdict(set)
+    for bank_operation_id, due_date in (
+        CashFlowEntry.objects.filter(
+            is_recurring=False,
+            bank_operation__recurrence_ended_on__isnull=True,
+            bank_operation__entries__is_recurring=True,
+        )
+        .values_list("bank_operation_id", "due_date")
+        .distinct()
+    ):
+        meses_avulsos[bank_operation_id].add(_mes(due_date))
+
     generated_count = 0
     processed_operations = 0
-    for _bank_operation_id, group in groupby(all_entries, key=lambda e: e.bank_operation_id):
+    for bank_operation_id, group in groupby(all_entries, key=lambda e: e.bank_operation_id):
         entries = list(group)
         if entries[0].operation_type == "internal_transfer" and not _can_extend_internal_transfer(entries):
             continue
-        generated_count += _extend_operation(entries, horizon_end, base_date)
+        generated_count += _extend_operation(
+            entries, horizon_end, base_date, meses_avulsos.get(bank_operation_id)
+        )
         processed_operations += 1
 
     if update_last_run:

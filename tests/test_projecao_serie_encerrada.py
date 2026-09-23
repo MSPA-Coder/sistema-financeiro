@@ -281,3 +281,101 @@ def test_transferencia_desmarcada_deste_em_diante_nao_duplica(cenario):
     assert _datas_repetidas(operacao_id) == []
     assert _datas(operacao_id) == antes
     assert BankOperation.objects.get(id=operacao_id).recurrence_ended_on == CORTE
+
+
+# --- Desmarcar "recorrente" em "somente este" -----------------------------------
+#
+# "Somente este" não encerra a série: só aquela ocorrência deixa de ser
+# recorrente. Mas a projeção só enxerga as linhas recorrentes, e quando a linha
+# desmarcada é a ÚLTIMA, a maior data recorrente recua um mês e a projeção
+# recria, no mesmo mês, uma ocorrência por cima da que foi editada -- já no
+# clique seguinte do botão, sem o horizonte andar.
+
+
+def _desmarcar_so_esta(user, linha, destino=None, vencimento=None):
+    requisicao = services.TransactionRequest(
+        account_id=linha.account_id,
+        category_id=linha.category_id,
+        entry_type=linha.entry_type,
+        description=linha.description,
+        entry_amount=linha.entry_amount,
+        installments=1,
+        due_date=vencimento or linha.due_date,
+        is_recurring=False,
+        status=linha.status,
+        counterparty_account_id=destino.id if destino else None,
+    )
+    return services.update_transaction_operation(
+        linha, requisicao, OPERATION_SCOPE_SINGLE, None, user=user
+    )
+
+
+def _ultima_origem(linhas):
+    return max((e for e in linhas if e.source_entry_id is None), key=lambda e: e.due_date)
+
+
+def _meses_repetidos(operacao_id):
+    """Meses com mais de uma ocorrência na mesma conta."""
+    meses = [
+        (conta, d.year, d.month)
+        for conta, d in _datas(operacao_id)
+    ]
+    return sorted({m for m in meses if meses.count(m) > 1})
+
+
+def _projetar_hoje():
+    """O botão clicado de novo no mês corrente: o horizonte não andou."""
+    return ensure_recurring_projection_horizon(today=date.today(), update_last_run=False)
+
+
+def test_ultima_desmarcada_so_ela_nao_ganha_duplicata_no_mesmo_mes(cenario):
+    user, corrente, _poupanca, mercado, _transferencia = cenario
+    linhas = _criar_recorrente(user, corrente, mercado)
+    operacao_id = linhas[0].bank_operation_id
+
+    _desmarcar_so_esta(user, _ultima_origem(linhas))
+    antes = _datas(operacao_id)
+    _projetar_hoje()
+
+    assert _datas(operacao_id) == antes
+
+
+def test_ultima_desmarcada_so_ela_nao_encerra_a_serie(cenario):
+    # A série continua depois da ocorrência avulsa, sem repetir mês nenhum.
+    user, corrente, _poupanca, mercado, _transferencia = cenario
+    linhas = _criar_recorrente(user, corrente, mercado)
+    operacao_id = linhas[0].bank_operation_id
+
+    _desmarcar_so_esta(user, _ultima_origem(linhas))
+    antes = CashFlowEntry.objects.filter(bank_operation_id=operacao_id).count()
+    _projetar()
+
+    assert BankOperation.objects.get(id=operacao_id).recurrence_ended_on is None
+    assert _meses_repetidos(operacao_id) == []
+    assert CashFlowEntry.objects.filter(bank_operation_id=operacao_id).count() > antes
+
+
+def test_ultima_desmarcada_e_movida_de_dia_nao_ganha_duplicata(cenario):
+    # A mesma edição trocando o dia: a data exata deixa de bater, o mês não.
+    user, corrente, _poupanca, mercado, _transferencia = cenario
+    linhas = _criar_recorrente(user, corrente, mercado)
+    operacao_id = linhas[0].bank_operation_id
+    ultima = _ultima_origem(linhas)
+
+    _desmarcar_so_esta(user, ultima, vencimento=ultima.due_date.replace(day=20))
+    antes = _datas(operacao_id)
+    _projetar_hoje()
+
+    assert _datas(operacao_id) == antes
+
+
+def test_transferencia_ultima_desmarcada_so_ela_nao_ganha_duplicata(cenario):
+    user, corrente, poupanca, _mercado, transferencia = cenario
+    linhas = _criar_recorrente(user, corrente, transferencia, destino=poupanca)
+    operacao_id = linhas[0].bank_operation_id
+
+    _desmarcar_so_esta(user, _ultima_origem(linhas), destino=poupanca)
+    antes = _datas(operacao_id)
+    _projetar_hoje()
+
+    assert _datas(operacao_id) == antes
