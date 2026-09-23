@@ -105,6 +105,9 @@ class FinancialAccount(models.Model):
         blank=True,
         related_name='cards_paid',
     )
+    # Gasto novo por fatura fixado à mão. Vazio, a fatura projetada usa a
+    # mediana das últimas faturas importadas (`bank_statements/fatura_projetada.py`).
+    card_estimated_spend = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -138,11 +141,13 @@ class FinancialAccount(models.Model):
                         card_due_day__gte=CARD_DAY_MIN,
                         card_due_day__lte=CARD_DAY_MAX,
                     )
+                    & (models.Q(card_estimated_spend__isnull=True) | models.Q(card_estimated_spend__gte=0))
                     | models.Q(
                         account_kind=ACCOUNT_KIND_REGULAR,
                         card_closing_day__isnull=True,
                         card_due_day__isnull=True,
                         card_payment_account__isnull=True,
+                        card_estimated_spend__isnull=True,
                     )
                 ),
                 name='ck_financial_account_card_fields',

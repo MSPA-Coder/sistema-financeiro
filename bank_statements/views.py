@@ -13,7 +13,7 @@ from core.htmx import quer_fragmento
 from core.permissions import permission_required
 from core.services import audit_request_context
 
-from . import fatura, reclassificacao, reconciliation
+from . import fatura, fatura_projetada, reclassificacao, reconciliation
 from .attachments import (
     attachment_download_path,
     attachment_for_download,
@@ -103,6 +103,7 @@ def fatura_view(request, batch_id):
         "resumo": fatura.resumir(lote.lines.all()),
         "processadas": lote.lines.exclude(status="novo").count(),
         "categorias": list(fatura.categorias_gerenciais()),
+        "projetadas": fatura_projetada.planejar(lote.account),
     }
     return render(request, 'banking/fatura.html', context)
 

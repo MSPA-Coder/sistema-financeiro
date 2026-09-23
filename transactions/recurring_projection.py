@@ -41,6 +41,7 @@ from datetime import date, datetime, timedelta
 from itertools import groupby
 
 from django.db import connection, transaction
+from django.utils import timezone
 
 from accounts.services import can_use_transfer_destination
 from banking.services import can_access_account
@@ -392,6 +393,11 @@ def ensure_recurring_projection_horizon(
         )
         processed_operations += 1
 
+    # A fatura projetada dos cartões segue o mesmo horizonte.
+    from bank_statements.fatura_projetada import atualizar_todos
+
+    atualizar_todos(hoje=base_date, fim=horizon_end)
+
     if update_last_run:
         from core.domain.settings import APP_SETTING_LAST_PROJECTION_RUN
 
@@ -404,3 +410,124 @@ def ensure_recurring_projection_horizon(
         generated_count=generated_count,
         processed_operations=processed_operations,
     )
+
+
+@dataclass(frozen=True)
+class RecolhimentoResult:
+    horizon_end: date
+    removed_count: int
+    operations: int
+
+
+def _ids_protegidos(ids: list[int]) -> set[int]:
+    """Ocorrências que já receberam atenção própria e não podem sumir.
+
+    São as conciliadas com o extrato, as que têm comprovante, etiqueta ou
+    projeto, e as editadas no escopo "somente este". Edição da série inteira
+    não conta: ela muda todas as ocorrências por igual, e a projeção recria o
+    mesmo valor quando o horizonte chegar lá.
+    """
+    from bank_statements.models import BankStatementLine, EntryAttachment
+    from core.domain.finance import OPERATION_SCOPE_SINGLE
+    from core.models import AuditLog
+    from management.models import CashFlowEntryProject, CashFlowEntryTag
+
+    protegidos: set[int] = set()
+    protegidos.update(
+        BankStatementLine.objects.filter(matched_entry_id__in=ids).values_list("matched_entry_id", flat=True)
+    )
+    protegidos.update(EntryAttachment.objects.filter(entry_id__in=ids).values_list("entry_id", flat=True))
+    protegidos.update(CashFlowEntryTag.objects.filter(entry_id__in=ids).values_list("entry_id", flat=True))
+    protegidos.update(CashFlowEntryProject.objects.filter(entry_id__in=ids).values_list("entry_id", flat=True))
+    editados = AuditLog.objects.filter(
+        entity_name="cash_flow_entry",
+        action="update",
+        entity_id__in=[str(i) for i in ids],
+        summary__contains=f"escopo: {OPERATION_SCOPE_SINGLE})",
+    ).values_list("entity_id", flat=True)
+    protegidos.update(int(i) for i in editados)
+    return protegidos
+
+
+@transaction.atomic
+def recolher_alem_do_horizonte(
+    *,
+    today: date | None = None,
+    horizon_months: int | None = None,
+    audit_context=None,
+) -> RecolhimentoResult:
+    """Apaga as ocorrências recorrentes futuras que passaram do horizonte.
+
+    A projeção só estende; nunca recolhe. Quando o horizonte diminui, as
+    séries criadas com o horizonte antigo continuam lá, e os meses além do
+    novo fim ficam com só uma parte das recorrências -- o saldo projetado
+    desses meses deixa de fazer sentido. Esta função devolve as séries ao
+    horizonte atual.
+
+    Só sai ocorrência recorrente, não realizada, de série não parcelada.
+    Numa operação com ocorrência protegida (ver `_ids_protegidos`) além do
+    fim, fica tudo até a última protegida: apagar meses antes dela abriria
+    um buraco que a extensão não preenche, porque ela parte da maior data.
+    Transferências perdem as duas pontas juntas, porque têm a mesma data.
+
+    Não grava `recurrence_ended_on`: a série continua, e a extensão mensal a
+    leva de novo adiante quando o horizonte andar.
+    """
+    from core.services import log_audit_event
+    from transactions.models import BankOperation
+    from transactions.services import _sync_bank_operation_status
+
+    horizon_end = recurring_projection_horizon_end(today or date.today(), horizon_months)
+    candidatas = list(
+        CashFlowEntry.objects.filter(
+            is_recurring=True,
+            bank_operation__isnull=False,
+            due_date__gt=horizon_end,
+        )
+        .exclude(operation_type=OPERATION_INSTALLMENT)
+        .exclude(status=STATUS_REALIZED)
+        .order_by("bank_operation_id", "due_date", "id")
+    )
+    if not candidatas:
+        return RecolhimentoResult(horizon_end, 0, 0)
+
+    protegidos = _ids_protegidos([e.id for e in candidatas])
+    ultima_protegida: dict[int, date] = {}
+    for entry in candidatas:
+        if entry.id in protegidos:
+            ultima_protegida[entry.bank_operation_id] = entry.due_date
+
+    remover = [
+        e for e in candidatas
+        if e.due_date > ultima_protegida.get(e.bank_operation_id, date.min)
+    ]
+    if not remover:
+        return RecolhimentoResult(horizon_end, 0, 0)
+
+    fim = horizon_end.strftime("%d/%m/%Y")
+    for entry in remover:
+        log_audit_event(
+            "cash_flow_entry", entry.id, "delete", request_context=audit_context,
+            summary=f"Ocorrência recorrente além do horizonte de projeção ({fim}) removida.",
+        )
+    ids = [e.id for e in remover]
+    # Contrapartida antes da origem, como na exclusão comum.
+    CashFlowEntry.objects.filter(id__in=ids, source_entry_id__isnull=False).delete()
+    CashFlowEntry.objects.filter(id__in=ids).delete()
+
+    operacoes = sorted({e.bank_operation_id for e in remover})
+    for operacao_id in operacoes:
+        restantes = CashFlowEntry.objects.filter(bank_operation_id=operacao_id)
+        datas = list(restantes.values_list("due_date", flat=True))
+        if not datas:
+            BankOperation.objects.filter(id=operacao_id).delete()
+            continue
+        BankOperation.objects.filter(id=operacao_id).update(
+            entry_count=len(datas),
+            first_due_date=min(datas),
+            last_due_date=max(datas),
+            updated_at=timezone.now(),
+        )
+        _sync_bank_operation_status(operacao_id)
+
+    return RecolhimentoResult(horizon_end, len(remover), len(operacoes))

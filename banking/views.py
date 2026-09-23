@@ -234,6 +234,7 @@ def _card_fields_from_post(request) -> dict[str, str]:
         "card_closing_day": request.POST.get("card_closing_day", ""),
         "card_due_day": request.POST.get("card_due_day", ""),
         "card_payment_account_id": request.POST.get("card_payment_account_id", ""),
+        "card_estimated_spend": request.POST.get("card_estimated_spend", ""),
     }
 
 
@@ -283,6 +284,11 @@ def update_account_view(request, account_id):
             initial_balance_date=request.POST.get('initial_balance_date', ''),
             **_card_fields_from_post(request),
         )
+        # Dias, conta de pagamento e gasto fixado mudam a fatura projetada; e
+        # um cartão que virou conta comum perde a dele.
+        from bank_statements.fatura_projetada import atualizar
+
+        atualizar(account)
         messages.success(request, "Conta atualizada com sucesso.")
     except ValueError as exc:
         messages.error(request, str(exc))

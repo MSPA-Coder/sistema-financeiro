@@ -925,6 +925,12 @@ def montar_projecao(hoje: date, fim: date, *, incluir_vencidos: bool = True) -> 
     ultima_recorrencia = CashFlowEntry.objects.filter(
         status=STATUS_PROJECTED, operation_type=OPERATION_RECURRING
     ).aggregate(fim=Max("due_date"))["fim"]
+    # Série criada com um horizonte maior pode ter passado do fim atual; o
+    # limite do gráfico é o fim do horizonte, onde TODAS as séries chegam.
+    if ultima_recorrencia is not None:
+        from transactions.recurring_projection import recurring_projection_horizon_end
+
+        ultima_recorrencia = min(ultima_recorrencia, recurring_projection_horizon_end(hoje))
 
     return {
         "contrato": CONTRATO_V3,

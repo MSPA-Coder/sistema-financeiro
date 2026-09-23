@@ -281,6 +281,22 @@ def _parse_card_day(raw_value: str | None, label: str) -> int:
     return day
 
 
+def _parse_estimated_spend(raw_value: str | None) -> Decimal | None:
+    """Gasto novo por fatura fixado à mão; vazio deixa a mediana decidir."""
+    raw_text = (raw_value or "").strip()
+    if not raw_text:
+        return None
+    if "," in raw_text:
+        raw_text = raw_text.replace(".", "").replace(",", ".")
+    try:
+        valor = Decimal(raw_text).quantize(Decimal("0.01"))
+    except InvalidOperation as exc:
+        raise ValueError("Gasto mensal estimado do cartão inválido.") from exc
+    if valor < 0:
+        raise ValueError("Gasto mensal estimado do cartão não pode ser negativo.")
+    return valor
+
+
 def _clean_card_fields(
     user,
     *,
@@ -288,6 +304,7 @@ def _clean_card_fields(
     card_closing_day: str,
     card_due_day: str,
     card_payment_account_id: str,
+    card_estimated_spend: str = "",
     currency: str,
     account_id: int | None = None,
 ) -> dict:
@@ -307,6 +324,7 @@ def _clean_card_fields(
             "card_closing_day": None,
             "card_due_day": None,
             "card_payment_account": None,
+            "card_estimated_spend": None,
         }
     payment = None
     raw_payment = (card_payment_account_id or "").strip()
@@ -329,6 +347,7 @@ def _clean_card_fields(
         "card_closing_day": _parse_card_day(card_closing_day, "Dia de fechamento"),
         "card_due_day": _parse_card_day(card_due_day, "Dia de vencimento"),
         "card_payment_account": payment,
+        "card_estimated_spend": _parse_estimated_spend(card_estimated_spend),
     }
 
 
@@ -345,6 +364,7 @@ def create_account(
     card_closing_day: str = "",
     card_due_day: str = "",
     card_payment_account_id: str = "",
+    card_estimated_spend: str = "",
 ) -> FinancialAccount:
     clean_owner_id, clean_institution_id, clean_name, balance = _clean_account_fields(
         owner_id, institution_id, account_name, initial_balance
@@ -361,6 +381,7 @@ def create_account(
         card_closing_day=card_closing_day,
         card_due_day=card_due_day,
         card_payment_account_id=card_payment_account_id,
+        card_estimated_spend=card_estimated_spend,
         currency=clean_currency,
     )
 
@@ -389,6 +410,7 @@ def update_account(
     card_closing_day: str = "",
     card_due_day: str = "",
     card_payment_account_id: str = "",
+    card_estimated_spend: str = "",
 ) -> FinancialAccount:
     clean_owner_id, clean_institution_id, clean_name, balance = _clean_account_fields(
         owner_id, institution_id, account_name, initial_balance
@@ -418,6 +440,7 @@ def update_account(
         card_closing_day=card_closing_day,
         card_due_day=card_due_day,
         card_payment_account_id=card_payment_account_id,
+        card_estimated_spend=card_estimated_spend,
         currency=clean_currency,
         account_id=account.id,
     )
