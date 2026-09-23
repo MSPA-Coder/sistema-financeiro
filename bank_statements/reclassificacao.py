@@ -57,8 +57,6 @@ LIMITE_DA_LISTA = 500
 LIMITE_DE_PARECIDAS = 50
 MOTIVO_DA_REABERTURA = "Reclassificação de categorias em lote"
 
-_PORTADOR = re.compile(r"\s+·\s+[^·]+$")
-_DOLAR = re.compile(r"\(US\$[^)]*\)")
 _SEPARADOR = re.compile(r"[^A-Z0-9]+")
 _RUIDO = {"PARC", "PARCELA", "PARCELADO", "PARCELAS"}
 # Intermediadores de pagamento: a primeira palavra é deles, não da loja, e
@@ -66,9 +64,23 @@ _RUIDO = {"PARC", "PARCELA", "PARCELADO", "PARCELAS"}
 _PREFIXOS_GENERICOS = {"PAGSEGURO", "MERCADOPAGO", "SUMUP", "PAYPAL", "EBANX", "STONE"}
 
 
+def _sem_portador(texto: str) -> str:
+    cabeca, separador, _ = texto.rpartition(" · ")
+    return cabeca if separador else texto
+
+
+def _sem_dolar(texto: str) -> str:
+    # Busca de texto, não regex: a descrição vem do arquivo do banco, e uma
+    # regex com repetição aninhada é porta para entrada que a faz demorar.
+    while (inicio := texto.find("(US$")) != -1:
+        fim = texto.find(")", inicio)
+        texto = texto[:inicio] if fim == -1 else f"{texto[:inicio]} {texto[fim + 1:]}"
+    return texto
+
+
 def chave_da_descricao(texto: str) -> str:
     """A descrição sem o que muda de uma compra para outra da mesma loja."""
-    limpo = _DOLAR.sub(" ", _PORTADOR.sub("", texto or ""))
+    limpo = _sem_dolar(_sem_portador(texto or ""))
     ascii_ = unicodedata.normalize("NFKD", limpo).encode("ascii", "ignore").decode("ascii").upper()
     palavras = [
         p for p in _SEPARADOR.split(ascii_)
