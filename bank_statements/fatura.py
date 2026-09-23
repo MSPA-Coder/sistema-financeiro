@@ -25,8 +25,9 @@ O que cada linha vira:
   valor e até 3 dias de distância. É conciliada em vez de duplicada;
 - **compra** e **estorno**: criam a despesa ou a receita, já realizadas.
 
-A categoria sugerida vem, nesta ordem, da última compra com a mesma descrição
-no cartão, da categoria escolhida da última vez para a mesma categoria do banco
+A categoria sugerida vem, nesta ordem, da última compra da mesma loja em
+qualquer conta (a descrição sem portador, dólar e número de pedido; ver
+`reclassificacao.chave_da_descricao`), da categoria escolhida da última vez para a mesma categoria do banco
 (a fatura aprende com a prévia), da categoria do banco quando ela tem o nome de
 uma categoria cadastrada, e de "Outros". A prévia deixa trocar cada uma.
 """
@@ -198,18 +199,20 @@ def _compra_lancada(conta, linha, usados) -> CashFlowEntry | None:
 
 
 def _categoria_sugerida(conta, linha) -> CashFlowCategory | None:
-    anterior = (
-        CashFlowEntry.objects.filter(
-            account=conta,
-            description__in=_descricoes(linha),
-            category__kind=CATEGORY_KIND_MANAGERIAL,
-        )
+    # A mesma loja em qualquer conta, pela chave da descrição (sem portador,
+    # dólar nem número de pedido): é assim que a Reclassificação vira regra.
+    from .reclassificacao import chave_da_descricao
+
+    chave = chave_da_descricao(linha.description)
+    termo = chave.split(" ", 1)[0]
+    anteriores = (
+        CashFlowEntry.objects.filter(category__kind=CATEGORY_KIND_MANAGERIAL, description__icontains=termo)
         .select_related("category")
-        .order_by("-due_date", "-id")
-        .first()
+        .order_by("-due_date", "-id")[:300]
     )
-    if anterior is not None:
-        return anterior.category
+    for anterior in anteriores:
+        if chave_da_descricao(anterior.description) == chave:
+            return anterior.category
     gerenciais = CashFlowCategory.objects.filter(kind=CATEGORY_KIND_MANAGERIAL)
     if linha.bank_category:
         # O que já foi escolhido para essa categoria do banco, em qualquer

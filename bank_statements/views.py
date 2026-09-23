@@ -3,16 +3,17 @@ from __future__ import annotations
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import FileResponse, HttpResponse, JsonResponse
+from django.http import FileResponse, HttpResponse, JsonResponse, QueryDict
 from django.shortcuts import redirect, render
 from django.urls import reverse
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_http_methods, require_POST
 
+from accounts.services import has_function_permission
 from core.htmx import quer_fragmento
 from core.permissions import permission_required
 from core.services import audit_request_context
 
-from . import fatura, reconciliation
+from . import fatura, reclassificacao, reconciliation
 from .attachments import (
     attachment_download_path,
     attachment_for_download,
@@ -130,6 +131,58 @@ def processar_fatura_view(request, batch_id):
     except ValueError as exc:
         messages.error(request, str(exc))
     return redirect('bank_statements:fatura', batch_id=batch_id)
+
+
+def _escolhas_da_reclassificacao(post) -> dict:
+    return {
+        "entry_ids": post.getlist('entry_ids'),
+        "categoria_id": post.get('categoria'),
+        "incluir_iguais": post.get('iguais') == '1',
+        "parecidas_ids": post.getlist('parecidas'),
+        "bancos": post.getlist('bancos'),
+    }
+
+
+@login_required
+@permission_required('banking.view')
+@permission_required('banking.reclassify', fallback='dashboard:dashboard')
+@require_http_methods(["GET", "POST"])
+def reclassificacao_view(request):
+    """Lista para reclassificar em lote; POST monta a prévia ou aplica."""
+    voltar = request.POST.get('voltar', '') if request.method == 'POST' else request.GET.urlencode()
+    plano = None
+    escolhas = {}
+    if request.method == 'POST':
+        escolhas = _escolhas_da_reclassificacao(request.POST)
+        try:
+            if request.POST.get('acao') == 'aplicar':
+                alterados = reclassificacao.aplicar(
+                    request.user,
+                    autorizar_meses=request.POST.get('autorizar_meses') == '1',
+                    audit_context=audit_request_context(request),
+                    **escolhas,
+                )
+                messages.success(request, f"{alterados} lançamento(s) reclassificado(s).")
+                destino = reverse('bank_statements:reclassificacao')
+                return redirect(f"{destino}?{voltar}" if voltar else destino)
+            plano = reclassificacao.planejar(request.user, **escolhas)
+        except ValueError as exc:
+            messages.error(request, str(exc))
+
+    filtros = reclassificacao.Filtros.do_get(QueryDict(voltar))
+    context = {
+        "filtros": filtros,
+        "voltar": voltar,
+        "lancamentos": reclassificacao.lancamentos(request.user, filtros),
+        "limite": reclassificacao.LIMITE_DA_LISTA,
+        "categorias": list(fatura.categorias_gerenciais()),
+        "categorias_do_banco": reclassificacao.categorias_do_banco(),
+        "contas": accounts_for_import_form(request.user),
+        "plano": plano,
+        "escolhas": escolhas,
+        "pode_reabrir": has_function_permission(request.user, 'settings.monthly_close.manage'),
+    }
+    return render(request, 'banking/reclassificacao.html', context)
 
 
 def _reconciliation_context(request, *, target_line_id=None):

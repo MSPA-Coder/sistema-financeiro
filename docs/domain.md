@@ -224,6 +224,25 @@ a prévia avisa isso em destaque: para importar histórico, a data do saldo
 inicial do cartão tem de ser anterior à primeira fatura. Quando o arquivo tem mais
 de um portador, o nome de quem comprou vai para a descrição.
 
+### Reclassificação em lote
+
+Banking > Reclassificação (`bank_statements/reclassificacao.py`, permissão
+`banking.reclassify`) troca a categoria de vários lançamentos gerenciais de uma
+vez; transferência e movimentação ficam de fora. A prévia mostra tudo antes de
+gravar:
+
+- **iguais** -- a mesma descrição depois de tirar portador, valor em dólar e
+  termos com número (`chave_da_descricao`) -- entram junto, já marcadas;
+- **parecidas** -- mesma primeira palavra, chave diferente -- só são sugeridas;
+- **mesma categoria do banco** pode ser aplicada a todas as compras dela;
+- parcelado e recorrente mudam inteiros.
+
+Mês fechado só é atravessado com autorização explícita e com a permissão de
+fechamento mensal: cada mês é reaberto com motivo, alterado e fechado de novo;
+o saldo de fechamento é recalculado e, se diferir do anterior, nada é gravado.
+Não há tabela de regras: o importador de fatura sugere a categoria pela última
+compra com a mesma chave, em qualquer conta, então a reclassificação é a regra.
+
 ## Fechamento mensal
 
 O fechamento pertence a uma conta e a um mês. Enquanto estiver ativo, bloqueia

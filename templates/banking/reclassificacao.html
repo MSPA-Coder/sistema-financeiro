@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% load static %}
+{% load icons %}
+{% load money_filters %}
+
+{% block title %}Banking • Reclassificação{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/bank-imports.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>🏷️ Reclassificação</h1>
+        <p>Marque vários lançamentos e dê a mesma categoria de uma vez. A prévia mostra tudo o que muda antes de gravar,
+            e o que você escolher aqui passa a ser a sugestão das próximas faturas importadas.</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if plano %}
+<div class="chart-card u-mb-1">
+    <h3>Prévia: {{ plano.alvo|length }} lançamento(s) passam para {{ plano.destino.category_name }}</h3>
+    <form method="post" action="{% url 'bank_statements:reclassificacao' %}">
+        {% csrf_token %}
+        <input type="hidden" name="voltar" value="{{ voltar }}">
+        <input type="hidden" name="categoria" value="{{ plano.destino.id }}">
+        {% for entry_id in escolhas.entry_ids %}<input type="hidden" name="entry_ids" value="{{ entry_id }}">{% endfor %}
+        <p class="help-text">{{ plano.selecionados }} selecionado(s){% if plano.iguais %}, mais {{ plano.iguais }} com a mesma descrição{% endif %}.
+            Compra parcelada ou recorrente muda inteira, com todas as parcelas.</p>
+        <p><label><input type="checkbox" name="iguais" value="1" {% if escolhas.incluir_iguais %}checked{% endif %}>
+            Incluir os lançamentos com a mesma descrição (sem portador, dólar e número de pedido)</label></p>
+        {% for categoria_do_banco, quantidade in plano.do_banco.items %}
+        <p><label><input type="checkbox" name="bancos" value="{{ categoria_do_banco }}" {% if categoria_do_banco in escolhas.bancos %}checked{% endif %}>
+            Todos da categoria do banco “{{ categoria_do_banco }}” ({{ quantidade }} ainda em outra categoria)</label></p>
+        {% endfor %}
+
+        {% if plano.parecidas %}
+        <h4>Parecidas: marque as que também devem mudar</h4>
+        <table class="tx-table u-mb-1">
+            <thead><tr><th></th><th>Data</th><th>Descrição</th><th>Categoria atual</th><th>Valor</th></tr></thead>
+            <tbody>
+            {% for entrada in plano.parecidas %}
+                <tr>
+                    <td><input type="checkbox" name="parecidas" value="{{ entrada.id }}" aria-label="Incluir" {% if entrada.marcada %}checked{% endif %}></td>
+                    <td>{{ entrada.due_date|date:"d/m/Y" }}</td>
+                    <td>{{ entrada.description }}</td>
+                    <td>{{ entrada.category.category_name }}</td>
+                    <td class="amount">{{ entrada.entry_amount|money:entrada.account.currency }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        {% if plano.por_chave %}
+        <h4>O que muda, por loja</h4>
+        <table class="tx-table u-mb-1">
+            <thead><tr><th>Descrição</th><th>Lançamentos</th></tr></thead>
+            <tbody>
+            {% for chave, quantidade in plano.por_chave %}
+                <tr><td>{{ chave }}</td><td>{{ quantidade }}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        {% if plano.meses_fechados %}
+        <div class="fatura-aviso">
+            <strong>{{ plano.meses_fechados|length }} mês(es) fechado(s) entre esses lançamentos:</strong>
+            {% for conta, ano, mes in plano.meses_fechados %}{{ mes|stringformat:"02d" }}/{{ ano }} ({{ conta.account_name }}){% if not forloop.last %}, {% endif %}{% endfor %}.
+            {% if pode_reabrir %}
+            <p><label><input type="checkbox" name="autorizar_meses" value="1">
+                Autorizo reabrir esses meses, reclassificar e fechá-los de novo. Trocar categoria não muda saldo:
+                o saldo de fechamento é conferido e, se mudar, nada é gravado. Tudo fica na auditoria.</label></p>
+            {% else %}
+            <p>Reabrir mês fechado exige a permissão de fechamento mensal. Peça a quem a tem, ou tire esses lançamentos da seleção.</p>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="u-d-flex u-gap-05">
+            <button type="submit" name="acao" value="previa" class="btn-sm btn-action-edit">Atualizar prévia</button>
+            <button type="submit" name="acao" value="aplicar" class="btn-sm btn-primary"
+                    data-sa-confirmar="Gravar a nova categoria nesses lançamentos?"
+                    data-sa-titulo="Reclassificar"
+                    data-sa-severidade="warning"
+                    data-sa-ok="Reclassificar">
+                {% icon 'check' %}<span>Aplicar</span>
+            </button>
+        </div>
+    </form>
+</div>
+{% endif %}
+
+<div class="chart-card u-mb-1">
+    <form method="get" action="{% url 'bank_statements:reclassificacao' %}" class="top-filter-row">
+        <label class="top-filter-field">Conta
+            <select name="conta">
+                <option value="">Todas</option>
+                {% for conta in contas %}
+                <option value="{{ conta.id }}" {% if filtros.conta_id == conta.id %}selected{% endif %}>{{ conta.owner.name }} / {{ conta.institution.institution_name }} / {{ conta.account_name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="top-filter-field">De <input type="date" name="de" value="{{ filtros.de|date:'Y-m-d' }}"></label>
+        <label class="top-filter-field">Até <input type="date" name="ate" value="{{ filtros.ate|date:'Y-m-d' }}"></label>
+        <label class="top-filter-field">Categoria atual
+            <select name="categoria">
+                <option value="">Todas</option>
+                {% for categoria in categorias %}
+                <option value="{{ categoria.id }}" {% if filtros.categoria_id == categoria.id %}selected{% endif %}>{{ categoria.category_name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="top-filter-field">Categoria do banco
+            <select name="banco">
+                <option value="">Todas</option>
+                {% for categoria_do_banco in categorias_do_banco %}
+                <option value="{{ categoria_do_banco }}" {% if filtros.categoria_do_banco == categoria_do_banco %}selected{% endif %}>{{ categoria_do_banco }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="top-filter-field">Descrição contém <input type="text" name="texto" value="{{ filtros.texto }}"></label>
+        <label class="top-filter-field"><span><input type="checkbox" name="importados" value="1" {% if filtros.so_importados %}checked{% endif %}> Só importados</span></label>
+        <div class="top-filter-actions">
+            <button type="submit" class="btn btn-primary">{% icon 'filter' %}<span>Filtrar</span></button>
+        </div>
+    </form>
+</div>
+
+<div class="table-container">
+    <form method="post" action="{% url 'bank_statements:reclassificacao' %}">
+        {% csrf_token %}
+        <input type="hidden" name="voltar" value="{{ voltar }}">
+        <input type="hidden" name="iguais" value="1">
+        <div class="u-d-flex u-items-center u-gap-05 u-mb-075">
+            <h3 class="u-mb-0">{{ lancamentos|length }} lançamento(s){% if lancamentos|length >= limite %} (mostrando os primeiros {{ limite }}; filtre para ver o resto){% endif %}</h3>
+            <select name="categoria" aria-label="Nova categoria" required>
+                <option value="">Nova categoria…</option>
+                {% for categoria in categorias %}
+                <option value="{{ categoria.id }}">{{ categoria.category_name }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" name="acao" value="previa" class="btn-sm btn-primary">Revisar</button>
+        </div>
+        <table class="tx-table">
+            <thead>
+                <tr>
+                    <th><input type="checkbox" data-select-all="entry_ids" aria-label="Selecionar todos"></th>
+                    <th>Data</th>
+                    <th>Conta</th>
+                    <th>Descrição</th>
+                    <th>Categoria do banco</th>
+                    <th>Categoria</th>
+                    <th>Valor</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for entrada in lancamentos %}
+                <tr>
+                    <td><input type="checkbox" name="entry_ids" value="{{ entrada.id }}" aria-label="Selecionar"></td>
+                    <td>{{ entrada.due_date|date:"d/m/Y" }}</td>
+                    <td>{{ entrada.account.institution.institution_name }} / {{ entrada.account.account_name }}</td>
+                    <td>{{ entrada.description }}{% if entrada.installments > 1 %} <small>({{ entrada.installments }}x)</small>{% endif %}</td>
+                    <td><small>{{ entrada.categoria_do_banco }}</small></td>
+                    <td>{{ entrada.category.category_name }}</td>
+                    <td class="amount {% if entrada.entry_type == 'despesa' %}amount-negative{% else %}amount-positive{% endif %}">{{ entrada.entry_amount|money:entrada.account.currency }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7" class="empty-state">Nenhum lançamento com esses filtros.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </form>
+</div>
+{% endblock %}
