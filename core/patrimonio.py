@@ -63,7 +63,7 @@ from urllib.parse import urlencode
 
 from django.core.paginator import Paginator
 from django.db import connection, transaction
-from django.db.models import Case, CharField, Count, DateField, F, Max, Min, Sum, Value, When
+from django.db.models import Case, CharField, Count, DateField, F, Max, Min, Q, Sum, Value, When
 from django.http import JsonResponse
 from django.urls import reverse
 from django.utils import timezone
@@ -77,9 +77,11 @@ from core.domain.finance import (
     CATEGORY_KIND_TRANSFER,
     ENTRY_TYPE_INCOME,
     OPERATION_INTERNAL_TRANSFER,
+    OPERATION_RECURRING,
     STATUS_PENDING,
     STATUS_PROJECTED,
     STATUS_REALIZED,
+    VIEW_ALL,
     VIEW_REALIZED,
 )
 from reports.services import decimal_balances_before_by_account
@@ -721,6 +723,7 @@ def metadata_v3_view(request):
             "eventos": False,
             "escrita": False,
             "paginacao_atividades": True,
+            "projecao": True,
         },
         "paginacao": {"padrao": V3_PAGE_SIZE, "maximo": V3_MAX_PAGE_SIZE},
         "periodo_disponivel": {
@@ -731,3 +734,288 @@ def metadata_v3_view(request):
         "contas": [_conta_v3(conta) for conta in contas],
         "categorias": [_categoria_v3(categoria) for categoria in categorias],
     })
+
+
+# ---------------------------------------------------------------------------
+# Projeção: o caixa que as contas terão se o que está lançado acontecer
+# ---------------------------------------------------------------------------
+#
+# O consolidador desenha "quanto vou ter" somando esta projeção aos
+# investimentos. Ele não recalcula saldo: a regra de status (o que é vencido, o
+# que é a vencer) e o saldo de partida saem daqui, das mesmas funções que as
+# telas de relatório usam.
+#
+# Três decisões que o consumidor precisa conhecer, porque mudam o número:
+#
+# - o ponto de partida é o saldo REALIZADO no fim do dia-base (hoje). Tudo o
+#   que ainda não aconteceu entra depois, na data de vencimento;
+# - lançamento vencido e não realizado não some: ele vai para o bloco
+#   `vencidos` e, com `vencidos=incluir` (o padrão), entra no saldo já no
+#   dia-base -- é dinheiro que ainda deve entrar ou sair;
+# - saída para investimento (categoria de natureza "movimentacao") não é
+#   despesa. Ela sai do caixa daqui, mas o patrimônio não diminui: vai para
+#   `investimentos_saida`, e o consolidador soma esse valor aos investimentos.
+#   Sem isso, cada aporte programado apareceria como perda no patrimônio.
+#
+# E a projeção termina onde terminam os lançamentos. As recorrências só são
+# geradas até o horizonte configurado em Parâmetros; depois dele a curva
+# ficaria plana e pareceria que a renda parou. Por isso o contrato publica
+# `horizonte`, e o consumidor marca esse limite no gráfico.
+
+PROJECAO_DIAS_PADRAO = 183
+PROJECAO_MAX_DIAS = 1100
+PROJECAO_MAX_LANCAMENTOS = 10_000
+VENCIDOS_OPCOES = {"incluir", "excluir"}
+
+
+def _dinheiro(valor: Decimal) -> str:
+    return str(valor.quantize(MONEY_QUANT))
+
+
+def _primeiro_dia(dia: date) -> date:
+    return date(dia.year, dia.month, 1)
+
+
+def _proximo_mes(dia: date) -> date:
+    return date(dia.year + dia.month // 12, dia.month % 12 + 1, 1)
+
+
+def _mes_vazio(mes: date, moeda: str) -> dict:
+    zero = Decimal("0.00")
+    return {
+        "mes": mes,
+        "moeda": moeda,
+        "entradas": zero,
+        "saidas": zero,
+        "transferencias_entrada": zero,
+        "transferencias_saida": zero,
+        "investimentos_entrada": zero,
+        "investimentos_saida": zero,
+        "saldo_final": zero,
+    }
+
+
+def _coluna_do_lancamento(entry: CashFlowEntry) -> str:
+    receita = entry.entry_type == ENTRY_TYPE_INCOME
+    natureza = entry.category.kind
+    if natureza == CATEGORY_KIND_MOVEMENT:
+        return "investimentos_entrada" if receita else "investimentos_saida"
+    if natureza == CATEGORY_KIND_TRANSFER:
+        return "transferencias_entrada" if receita else "transferencias_saida"
+    return "entradas" if receita else "saidas"
+
+
+def _assinado(entry: CashFlowEntry) -> Decimal:
+    return entry.entry_amount if entry.entry_type == ENTRY_TYPE_INCOME else -entry.entry_amount
+
+
+def _endereco_do_mes(mes: date) -> str:
+    valor = mes.strftime("%Y-%m")
+    consulta = urlencode({"start_month": valor, "end_month": valor, "mode": VIEW_ALL})
+    return f"{reverse('reports:projections_view')}?{consulta}"
+
+
+def montar_projecao(hoje: date, fim: date, *, incluir_vencidos: bool = True) -> dict:
+    """A projeção do caixa de todas as contas, de `hoje` até `fim`.
+
+    Cada conta fica na sua moeda e nada é somado entre moedas. O resultado é
+    determinístico para um mesmo estado do banco e uma mesma data-base.
+    """
+    from core.services import get_recurring_projection_settings, system_start_date
+
+    contas = _contas_v3()
+    ids = [conta.id for conta in contas]
+    moeda_da_conta = {conta.id: conta.currency for conta in contas}
+    moedas = sorted(set(moeda_da_conta.values()))
+    saldos = decimal_balances_before_by_account(ids, hoje + timedelta(days=1), VIEW_REALIZED)
+    saldo_da_conta = {conta_id: saldos.get(conta_id, Decimal("0.00")) for conta_id in ids}
+    saldo_inicial_da_conta = dict(saldo_da_conta)
+
+    def saldo_da_moeda(moeda: str) -> Decimal:
+        return sum(
+            (saldo for conta_id, saldo in saldo_da_conta.items() if moeda_da_conta[conta_id] == moeda),
+            Decimal("0.00"),
+        )
+
+    saldo_inicial_por_moeda = {moeda: saldo_da_moeda(moeda) for moeda in moedas}
+
+    piso = system_start_date() or date.min
+    abertos = list(
+        CashFlowEntry.objects.select_related("category")
+        .filter(account_id__in=ids)
+        .filter(
+            Q(status=STATUS_PROJECTED, due_date__gte=hoje, due_date__lte=fim)
+            | Q(status__in=(STATUS_PROJECTED, STATUS_PENDING), due_date__lt=hoje, due_date__gte=piso)
+        )
+        .order_by("due_date", "-entry_type", "id")[: PROJECAO_MAX_LANCAMENTOS + 1]
+    )
+    if len(abertos) > PROJECAO_MAX_LANCAMENTOS:
+        raise ValueError(
+            f"a projeção passaria de {PROJECAO_MAX_LANCAMENTOS} lançamentos; encurte o período"
+        )
+
+    vencidos: dict[str, dict] = {}
+    futuros: list[CashFlowEntry] = []
+    for entry in abertos:
+        if entry.due_date >= hoje:
+            futuros.append(entry)
+            continue
+        moeda = moeda_da_conta[entry.account_id]
+        bloco = vencidos.setdefault(
+            moeda,
+            {"moeda": moeda, "entradas": Decimal("0.00"), "saidas": Decimal("0.00"), "quantidade": 0},
+        )
+        chave = "entradas" if entry.entry_type == ENTRY_TYPE_INCOME else "saidas"
+        bloco[chave] += entry.entry_amount
+        bloco["quantidade"] += 1
+        if incluir_vencidos:
+            saldo_da_conta[entry.account_id] += _assinado(entry)
+
+    menor_da_conta = {conta_id: (saldo, hoje) for conta_id, saldo in saldo_da_conta.items()}
+    # Cada ponto da série é (dia, saldo da moeda, investido até o dia): o
+    # investido acumula o que saiu do caixa para investimento menos o que voltou
+    # dele. O consumidor soma esse valor aos investimentos no mesmo dia em que o
+    # caixa cai -- sem ele, o patrimônio projetado despencaria no dia do aporte.
+    investido = {moeda: Decimal("0.00") for moeda in moedas}
+    serie = {moeda: [(hoje, saldo_da_moeda(moeda), investido[moeda])] for moeda in moedas}
+    menor_da_moeda = {moeda: (hoje, serie[moeda][0][1]) for moeda in moedas}
+
+    meses: dict[tuple[date, str], dict] = {}
+    mes = _primeiro_dia(hoje)
+    while mes <= fim:
+        for moeda in moedas:
+            meses[(mes, moeda)] = _mes_vazio(mes, moeda)
+        mes = _proximo_mes(mes)
+
+    # Os lançamentos vêm ordenados por data. O saldo registrado para um dia é o
+    # do fim dele, depois de todos os lançamentos daquela data.
+    for indice, entry in enumerate(futuros):
+        saldo_da_conta[entry.account_id] += _assinado(entry)
+        moeda = moeda_da_conta[entry.account_id]
+        coluna = _coluna_do_lancamento(entry)
+        meses[(_primeiro_dia(entry.due_date), moeda)][coluna] += entry.entry_amount
+        if coluna == "investimentos_saida":
+            investido[moeda] += entry.entry_amount
+        elif coluna == "investimentos_entrada":
+            investido[moeda] -= entry.entry_amount
+
+        proximo = futuros[indice + 1] if indice + 1 < len(futuros) else None
+        if proximo is not None and proximo.due_date == entry.due_date:
+            continue
+        for conta_id, saldo in saldo_da_conta.items():
+            if saldo < menor_da_conta[conta_id][0]:
+                menor_da_conta[conta_id] = (saldo, entry.due_date)
+        for moeda_do_dia in moedas:
+            atual = saldo_da_moeda(moeda_do_dia)
+            _dia, saldo_anterior, investido_anterior = serie[moeda_do_dia][-1]
+            if (atual, investido[moeda_do_dia]) != (saldo_anterior, investido_anterior):
+                serie[moeda_do_dia].append((entry.due_date, atual, investido[moeda_do_dia]))
+            if atual < menor_da_moeda[moeda_do_dia][1]:
+                menor_da_moeda[moeda_do_dia] = (entry.due_date, atual)
+
+    # O saldo no fim de cada mês é o último ponto da série até aquele mês.
+    for (mes, moeda), linha in meses.items():
+        fim_do_mes = _proximo_mes(mes) - timedelta(days=1)
+        linha["saldo_final"] = [valor for dia, valor, _investido in serie[moeda] if dia <= fim_do_mes][-1]
+
+    configuracao = get_recurring_projection_settings()
+    ultima_recorrencia = CashFlowEntry.objects.filter(
+        status=STATUS_PROJECTED, operation_type=OPERATION_RECURRING
+    ).aggregate(fim=Max("due_date"))["fim"]
+
+    return {
+        "contrato": CONTRATO_V3,
+        "recurso": "projecao",
+        "sistema": SISTEMA,
+        "gerado_em": timezone.now().isoformat(),
+        "data_base": hoje.isoformat(),
+        "fim": fim.isoformat(),
+        "vencidos_incluidos": incluir_vencidos,
+        "horizonte": {
+            "meses_configurados": configuracao.horizon_months,
+            "ultima_recorrencia": ultima_recorrencia.isoformat() if ultima_recorrencia else None,
+        },
+        "saldos_iniciais": [
+            {"moeda": moeda, "saldo": _dinheiro(saldo_inicial_por_moeda[moeda])} for moeda in moedas
+        ],
+        "vencidos": [
+            {
+                "moeda": bloco["moeda"],
+                "entradas": _dinheiro(bloco["entradas"]),
+                "saidas": _dinheiro(bloco["saidas"]),
+                "quantidade": bloco["quantidade"],
+            }
+            for _moeda, bloco in sorted(vencidos.items())
+        ],
+        "contas": [
+            {
+                **_conta_v3(conta),
+                "saldo_inicial": _dinheiro(saldo_inicial_da_conta[conta.id]),
+                "saldo_final": _dinheiro(saldo_da_conta[conta.id]),
+                "menor_saldo": {
+                    "valor": _dinheiro(menor_da_conta[conta.id][0]),
+                    "data": menor_da_conta[conta.id][1].isoformat(),
+                },
+            }
+            for conta in contas
+        ],
+        "menor_saldo": [
+            {
+                "moeda": moeda,
+                "data": menor_da_moeda[moeda][0].isoformat(),
+                "valor": _dinheiro(menor_da_moeda[moeda][1]),
+            }
+            for moeda in moedas
+        ],
+        "serie": [
+            {
+                "moeda": moeda,
+                "data": dia.isoformat(),
+                "saldo": _dinheiro(valor),
+                "investido_acumulado": _dinheiro(acumulado),
+            }
+            for moeda in moedas
+            for dia, valor, acumulado in serie[moeda]
+        ],
+        "meses": [
+            {
+                "mes": linha["mes"].strftime("%Y-%m"),
+                "moeda": linha["moeda"],
+                **{chave: _dinheiro(valor) for chave, valor in linha.items() if isinstance(valor, Decimal)},
+                "deep_link": _endereco_do_mes(linha["mes"]),
+            }
+            for _chave, linha in sorted(meses.items())
+        ],
+    }
+
+
+@require_GET
+def projecao_v3_view(request):
+    """Projeção do caixa a partir de hoje, somente leitura.
+
+    Parâmetros: `fim` (AAAA-MM-DD; padrão hoje + 183 dias, no máximo
+    `PROJECAO_MAX_DIAS` à frente) e `vencidos` (`incluir`, o padrão, ou
+    `excluir`). A data-base é sempre hoje: projetar a partir de uma data
+    passada misturaria o que aconteceu com o que estava previsto.
+    """
+    erro = _autorizacao_v3(request)
+    if erro:
+        return erro
+    hoje = timezone.localdate()
+    bruto_fim = request.GET.get("fim", "")
+    try:
+        fim = _data_da_query(bruto_fim, "fim") if bruto_fim else hoje + timedelta(days=PROJECAO_DIAS_PADRAO)
+    except ValueError as exc:
+        return JsonResponse({"erro": str(exc)}, status=400)
+    if fim < hoje:
+        return JsonResponse({"erro": "fim não pode ser anterior a hoje"}, status=400)
+    if (fim - hoje).days > PROJECAO_MAX_DIAS:
+        return JsonResponse({"erro": f"fim excede o limite de {PROJECAO_MAX_DIAS} dias à frente"}, status=400)
+    opcao_vencidos = request.GET.get("vencidos", "incluir")
+    if opcao_vencidos not in VENCIDOS_OPCOES:
+        return JsonResponse({"erro": "vencidos deve ser incluir ou excluir"}, status=400)
+    try:
+        payload = montar_projecao(hoje, fim, incluir_vencidos=opcao_vencidos == "incluir")
+    except ValueError as exc:
+        return JsonResponse({"erro": str(exc)}, status=400)
+    return _resposta_v3(payload)
