@@ -17,6 +17,11 @@ existe. Três consequências, todas testadas em
 - num mês novo o horizonte avança, e aí reexecutar gera o que falta -- que é
   o objetivo.
 
+A cauda apagada é outro caso. Excluir "este e os próximos" deixa a maior data
+restante antes do horizonte, e o preenchimento para frente recriaria a cauda
+inteira. Por isso a exclusão grava `BankOperation.recurrence_ended_on` e a
+operação encerrada sai da consulta (`tests/test_projecao_serie_encerrada.py`).
+
 O disparo manual fica na tela de Parâmetros. Depois de aumentar o horizonte,
 ele pode ser repetido imediatamente; `generated_count` informa quantas
 ocorrências foram criadas e retorna zero quando não há trabalho. A execução
@@ -332,6 +337,7 @@ def ensure_recurring_projection_horizon(
         CashFlowEntry.objects.filter(
             is_recurring=True,
             bank_operation__isnull=False,
+            bank_operation__recurrence_ended_on__isnull=True,
         )
         .exclude(operation_type=OPERATION_INSTALLMENT)
         .select_related("bank_operation__responsible_user")

@@ -120,6 +120,10 @@ class BankOperation(models.Model):
         'accounts.AppUser', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='responsible_bank_operations',
     )
+    # Vencimento a partir do qual a série recorrente foi excluída ("este e os
+    # próximos"). Preenchido, a projeção não estende mais a operação; ver
+    # `transactions/recurring_projection.py` e docs/domain.md.
+    recurrence_ended_on = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     

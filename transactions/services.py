@@ -1744,9 +1744,14 @@ def delete_transaction_or_operation(
         if remaining_count == 0:
             BankOperation.objects.filter(id=bank_operation_id).delete()
         else:
-            BankOperation.objects.filter(id=bank_operation_id).update(
-                entry_count=remaining_count, updated_at=timezone.now()
-            )
+            campos = {"entry_count": remaining_count, "updated_at": timezone.now()}
+            if operation_scope == OPERATION_SCOPE_CURRENT_FUTURE and tx.is_recurring:
+                # Apagar a cauda encerra a série. Sem o registro, a projeção
+                # partiria da maior data que restou e recriaria tudo o que foi
+                # excluído. O histórico mantém `is_recurring`: o Planejamento
+                # anual classifica por ele. Ver docs/domain.md.
+                campos["recurrence_ended_on"] = tx.due_date
+            BankOperation.objects.filter(id=bank_operation_id).update(**campos)
             _sync_bank_operation_status(bank_operation_id)
 
     return count
