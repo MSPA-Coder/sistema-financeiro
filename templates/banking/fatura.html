@@ -20,6 +20,12 @@
 
 {% block content %}
 <div class="chart-card u-mb-1">
+    {% if tudo_no_saldo_inicial %}
+    <p class="fatura-aviso"><strong>Esta fatura é toda anterior ao saldo inicial do cartão
+        ({{ conta.initial_balance_date|date:"d/m/Y" }}).</strong> Nenhuma compra será lançada: só as parcelas
+        que vencem depois dessa data. Para importar o histórico, mude antes a data do saldo inicial do cartão
+        (Cadastros › Contas) para antes da primeira fatura.</p>
+    {% endif %}
     <h3>Resumo do arquivo</h3>
     <table class="tx-table">
         <tbody>

@@ -93,10 +93,12 @@ def fatura_view(request, batch_id):
         messages.warning(request, str(exc))
         return redirect('bank_statements:imports_view')
     novas = list(fatura.linhas_novas(lote))
+    planos = fatura.planejar(lote.account, novas)
     context = {
         "lote": lote,
         "conta": lote.account,
-        "planos": fatura.planejar(lote.account, novas),
+        "planos": planos,
+        "tudo_no_saldo_inicial": bool(planos) and all(p.acao == fatura.SALDO_INICIAL for p in planos),
         "resumo": fatura.resumir(lote.lines.all()),
         "processadas": lote.lines.exclude(status="novo").count(),
         "categorias": list(fatura.categorias_gerenciais()),

@@ -1,3 +1,5 @@
 /* .chart-card, .add-form, .table-container e .empty-state são definidos em
    static/css/core/application.css (importado por base.css). */
 .help-text { color: var(--muted); font-size: 0.85rem; margin-bottom: 0.75rem; }
+/* Mesmo desenho do .warning-panel de permissions.css. */
+.fatura-aviso { border: 1px solid var(--warning); border-radius: 8px; padding: 0.55rem 0.75rem; color: var(--text); background: rgba(245, 158, 11, 0.08); line-height: 1.45; margin-bottom: 0.75rem; }

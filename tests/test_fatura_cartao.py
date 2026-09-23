@@ -457,6 +457,34 @@ def test_parcela_antiga_so_cria_as_parcelas_depois_do_saldo_inicial(cenario):
 
 
 @pytest.mark.django_db
+def test_categoria_escolhida_para_a_categoria_do_banco_vale_para_a_fatura_seguinte(cenario):
+    marco, _, _ = _importar(cenario, FATURA_MARCO)
+    mercado = marco.lines.get(description="MERCADO BOM · Mariano")
+    fatura.processar(cenario["usuario"], marco.id, {str(mercado.id): str(cenario["mercado"].id)})
+
+    abril, _, _ = _importar(cenario, _c6(
+        "10/04/2026;MARIANO S;1111;Supermercados;OUTRO MERCADO;Única;0;0;90.00",
+        "11/04/2026;CLAUDIA S;2222;-;BANCA;Única;0;0;5.00",
+    ))
+
+    planos = {p.linha.description: p for p in fatura.planejar(cenario["cartao"], fatura.linhas_novas(abril))}
+    assert planos["OUTRO MERCADO · Mariano"].categoria == cenario["mercado"]
+    assert planos["BANCA · Claudia"].categoria == cenario["outros"]
+
+
+@pytest.mark.django_db
+def test_previa_avisa_quando_a_fatura_toda_ja_esta_no_saldo_inicial(cenario):
+    client = Client()
+    client.force_login(cenario["usuario"])
+    antiga, _, _ = _importar(cenario, _c6("20/02/2026;MARIANO S;1111;-;PADARIA;Única;0;0;50.00"))
+    nova, _, _ = _importar(cenario, _c6("20/03/2026;MARIANO S;1111;-;PADARIA;Única;0;0;50.00"))
+
+    aviso = "Esta fatura é toda anterior ao saldo inicial do cartão"
+    assert aviso in client.get(f"/banking/import/{antiga.id}/fatura/").content.decode()
+    assert aviso not in client.get(f"/banking/import/{nova.id}/fatura/").content.decode()
+
+
+@pytest.mark.django_db
 def test_parcelado_pode_comecar_no_meio(cenario):
     criadas = create_transaction_batch(
         TransactionRequest(

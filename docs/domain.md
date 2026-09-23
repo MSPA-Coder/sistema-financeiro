@@ -216,8 +216,12 @@ Importações, na conta do cartão, e passa por duas etapas:
    - *compra* ou *estorno*, criados já realizados.
 
 A categoria sugerida vem da última compra com a mesma descrição no cartão,
-depois da categoria do banco quando ela tem o nome de uma categoria cadastrada,
-e por fim de "Outros"; a prévia deixa trocar cada uma. Quando o arquivo tem mais
+depois da categoria escolhida da última vez para a mesma categoria do banco
+(a prévia ensina as faturas seguintes), depois da categoria do banco quando ela
+tem o nome de uma categoria cadastrada, e por fim de "Outros"; a prévia deixa
+trocar cada uma. Uma fatura inteira anterior ao saldo inicial não lança nada, e
+a prévia avisa isso em destaque: para importar histórico, a data do saldo
+inicial do cartão tem de ser anterior à primeira fatura. Quando o arquivo tem mais
 de um portador, o nome de quem comprou vai para a descrição.
 
 ## Fechamento mensal
