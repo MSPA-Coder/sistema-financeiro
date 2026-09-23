@@ -17,6 +17,7 @@ urlpatterns = [
     path("patrimonio/v3/activities", patrimonio.atividades_v3_view, name="atividades_patrimoniais_v3"),
     path("patrimonio/v3/categories", patrimonio.categorias_v3_view, name="categorias_patrimoniais_v3"),
     path("patrimonio/v3/metadata", patrimonio.metadata_v3_view, name="metadata_patrimonial_v3"),
+    path("patrimonio/v3/projection", patrimonio.projecao_v3_view, name="projecao_patrimonial_v3"),
 
     path("permissions/", views.permissions_view, name="permissions"),
 
