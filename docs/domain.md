@@ -221,7 +221,10 @@ separa recorrente de não recorrente por esse campo e o histórico não muda de
 classificação; na edição, as linhas do bloco ficam como lançamentos não
 recorrentes da mesma operação. Hoje a interface não reabre uma série
 encerrada; retomar a recorrência é criar um novo lançamento recorrente. Excluir
-só uma ocorrência abre uma lacuna e não encerra nada. Linhas com `is_recurring` desligado à mão, como o contorno aplicado às
+só uma ocorrência abre uma lacuna e não encerra nada. Desmarcar "recorrente"
+em "somente este" também não encerra: a linha vira avulsa, e a projeção não
+cria outra ocorrência num mês em que a operação já tenha linha, recorrente ou
+não, mesmo que o dia tenha sido trocado. Linhas com `is_recurring` desligado à mão, como o contorno aplicado às
 operações 162 e 164 em 23/09/2026, também ficam fora da projeção.
 O middleware é o gatilho atual; um scheduler ou worker também é válido se
 preservar idempotência, retry seguro, auditoria e coordenação entre processos.
