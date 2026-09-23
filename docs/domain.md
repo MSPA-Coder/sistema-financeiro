@@ -155,6 +155,34 @@ que nunca existiu no extrato dela.
   dela: somar as duas pontas contaria o mesmo dinheiro duas vezes, e a maior das
   duas seria só a de número maior.
 
+## Cartão de crédito
+
+O cartão é uma conta com `account_kind = "cartao_credito"`. Ele segue as mesmas
+regras das outras contas, com três diferenças de significado:
+
+- **o saldo é dívida.** Compras são despesas na conta do cartão, na data da
+  compra e com a categoria real; o saldo fica negativo, e esse negativo é a
+  fatura em aberto. Um cartão negativo não é alerta de caixa;
+- **pagar a fatura é transferência, não despesa.** O pagamento sai de uma ou
+  mais contas comuns para o cartão, uma transferência de cada, e pode ser
+  dividido entre contas. Lançar o pagamento como despesa contaria o mesmo gasto
+  duas vezes: na compra e na fatura;
+- **os dias guiam a projeção.** `card_closing_day` e `card_due_day` (1 a 31)
+  são obrigatórios no cartão. A conta de pagamento padrão
+  (`card_payment_account`) é opcional e só diz de onde sai a fatura projetada;
+  ela tem de ser uma conta comum, na mesma moeda. Uma conta que paga algum
+  cartão não pode virar cartão.
+
+O banco garante que um cartão tem os dois dias e que uma conta comum não tem
+nenhum dado de cartão (`ck_financial_account_card_fields`). Os contratos
+patrimoniais publicam o tipo em cada conta (`tipo`), para o consumidor tratar o
+saldo do cartão como passivo.
+
+O modelo anterior -- a fatura inteira como uma despesa recorrente de valor
+estimado na conta corrente -- continua válido para o histórico. Cada cartão
+passa ao modelo novo a partir da primeira fatura importada, sem reescrever o
+passado.
+
 ## Fechamento mensal
 
 O fechamento pertence a uma conta e a um mês. Enquanto estiver ativo, bloqueia

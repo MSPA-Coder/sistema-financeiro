@@ -11,7 +11,13 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from accounts.services import accessible_owner_ids
-from core.domain.finance import CURRENCY_OPTIONS, VIEW_PROJECTED, VIEW_REALIZED
+from core.domain.finance import (
+    ACCOUNT_KIND_OPTIONS,
+    ACCOUNT_KIND_REGULAR,
+    CURRENCY_OPTIONS,
+    VIEW_PROJECTED,
+    VIEW_REALIZED,
+)
 from core.htmx import quer_fragmento
 from core.patrimonio import saldo_da_conta
 from core.permissions import permission_required
@@ -206,6 +212,13 @@ def accounts_view(request):
         "owners": _owners_for_form(request.user),
         "institutions": list_institutions(),
         "currencies": CURRENCY_OPTIONS,
+        "account_kinds": ACCOUNT_KIND_OPTIONS,
+        # Candidatas a conta de pagamento padrão de um cartão: contas comuns
+        # que o usuário enxerga. A validação final é do service.
+        "payment_accounts": [
+            account for account in list_accounts_for_user(request.user)
+            if account.account_kind == ACCOUNT_KIND_REGULAR
+        ],
         "current_filter_owner_id": int(current_filter_owner_id) if current_filter_owner_id else None,
         "current_filter_institution_id": int(current_filter_institution_id) if current_filter_institution_id else None,
         "can_view_account_details": request.user.has_perm("transactions.view"),
@@ -213,6 +226,15 @@ def accounts_view(request):
     if quer_fragmento(request):
         return render(request, 'tables/_accounts_table.html', context)
     return render(request, 'tables/accounts.html', context)
+
+
+def _card_fields_from_post(request) -> dict[str, str]:
+    return {
+        "account_kind": request.POST.get("account_kind", ""),
+        "card_closing_day": request.POST.get("card_closing_day", ""),
+        "card_due_day": request.POST.get("card_due_day", ""),
+        "card_payment_account_id": request.POST.get("card_payment_account_id", ""),
+    }
 
 
 def _owners_for_form(user):
@@ -235,6 +257,7 @@ def create_account_view(request):
             initial_balance=request.POST.get('initial_balance', ''),
             currency=request.POST.get('currency', ''),
             initial_balance_date=request.POST.get('initial_balance_date', ''),
+            **_card_fields_from_post(request),
         )
         messages.success(request, "Conta cadastrada com sucesso.")
     except ValueError as exc:
@@ -258,6 +281,7 @@ def update_account_view(request, account_id):
             initial_balance=request.POST.get('initial_balance', ''),
             currency=request.POST.get('currency', ''),
             initial_balance_date=request.POST.get('initial_balance_date', ''),
+            **_card_fields_from_post(request),
         )
         messages.success(request, "Conta atualizada com sucesso.")
     except ValueError as exc:
