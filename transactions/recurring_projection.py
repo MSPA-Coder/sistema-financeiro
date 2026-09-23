@@ -393,6 +393,11 @@ def ensure_recurring_projection_horizon(
         )
         processed_operations += 1
 
+    # A fatura projetada dos cartões segue o mesmo horizonte.
+    from bank_statements.fatura_projetada import atualizar_todos
+
+    atualizar_todos(hoje=base_date, fim=horizon_end)
+
     if update_last_run:
         from core.domain.settings import APP_SETTING_LAST_PROJECTION_RUN
 

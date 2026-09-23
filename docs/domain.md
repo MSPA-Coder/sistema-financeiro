@@ -243,6 +243,37 @@ o saldo de fechamento é recalculado e, se diferir do anterior, nada é gravado.
 Não há tabela de regras: o importador de fatura sugere a categoria pela última
 compra com a mesma chave, em qualquer conta, então a reclassificação é a regra.
 
+### Fatura projetada
+
+Cada fatura futura, até o horizonte de projeção, é **parcelas já lançadas no
+ciclo + gasto novo estimado** (`bank_statements/fatura_projetada.py`). O ciclo
+vai do fechamento anterior (exclusive) ao fechamento; a contagem parte da
+última fatura importada, então uma fatura já fechada e ainda não importada
+também é estimada.
+
+O gasto novo não pode contar de novo as parcelas. Para cada fatura importada,
+soma-se só o que ela cobrou e ainda não era conhecido `k` fechamentos antes:
+parcela N/M é conhecida desde a data em que a 1ª entrou na fatura (a da linha
+menos N-1 meses), compra à vista desde a própria data. A estimativa da `k`-ésima
+fatura futura é a mediana desse valor nas últimas 6 faturas (mínimo 3; com
+menos, só entram as parcelas). Por isso a estimativa cresce nas faturas mais
+distantes: nelas cabem também as parcelas seguintes de compras ainda não
+feitas. Pagamentos e estornos ficam de fora, e a anuidade, que vem com a data
+do lançamento, conta como parcela antiga. O gasto mensal fixado no cadastro do
+cartão (`card_estimated_spend`) substitui a mediana.
+
+A projeção vira lançamentos "a vencer": a despesa "Gasto estimado" no cartão,
+na data do fechamento, na categoria "Cartão de Crédito"; e o pagamento, uma
+transferência da conta de pagamento padrão no vencimento, pelo total
+projetado. Sem conta de pagamento padrão, não há pagamento projetado. Uma
+transferência para o cartão já agendada pelo usuário entre o fechamento e 10
+dias depois do vencimento vale como pagamento daquela fatura, e a projeção não
+cria outro. Os lançamentos são reconhecidos pela chave da `BankOperation`
+(`cartao-estimativa:` e `cartao-pagamento:`) e refeitos inteiros ao processar
+uma fatura, ao salvar o cartão ou os Parâmetros e a cada execução da projeção
+de recorrências. Marcado como realizado, o lançamento projetado deixa de ser
+projeção: a chave ganha o prefixo `realizado-` e ele fica.
+
 ## Fechamento mensal
 
 O fechamento pertence a uma conta e a um mês. Enquanto estiver ativo, bloqueia

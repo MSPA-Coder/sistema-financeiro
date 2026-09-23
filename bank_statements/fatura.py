@@ -91,6 +91,9 @@ _JANELA_COMPRA = timedelta(days=3)
 # palavra impede "Pague Menos" de virar pagamento.
 _PAGAMENTO = re.compile(r"^pag(amentos?)?\b", re.IGNORECASE)
 _CATEGORIA_PADRAO = "Outros"
+# Chaves das operações que a fatura projetada cria (`fatura_projetada.py`).
+PREFIXO_ESTIMATIVA = "cartao-estimativa"
+PREFIXO_PAGAMENTO = "cartao-pagamento"
 
 
 @dataclass
@@ -194,7 +197,7 @@ def _compra_lancada(conta, linha, usados) -> CashFlowEntry | None:
         is_recurring=False,
         entry_amount=abs(linha.amount),
         due_date__range=(linha.statement_date - _JANELA_COMPRA, linha.statement_date + _JANELA_COMPRA),
-    ).exclude(_conciliados())
+    ).exclude(_conciliados()).exclude(bank_operation__operation_key__startswith=f"{PREFIXO_ESTIMATIVA}:")
     return _mais_perto(candidatos, linha.statement_date, usados)
 
 
@@ -430,4 +433,9 @@ def processar(user, batch_id, escolhas: dict, audit_context=None) -> dict[str, i
         if not linhas_novas(lote).exists():
             lote.status = STATUS_PROCESSED
             lote.save(update_fields=["status", "updated_at"])
+
+        # A fatura nova muda a base da estimativa e as parcelas do ciclo.
+        from .fatura_projetada import atualizar
+
+        atualizar(conta)
     return contagem
