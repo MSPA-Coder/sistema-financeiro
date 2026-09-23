@@ -9,7 +9,16 @@ from django.db.models import Exists, OuterRef, ProtectedError
 from django.utils.timezone import localdate
 
 from accounts.services import accessible_owner_ids, can_access_owner
-from core.domain.finance import BASE_CURRENCY, VALID_CURRENCIES, MixedCurrencyError
+from core.domain.finance import (
+    ACCOUNT_KIND_CREDIT_CARD,
+    ACCOUNT_KIND_REGULAR,
+    BASE_CURRENCY,
+    CARD_DAY_MAX,
+    CARD_DAY_MIN,
+    VALID_ACCOUNT_KINDS,
+    VALID_CURRENCIES,
+    MixedCurrencyError,
+)
 
 from .models import FinancialAccount, FinancialInstitution
 
@@ -110,7 +119,7 @@ def list_accounts_for_user(user, owner_id: int | None = None, institution_id: in
     `transactions` sem importar o app de lançamentos.
     """
     owner_ids = accessible_owner_ids(user, "view")
-    queryset = FinancialAccount.objects.select_related('owner', 'institution').filter(
+    queryset = FinancialAccount.objects.select_related('owner', 'institution', 'card_payment_account').filter(
         owner_id__in=owner_ids
     ).annotate(
         has_entries=Exists(
@@ -262,6 +271,67 @@ def _clean_account_fields(owner_id: str, institution_id: str, account_name: str,
     return owner_id_int, institution_id_int, account_name, balance
 
 
+def _parse_card_day(raw_value: str | None, label: str) -> int:
+    try:
+        day = int((raw_value or "").strip())
+    except ValueError as exc:
+        raise ValueError(f"{label} do cartão é obrigatório (1 a 31).") from exc
+    if not CARD_DAY_MIN <= day <= CARD_DAY_MAX:
+        raise ValueError(f"{label} do cartão tem de estar entre 1 e 31.")
+    return day
+
+
+def _clean_card_fields(
+    user,
+    *,
+    account_kind: str,
+    card_closing_day: str,
+    card_due_day: str,
+    card_payment_account_id: str,
+    currency: str,
+    account_id: int | None = None,
+) -> dict:
+    """Os campos de cartão, validados. Conta comum sai com todos vazios.
+
+    A conta de pagamento padrão é opcional: a fatura pode ser paga de mais de
+    uma conta, com uma transferência de cada. Ela só diz de onde a fatura
+    projetada sai, e por isso tem de ser uma conta comum, na mesma moeda, que
+    o usuário enxerga.
+    """
+    kind = (account_kind or ACCOUNT_KIND_REGULAR).strip()
+    if kind not in VALID_ACCOUNT_KINDS:
+        raise ValueError("Tipo de conta inválido.")
+    if kind == ACCOUNT_KIND_REGULAR:
+        return {
+            "account_kind": kind,
+            "card_closing_day": None,
+            "card_due_day": None,
+            "card_payment_account": None,
+        }
+    payment = None
+    raw_payment = (card_payment_account_id or "").strip()
+    if raw_payment:
+        try:
+            payment_id = int(raw_payment)
+        except ValueError as exc:
+            raise ValueError("Conta de pagamento inválida.") from exc
+        payment = FinancialAccount.objects.filter(id=payment_id).first()
+        if payment is None or not can_access_account(user, payment_id):
+            raise ValueError("Conta de pagamento não encontrada.")
+        if payment.id == account_id:
+            raise ValueError("O cartão não pode pagar a própria fatura.")
+        if payment.account_kind == ACCOUNT_KIND_CREDIT_CARD:
+            raise ValueError("A conta de pagamento tem de ser uma conta comum, não outro cartão.")
+        if payment.currency != currency:
+            raise ValueError("A conta de pagamento tem de estar na mesma moeda do cartão.")
+    return {
+        "account_kind": kind,
+        "card_closing_day": _parse_card_day(card_closing_day, "Dia de fechamento"),
+        "card_due_day": _parse_card_day(card_due_day, "Dia de vencimento"),
+        "card_payment_account": payment,
+    }
+
+
 def create_account(
     user,
     *,
@@ -271,6 +341,10 @@ def create_account(
     initial_balance: str,
     currency: str,
     initial_balance_date: str = "",
+    account_kind: str = ACCOUNT_KIND_REGULAR,
+    card_closing_day: str = "",
+    card_due_day: str = "",
+    card_payment_account_id: str = "",
 ) -> FinancialAccount:
     clean_owner_id, clean_institution_id, clean_name, balance = _clean_account_fields(
         owner_id, institution_id, account_name, initial_balance
@@ -281,6 +355,14 @@ def create_account(
         raise ValueError("Acesso negado: você não pode criar contas para este titular.")
     if not FinancialInstitution.objects.filter(id=clean_institution_id).exists():
         raise ValueError("Instituição não encontrada.")
+    card = _clean_card_fields(
+        user,
+        account_kind=account_kind,
+        card_closing_day=card_closing_day,
+        card_due_day=card_due_day,
+        card_payment_account_id=card_payment_account_id,
+        currency=clean_currency,
+    )
 
     return FinancialAccount.objects.create(
         owner_id=clean_owner_id,
@@ -289,6 +371,7 @@ def create_account(
         initial_balance=balance,
         currency=clean_currency,
         initial_balance_date=clean_balance_date,
+        **card,
     )
 
 
@@ -302,6 +385,10 @@ def update_account(
     initial_balance: str,
     currency: str,
     initial_balance_date: str = "",
+    account_kind: str = ACCOUNT_KIND_REGULAR,
+    card_closing_day: str = "",
+    card_due_day: str = "",
+    card_payment_account_id: str = "",
 ) -> FinancialAccount:
     clean_owner_id, clean_institution_id, clean_name, balance = _clean_account_fields(
         owner_id, institution_id, account_name, initial_balance
@@ -325,15 +412,34 @@ def update_account(
             "conta na moeda correta e transfira o saldo."
         )
 
+    card = _clean_card_fields(
+        user,
+        account_kind=account_kind,
+        card_closing_day=card_closing_day,
+        card_due_day=card_due_day,
+        card_payment_account_id=card_payment_account_id,
+        currency=clean_currency,
+        account_id=account.id,
+    )
+    # Uma conta que paga algum cartão não pode virar cartão: o cartão dela
+    # passaria a ter outro cartão como conta de pagamento.
+    if card["account_kind"] == ACCOUNT_KIND_CREDIT_CARD and account.cards_paid.exists():
+        raise ValueError(
+            "Esta conta é a conta de pagamento de um cartão e não pode virar cartão. "
+            "Troque antes a conta de pagamento desse cartão."
+        )
+
     account.owner_id = clean_owner_id
     account.institution_id = clean_institution_id
     account.account_name = clean_name
     account.initial_balance = balance
     account.currency = clean_currency
     account.initial_balance_date = clean_balance_date
+    for field, value in card.items():
+        setattr(account, field, value)
     account.save(update_fields=[
         "owner", "institution", "account_name", "initial_balance",
-        "currency", "initial_balance_date", "updated_at",
+        "currency", "initial_balance_date", *card, "updated_at",
     ])
     return account
 

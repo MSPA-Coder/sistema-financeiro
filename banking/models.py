@@ -3,7 +3,17 @@ from django.db.models.functions import Lower
 from django.utils import timezone
 from django.utils.timezone import localdate
 
-from core.domain.finance import CURRENCY_BRL, CURRENCY_OPTIONS, VALID_CURRENCIES
+from core.domain.finance import (
+    ACCOUNT_KIND_CREDIT_CARD,
+    ACCOUNT_KIND_OPTIONS,
+    ACCOUNT_KIND_REGULAR,
+    CARD_DAY_MAX,
+    CARD_DAY_MIN,
+    CURRENCY_BRL,
+    CURRENCY_OPTIONS,
+    VALID_ACCOUNT_KINDS,
+    VALID_CURRENCIES,
+)
 
 
 class FinancialInstitution(models.Model):
@@ -78,6 +88,23 @@ class FinancialAccount(models.Model):
         help_text='Data a que o saldo inicial se refere.',
     )
     is_default = models.BooleanField(default=False)
+    # Cartão de crédito: saldo negativo é a fatura em aberto. Os dias guiam a
+    # fatura projetada; o pagamento em si é uma ou mais transferências, de
+    # quantas contas forem, e a conta padrão só serve para projetar.
+    account_kind = models.CharField(
+        max_length=20,
+        choices=ACCOUNT_KIND_OPTIONS,
+        default=ACCOUNT_KIND_REGULAR,
+    )
+    card_closing_day = models.PositiveSmallIntegerField(null=True, blank=True)
+    card_due_day = models.PositiveSmallIntegerField(null=True, blank=True)
+    card_payment_account = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cards_paid',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -93,6 +120,33 @@ class FinancialAccount(models.Model):
                 condition=models.Q(currency__in=VALID_CURRENCIES),
                 name='ck_financial_account_currency_valid',
             ),
+            models.CheckConstraint(
+                condition=models.Q(account_kind__in=VALID_ACCOUNT_KINDS),
+                name='ck_financial_account_kind_valid',
+            ),
+            # Cartão tem os dois dias; conta comum não tem nenhum dado de cartão.
+            # O `isnull=False` é necessário: no CHECK, `NULL >= 1` não é falso,
+            # é desconhecido, e o PostgreSQL deixaria passar um cartão sem dias.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        account_kind=ACCOUNT_KIND_CREDIT_CARD,
+                        card_closing_day__isnull=False,
+                        card_due_day__isnull=False,
+                        card_closing_day__gte=CARD_DAY_MIN,
+                        card_closing_day__lte=CARD_DAY_MAX,
+                        card_due_day__gte=CARD_DAY_MIN,
+                        card_due_day__lte=CARD_DAY_MAX,
+                    )
+                    | models.Q(
+                        account_kind=ACCOUNT_KIND_REGULAR,
+                        card_closing_day__isnull=True,
+                        card_due_day__isnull=True,
+                        card_payment_account__isnull=True,
+                    )
+                ),
+                name='ck_financial_account_card_fields',
+            ),
         ]
         indexes = [
             models.Index(fields=['owner']),
@@ -102,6 +156,10 @@ class FinancialAccount(models.Model):
     
     def __str__(self):
         return self.account_name
+
+    @property
+    def is_credit_card(self) -> bool:
+        return self.account_kind == ACCOUNT_KIND_CREDIT_CARD
     
     def save(self, *args, **kwargs):
         if self.pk:

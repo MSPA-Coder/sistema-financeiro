@@ -274,6 +274,8 @@ def montar_resumo(referencia: date) -> dict:
                 "titular": titular,
                 "instituicao": instituicao,
                 "nome": conta.account_name,
+                # "cartao_credito" tem saldo de dívida: negativo por natureza.
+                "tipo": conta.account_kind,
                 "moeda": conta.currency,
                 "saldo": str(saldo),
                 "saldo_inicial_em": conta.initial_balance_date.isoformat(),
@@ -513,6 +515,7 @@ def _conta_v3(conta: FinancialAccount) -> dict:
     return {
         "id": _id_v3("conta", conta.id),
         "nome": conta.account_name,
+        "tipo": conta.account_kind,
         "moeda": conta.currency,
         "titular": identidade(conta.owner.name),
         "instituicao": identidade(conta.institution.institution_name),

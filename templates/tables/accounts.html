@@ -43,6 +43,19 @@
         </select>
         <input type="text" name="initial_balance" aria-label="Saldo inicial" placeholder="Saldo inicial" data-ui="w-120">
         <input type="date" name="initial_balance_date" aria-label="Data do saldo inicial" title="Data a que o saldo inicial se refere" data-ui="w-120">
+        <select name="account_kind" aria-label="Tipo de conta" data-ui="w-120">
+            {% for code, label in account_kinds %}
+                <option value="{{ code }}">{{ label }}</option>
+            {% endfor %}
+        </select>
+        <input type="number" name="card_closing_day" min="1" max="31" aria-label="Dia de fechamento do cartão" placeholder="Fecha dia" title="Só para cartão de crédito" data-ui="w-100">
+        <input type="number" name="card_due_day" min="1" max="31" aria-label="Dia de vencimento do cartão" placeholder="Vence dia" title="Só para cartão de crédito" data-ui="w-100">
+        <select name="card_payment_account_id" aria-label="Conta de pagamento padrão do cartão" title="Só para cartão de crédito: de onde sai a fatura projetada. O pagamento real pode ser dividido entre contas." data-ui="flex-1">
+            <option value="">Conta de pagamento (opcional)</option>
+            {% for payment in payment_accounts %}
+                <option value="{{ payment.id }}">{{ payment.owner.name }} · {{ payment.institution.institution_name }} · {{ payment.account_name }}</option>
+            {% endfor %}
+        </select>
         <button type="submit" class="btn btn-primary btn-sm"
                 data-sa-confirmar="Cadastrar esta conta financeira?"
                 data-sa-titulo="Confirmar cadastro"

@@ -137,3 +137,17 @@ VALID_VIEW_MODES: Final = {mode for mode, _label in VIEW_MODE_OPTIONS}
 
 def normalize_view_mode(value: str | None, default: str = VIEW_PROJECTED) -> str:
     return value if value in VALID_VIEW_MODES else default
+
+# Tipo de conta. O cartão de crédito é uma conta como as outras -- compras são
+# despesas nela, na data da compra e com a categoria real -- mas o saldo dele é
+# dívida: fica negativo por natureza, e pagar a fatura é transferência de uma
+# ou mais contas para ele, não despesa. Ver "Cartão de crédito" em docs/domain.md.
+ACCOUNT_KIND_REGULAR: Final = "conta"
+ACCOUNT_KIND_CREDIT_CARD: Final = "cartao_credito"
+ACCOUNT_KIND_OPTIONS: Final = (
+    (ACCOUNT_KIND_REGULAR, "Conta"),
+    (ACCOUNT_KIND_CREDIT_CARD, "Cartão de crédito"),
+)
+VALID_ACCOUNT_KINDS: Final = (ACCOUNT_KIND_REGULAR, ACCOUNT_KIND_CREDIT_CARD)
+CARD_DAY_MIN: Final = 1
+CARD_DAY_MAX: Final = 31
