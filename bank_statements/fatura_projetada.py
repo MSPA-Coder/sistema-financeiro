@@ -384,3 +384,44 @@ def atualizar_todos(*, hoje: date | None = None, fim: date | None = None) -> int
     for cartao_id in cartoes:
         atualizar(FinancialAccount(id=cartao_id), hoje=hoje, fim=fim)
     return len(cartoes)
+
+
+@dataclass
+class PainelDoCartao:
+    """O que Banking › Faturas mostra de um cartão."""
+
+    conta: FinancialAccount
+    saldo: Decimal
+    importadas: list  # [(BankStatementImport, Resumo)], da mais recente
+    projetadas: list[FaturaProjetada]
+
+
+def paineis(user, *, hoje: date | None = None, importadas: int = 6) -> list[PainelDoCartao]:
+    """Os cartões que `user` enxerga, com saldo, últimas faturas e projeção."""
+    from banking.services import accessible_account_ids
+    from core.domain.finance import VIEW_REALIZED
+    from reports.services import decimal_balance_before
+
+    from .fatura import resumir
+    from .models import BankStatementImport
+
+    hoje = hoje or date.today()
+    cartoes = (
+        FinancialAccount.objects.filter(
+            id__in=accessible_account_ids(user, "view"), account_kind=ACCOUNT_KIND_CREDIT_CARD
+        )
+        .select_related("owner", "institution", "card_payment_account")
+        .order_by("account_name")
+    )
+    resultado = []
+    for conta in cartoes:
+        lotes = list(
+            BankStatementImport.objects.filter(account=conta).prefetch_related("lines").order_by("-id")[:importadas]
+        )
+        resultado.append(PainelDoCartao(
+            conta=conta,
+            saldo=decimal_balance_before([conta.id], hoje + timedelta(days=1), VIEW_REALIZED),
+            importadas=[(lote, resumir(lote.lines.all())) for lote in lotes],
+            projetadas=planejar(conta, hoje=hoje),
+        ))
+    return resultado

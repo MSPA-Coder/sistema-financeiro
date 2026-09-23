@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% load static %}
+{% load money_filters %}
+
+{% block title %}Banking • Faturas{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/bank-imports.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>💳 Faturas</h1>
+        <p>Cartões de crédito: saldo em aberto, faturas importadas e as próximas faturas projetadas.</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% for painel in paineis %}
+{% with conta=painel.conta projetadas=painel.projetadas %}
+<div class="chart-card u-mb-1">
+    <h2>{{ conta.account_name }}</h2>
+    <p class="help-text">{{ conta.owner.name }} / {{ conta.institution.institution_name }} · fecha dia {{ conta.card_closing_day }} · vence dia {{ conta.card_due_day }}
+        · {% if conta.card_payment_account %}paga por {{ conta.card_payment_account.account_name }}{% else %}sem conta de pagamento padrão{% endif %}
+        {% if conta.card_estimated_spend is not None %}· gasto fixado em {{ conta.card_estimated_spend|money:conta.currency }}/mês{% endif %}</p>
+    <p>Saldo realizado hoje: <strong class="{{ painel.saldo|amount_class }}">{% if painel.saldo %}{{ painel.saldo|money_signed:conta.currency }}{% else %}zerado{% endif %}</strong></p>
+
+    <h3>Faturas importadas</h3>
+    {% if painel.importadas %}
+    <table class="tx-table u-mb-1">
+        <thead>
+            <tr><th>Importada em</th><th>Arquivo</th><th>Total da fatura</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for lote, resumo in painel.importadas %}
+            <tr>
+                <td>{{ lote.created_at|date:"d/m/Y" }}</td>
+                <td>{{ lote.source_filename }}</td>
+                <td class="amount">{{ resumo.total_da_fatura|money:conta.currency }}</td>
+                <td><a href="{% url 'bank_statements:fatura' lote.id %}">Ver fatura</a></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">Nenhuma fatura importada. Envie o CSV em
+        <a href="{% url 'bank_statements:imports_view' %}">Importação de extrato</a>.</p>
+    {% endif %}
+
+    {% if projetadas %}
+    {% include "banking/_fatura_projetada.html" %}
+    {% endif %}
+</div>
+{% endwith %}
+{% empty %}
+<div class="chart-card">
+    <p class="empty-state">Nenhum cartão de crédito cadastrado. Um cartão é uma conta do tipo
+        "Cartão de crédito" em Cadastros › Contas.</p>
+</div>
+{% endfor %}
+{% endblock %}

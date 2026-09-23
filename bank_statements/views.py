@@ -109,6 +109,13 @@ def fatura_view(request, batch_id):
 
 
 @login_required
+@permission_required('banking.view')
+def faturas_view(request):
+    """Banking › Faturas: cada cartão com saldo, faturas importadas e projeção."""
+    return render(request, 'banking/faturas.html', {"paineis": fatura_projetada.paineis(request.user)})
+
+
+@login_required
 @permission_required('banking.import', fallback='bank_statements:imports_view')
 @permission_required('banking.reconcile', fallback='bank_statements:imports_view')
 @require_POST

@@ -21,6 +21,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
+from django.test import Client
 
 from accounts.models import AccountOwner, AppUser, UserOwnerAccess
 from accounts.services import save_transfer_destination_accesses
@@ -273,3 +274,19 @@ def test_execucao_da_projecao_atualiza_os_cartoes(cenario):
 
     assert len(_estimativas(cenario.cartao)) == 3
     assert BankOperation.objects.filter(operation_key__startswith=f"{PREFIXO_PAGAMENTO}:").count() == 3
+
+
+@pytest.mark.django_db
+def test_menu_faturas_mostra_o_cartao_as_faturas_e_a_projecao(cenario):
+    _tres_faturas(cenario.cartao)
+    client = Client()
+    client.force_login(cenario.usuario)
+
+    resposta = client.get("/banking/cards/")
+
+    assert resposta.status_code == 200
+    html = resposta.content.decode()
+    assert 'href="/banking/cards/"' in html
+    assert "Carbon" in html
+    assert "setembro" in html  # a fatura importada, com link para ela
+    assert "Próximas faturas (projeção)" in html
