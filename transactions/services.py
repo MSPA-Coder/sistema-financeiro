@@ -1656,6 +1656,15 @@ def update_transaction_operation(
     for entry in scoped:
         assert_entry_period_open(entry)
     operation_type = tx.operation_type or OPERATION_SINGLE
+    # Lidos antes da gravação: os caminhos abaixo alteram `tx` no lugar.
+    encerra_recorrencia = (
+        operation_scope == OPERATION_SCOPE_CURRENT_FUTURE
+        and tx.is_recurring
+        and not req.is_recurring
+        and tx.bank_operation_id
+    )
+    vencimento_do_corte = tx.due_date
+    bank_operation_id_de_tx = tx.bank_operation_id
 
     if operation_type == OPERATION_INTERNAL_TRANSFER:
         updated = _update_internal_transfer(tx, req, entries, operation_scope, user)
@@ -1666,6 +1675,15 @@ def update_transaction_operation(
 
     for entry in updated:
         assert_entry_period_open(entry)
+
+    if encerra_recorrencia:
+        # Desmarcar "recorrente" deste em diante encerra a série, como excluir
+        # a cauda. Sem o registro, a projeção -- que só lê as linhas
+        # recorrentes -- partiria da última anterior ao bloco e criaria uma
+        # ocorrência recorrente em cada mês que já tem a linha editada.
+        BankOperation.objects.filter(id=bank_operation_id_de_tx).update(
+            recurrence_ended_on=vencimento_do_corte
+        )
 
     for bank_operation_id in {entry.bank_operation_id for entry in updated if entry.bank_operation_id}:
         _sync_bank_operation_status(bank_operation_id)

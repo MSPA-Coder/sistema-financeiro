@@ -221,3 +221,63 @@ def test_contorno_manual_de_desligar_is_recurring_continua_valendo(cenario):
 
     assert BankOperation.objects.get(id=operacao_id).recurrence_ended_on is None
     assert _datas(operacao_id) == antes
+
+
+# --- Editar "este e os próximos" desmarcando "recorrente" -----------------------
+#
+# O mesmo mecanismo por outro caminho: a edição grava `is_recurring=False` no
+# bloco, as linhas anteriores continuam recorrentes e a projeção -- que só lê
+# as recorrentes -- partia da última delas e recriava, por cima do bloco, uma
+# ocorrência recorrente em cada mês que já tinha a linha editada.
+
+
+def _desmarcar_recorrente(user, linha, destino=None):
+    requisicao = services.TransactionRequest(
+        account_id=linha.account_id,
+        category_id=linha.category_id,
+        entry_type=linha.entry_type,
+        description=linha.description,
+        entry_amount=linha.entry_amount,
+        installments=1,
+        due_date=linha.due_date,
+        is_recurring=False,
+        status=linha.status,
+        counterparty_account_id=destino.id if destino else None,
+    )
+    token = services.current_future_confirmation_token(linha.id)
+    return services.update_transaction_operation(
+        linha, requisicao, OPERATION_SCOPE_CURRENT_FUTURE, token, user=user
+    )
+
+
+def _datas_repetidas(operacao_id):
+    datas = _datas(operacao_id)
+    return sorted({d for d in datas if datas.count(d) > 1})
+
+
+def test_recorrente_desmarcada_deste_em_diante_nao_duplica(cenario):
+    user, corrente, _poupanca, mercado, _transferencia = cenario
+    linhas = _criar_recorrente(user, corrente, mercado)
+    operacao_id = linhas[0].bank_operation_id
+
+    _desmarcar_recorrente(user, _origem_em(linhas, CORTE))
+    antes = _datas(operacao_id)
+    _projetar()
+
+    assert _datas_repetidas(operacao_id) == []
+    assert _datas(operacao_id) == antes
+    assert BankOperation.objects.get(id=operacao_id).recurrence_ended_on == CORTE
+
+
+def test_transferencia_desmarcada_deste_em_diante_nao_duplica(cenario):
+    user, corrente, poupanca, _mercado, transferencia = cenario
+    linhas = _criar_recorrente(user, corrente, transferencia, destino=poupanca)
+    operacao_id = linhas[0].bank_operation_id
+
+    _desmarcar_recorrente(user, _origem_em(linhas, CORTE), destino=poupanca)
+    antes = _datas(operacao_id)
+    _projetar()
+
+    assert _datas_repetidas(operacao_id) == []
+    assert _datas(operacao_id) == antes
+    assert BankOperation.objects.get(id=operacao_id).recurrence_ended_on == CORTE

@@ -21,6 +21,9 @@ A cauda apagada é outro caso. Excluir "este e os próximos" deixa a maior data
 restante antes do horizonte, e o preenchimento para frente recriaria a cauda
 inteira. Por isso a exclusão grava `BankOperation.recurrence_ended_on` e a
 operação encerrada sai da consulta (`tests/test_projecao_serie_encerrada.py`).
+Editar "este e os próximos" desmarcando "recorrente" grava o mesmo registro:
+sem ele, a projeção criaria uma ocorrência recorrente por cima de cada linha
+do bloco editado, que deixou de ser recorrente e sai desta consulta.
 
 O disparo manual fica na tela de Parâmetros. Depois de aumentar o horizonte,
 ele pode ser repetido imediatamente; `generated_count` informa quantas
