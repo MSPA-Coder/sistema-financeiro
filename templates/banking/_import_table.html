@@ -17,7 +17,9 @@
                 <td>{{ batch.account.owner.name }} / {{ batch.account.institution.institution_name }} / {{ batch.account.account_name }}</td>
                 <td>{{ batch.source_filename }}</td>
                 <td>{{ batch.row_count }}</td>
-                <td>{{ batch.get_status_display }}</td>
+                <td>{{ batch.get_status_display }}
+                    {% if batch.account.is_credit_card %}· <a href="{% url 'bank_statements:fatura' batch.id %}">{% if batch.status == "importado" %}Revisar fatura{% else %}Ver fatura{% endif %}</a>{% endif %}
+                </td>
             </tr>
         {% empty %}
             <tr>

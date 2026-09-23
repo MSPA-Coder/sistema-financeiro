@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% load static %}
+{% load icons %}
+{% load money_filters %}
+
+{% block title %}Banking • Fatura{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/bank-imports.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>💳 Fatura do cartão</h1>
+        <p>{{ conta.owner.name }} / {{ conta.institution.institution_name }} / {{ conta.account_name }} · {{ lote.source_filename }}</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="chart-card u-mb-1">
+    {% if tudo_no_saldo_inicial %}
+    <p class="fatura-aviso"><strong>Esta fatura é toda anterior ao saldo inicial do cartão
+        ({{ conta.initial_balance_date|date:"d/m/Y" }}).</strong> Nenhuma compra será lançada: só as parcelas
+        que vencem depois dessa data. Para importar o histórico, mude antes a data do saldo inicial do cartão
+        (Cadastros › Contas) para antes da primeira fatura.</p>
+    {% endif %}
+    <h3>Resumo do arquivo</h3>
+    <table class="tx-table">
+        <tbody>
+            <tr><td>Compras</td><td class="amount amount-negative">{{ resumo.compras|money_signed:conta.currency }}</td></tr>
+            <tr><td>Estornos e créditos</td><td class="amount amount-positive">{{ resumo.creditos|money_signed:conta.currency }}</td></tr>
+            <tr><td><strong>Total da fatura</strong> (compras menos estornos)</td><td class="amount"><strong>{{ resumo.total_da_fatura|money:conta.currency }}</strong></td></tr>
+            <tr><td>Pagamentos da fatura anterior</td><td class="amount amount-positive">{{ resumo.pagamentos|money_signed:conta.currency }}</td></tr>
+        </tbody>
+    </table>
+    <p class="help-text">Confira o total com o da fatura do banco. Saldo inicial do cartão:
+        {{ conta.initial_balance|money_signed:conta.currency }} em {{ conta.initial_balance_date|date:"d/m/Y" }};
+        linhas com data anterior já estão nele e não são lançadas de novo.</p>
+</div>
+
+<div class="table-container u-mb-1">
+    {% if planos %}
+    <form method="post" action="{% url 'bank_statements:processar_fatura' lote.id %}">
+        {% csrf_token %}
+        <div class="u-d-flex u-items-center u-gap-05 u-mb-075">
+            <h3 class="u-mb-0">Prévia: {{ planos|length }} linha(s) a processar</h3>
+            <button type="submit" class="btn-sm btn-primary"
+                    data-sa-confirmar="Gravar a fatura como mostrada na prévia? Compras e estornos viram lançamentos realizados no cartão, e os pagamentos são conciliados com as transferências."
+                    data-sa-titulo="Processar fatura"
+                    data-sa-severidade="warning"
+                    data-sa-ok="Processar">
+                {% icon 'check' %}<span>Processar fatura</span>
+            </button>
+        </div>
+        <table class="tx-table">
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Descrição</th>
+                    <th>Parcela</th>
+                    <th>Valor</th>
+                    <th>O que acontece</th>
+                    <th>Categoria</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for plano in planos %}
+                <tr>
+                    <td>{{ plano.linha.statement_date|date:"d/m/Y" }}
+                        {% if plano.linha.purchase_date and plano.linha.purchase_date != plano.linha.statement_date %}<br><small>compra em {{ plano.linha.purchase_date|date:"d/m/Y" }}</small>{% endif %}
+                    </td>
+                    <td>{{ plano.linha.description }}
+                        {% if plano.linha.bank_category %}<br><small>{{ plano.linha.bank_category }}</small>{% endif %}
+                    </td>
+                    <td>{% if plano.linha.installment_current %}{{ plano.linha.installment_current }}/{{ plano.linha.installment_total }}{% endif %}</td>
+                    <td class="amount {{ plano.linha.amount|amount_class }}">{{ plano.linha.amount|money_signed:conta.currency }}</td>
+                    <td>{{ plano.rotulo }}</td>
+                    <td>
+                        {% if plano.cria_lancamento or plano.futuras_a_partir_de %}
+                        <select name="categoria_{{ plano.linha.id }}" aria-label="Categoria">
+                            {% for categoria in categorias %}
+                            <option value="{{ categoria.id }}" {% if plano.categoria and plano.categoria.id == categoria.id %}selected{% endif %}>{{ categoria.category_name }}</option>
+                            {% endfor %}
+                        </select>
+                        {% elif plano.lancamento %}
+                        <small>{{ plano.lancamento.category.category_name }}</small>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </form>
+    {% else %}
+    <p class="empty-state">Nenhuma linha pendente nesta fatura.</p>
+    {% endif %}
+    {% if processadas %}
+    <p class="help-text">{{ processadas }} linha(s) já processada(s) nesta importação.
+        <a href="{% url 'bank_statements:reconciliation_view' %}">Ver em Conciliação</a>.</p>
+    {% endif %}
+    <p><a href="{% url 'bank_statements:imports_view' %}">Voltar para Importações</a></p>
+</div>
+{% endblock %}

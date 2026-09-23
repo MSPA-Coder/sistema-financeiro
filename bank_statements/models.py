@@ -136,6 +136,13 @@ class BankStatementLine(models.Model):
     description = models.CharField(max_length=255)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     line_hash = models.CharField(max_length=64)
+    # Fatura de cartão: a data da compra original (a da linha é a da parcela),
+    # a parcela no formato do banco, quem comprou e a categoria do banco.
+    purchase_date = models.DateField(null=True, blank=True)
+    installment_current = models.PositiveSmallIntegerField(null=True, blank=True)
+    installment_total = models.PositiveSmallIntegerField(null=True, blank=True)
+    card_holder = models.CharField(max_length=60, blank=True, default="")
+    bank_category = models.CharField(max_length=100, blank=True, default="")
     status = models.CharField(
         max_length=20,
         choices=[
@@ -159,6 +166,18 @@ class BankStatementLine(models.Model):
             models.CheckConstraint(
                 condition=Q(status__in=VALID_LINE_STATUSES),
                 name="ck_bank_statement_line_status_valid",
+            ),
+            # Parcela vem inteira ou não vem. O `isnull=False` é explícito
+            # porque, no CHECK, comparação com NULL é desconhecida e passaria.
+            models.CheckConstraint(
+                condition=Q(installment_current__isnull=True, installment_total__isnull=True)
+                | Q(
+                    installment_current__isnull=False,
+                    installment_total__isnull=False,
+                    installment_current__gte=1,
+                    installment_current__lte=models.F("installment_total"),
+                ),
+                name="ck_bank_statement_line_installment_valid",
             ),
             UniqueConstraint(
                 fields=["account", "line_hash"],

@@ -17,7 +17,8 @@ from django.db import transaction
 from banking.models import FinancialAccount
 from banking.services import accessible_account_ids, can_access_account
 
-from .adapters import get_statement_adapter
+from .adapters import get_statement_adapter, read_statement_upload
+from .fatura_csv import CartaoCsvAdapter, formato_da_fatura
 from .models import BankStatementImport, BankStatementLine
 
 _MAX_FILENAME_LENGTH = 255
@@ -62,6 +63,27 @@ def _clean_account_id(raw_account_id) -> int:
     return account_id
 
 
+def _adapter_for(account: FinancialAccount, uploaded_file: UploadedFile):
+    """Fatura só entra em cartão, e cartão só recebe fatura.
+
+    Os dois erros são de sinal: uma fatura lida como extrato grava compra como
+    receita, e um extrato lido como fatura grava o contrário. Por isso o
+    cabeçalho é conferido nos dois sentidos, antes de qualquer linha ser gravada.
+    """
+    name = (uploaded_file.name or "").lower()
+    eh_csv = name.endswith(".csv") or "csv" in (getattr(uploaded_file, "content_type", "") or "").lower()
+    if account.is_credit_card:
+        if not eh_csv:
+            raise ValueError("Conta de cartão de crédito recebe a fatura em CSV (C6 ou XP).")
+        return CartaoCsvAdapter(account.card_closing_day)
+    if eh_csv and formato_da_fatura(read_statement_upload(uploaded_file, label="CSV")) is not None:
+        raise ValueError(
+            "Este arquivo é uma fatura de cartão de crédito. Importe-o na conta do cartão "
+            "(tipo \"Cartão de crédito\" em Cadastros > Contas)."
+        )
+    return get_statement_adapter(uploaded_file, institution=account.institution)
+
+
 def import_statement_file(
     user, *, account_id, uploaded_file: UploadedFile | None
 ) -> tuple[BankStatementImport, int, int]:
@@ -81,9 +103,7 @@ def import_statement_file(
     except FinancialAccount.DoesNotExist as exc:
         raise ValueError("Conta não encontrada.") from exc
 
-    parsed = get_statement_adapter(uploaded_file, institution=account.institution).parse(
-        uploaded_file, clean_account_id
-    )
+    parsed = _adapter_for(account, uploaded_file).parse(uploaded_file, clean_account_id)
     if not parsed:
         raise ValueError("Nenhuma linha válida encontrada no extrato.")
 
@@ -110,6 +130,11 @@ def import_statement_file(
                     description=line.description,
                     amount=line.amount,
                     line_hash=line.line_hash,
+                    purchase_date=line.purchase_date,
+                    installment_current=line.installment_current,
+                    installment_total=line.installment_total,
+                    card_holder=line.card_holder,
+                    bank_category=line.bank_category,
                     status="novo",
                 )
             )

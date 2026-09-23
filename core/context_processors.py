@@ -64,6 +64,13 @@ def _build_menu_items() -> list[MenuItem]:
                             required_permission="banking.reconcile",
                         ),
                         MenuItem(
+                            "Reclassificação",
+                            "/banking/reclassification/",
+                            "\U0001F3F7",
+                            "/banking/reclassification/",
+                            required_permission="banking.reclassify",
+                        ),
+                        MenuItem(
                             "Comprovantes",
                             "/banking/attachments/",
                             "\U0001F4CE",

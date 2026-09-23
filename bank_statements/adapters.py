@@ -32,6 +32,12 @@ class ParsedStatementLine:
     description: str
     amount: Decimal
     line_hash: str
+    # Só a fatura de cartão preenche os campos abaixo (ver `fatura_csv`).
+    purchase_date: date | None = None
+    installment_current: int | None = None
+    installment_total: int | None = None
+    card_holder: str = ""
+    bank_category: str = ""
 
 
 @runtime_checkable
