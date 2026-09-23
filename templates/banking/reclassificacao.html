@@ -82,13 +82,13 @@
         {% endif %}
 
         <div class="u-d-flex u-gap-05">
-            <button type="submit" name="acao" value="previa" class="btn-sm btn-action-edit">Atualizar prévia</button>
+            <button type="submit" name="acao" value="previa" class="btn-sm btn-action-edit">Recalcular prévia (não grava)</button>
             <button type="submit" name="acao" value="aplicar" class="btn-sm btn-primary"
                     data-sa-confirmar="Gravar a nova categoria nesses lançamentos?"
                     data-sa-titulo="Reclassificar"
                     data-sa-severidade="warning"
                     data-sa-ok="Reclassificar">
-                {% icon 'check' %}<span>Aplicar</span>
+                {% icon 'check' %}<span>Gravar reclassificação</span>
             </button>
         </div>
     </form>
