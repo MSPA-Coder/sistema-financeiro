@@ -183,6 +183,43 @@ estimado na conta corrente -- continua válido para o histórico. Cada cartão
 passa ao modelo novo a partir da primeira fatura importada, sem reescrever o
 passado.
 
+### Importação da fatura
+
+A fatura em CSV (C6 e XP, reconhecidas pelo cabeçalho) entra por Bancos >
+Importações, na conta do cartão, e passa por duas etapas:
+
+1. **importar** grava só as linhas (`BankStatementLine`), com o sinal da conta:
+   compra negativa, pagamento e estorno positivos -- o contrário do arquivo. A
+   parcela recebe a data em que entra na fatura (a da compra mais N-1 meses) e
+   guarda N, o total, a data da compra, o portador e a categoria do banco.
+   Parcela cuja conta passaria do fechamento da própria fatura já veio com a
+   data do lançamento (a anuidade da C6 é assim) e não é deslocada; o
+   fechamento sai do dia de fechamento do cartão e da última data que com
+   certeza é de lançamento (compra à vista, 1ª parcela ou pagamento).
+   Reenviar o arquivo não duplica, pelo mesmo hash por conta dos extratos. Uma
+   fatura enviada para conta comum, ou um extrato enviado para cartão, é
+   recusado antes de gravar: os dois invertem o sinal de tudo;
+2. **processar** mostra uma prévia e só então grava, tudo ou nada
+   (`bank_statements/fatura.py`). Cada linha vira:
+   - *já no saldo inicial*, se a data é anterior à do saldo inicial do cartão.
+     O saldo soma todos os lançamentos, inclusive os anteriores a essa data, e
+     lançar a linha contaria a dívida duas vezes. Se for parcela, são criadas
+     as parcelas seguintes que caem a partir dessa data, "a vencer";
+   - *pagamento*, casado com a transferência que chega ao cartão (mesmo valor,
+     até 10 dias) e realizado nas duas pontas. Sem transferência, a linha fica
+     pendente em Conciliação;
+   - *parcela já lançada*, casada pela descrição e pela data (até 5 dias), não
+     pelo número: o CB renumera parcelas quando o grupo é editado;
+   - *compra parcelada nova*, que cria as parcelas N a M
+     (`TransactionRequest.first_installment`) e realiza a N;
+   - *compra já lançada* à mão (mesmo valor, até 3 dias), que é conciliada;
+   - *compra* ou *estorno*, criados já realizados.
+
+A categoria sugerida vem da última compra com a mesma descrição no cartão,
+depois da categoria do banco quando ela tem o nome de uma categoria cadastrada,
+e por fim de "Outros"; a prévia deixa trocar cada uma. Quando o arquivo tem mais
+de um portador, o nome de quem comprou vai para a descrição.
+
 ## Fechamento mensal
 
 O fechamento pertence a uma conta e a um mês. Enquanto estiver ativo, bloqueia
@@ -194,7 +231,8 @@ período. A reabertura exige ação explícita, motivo e registro de auditoria.
 Extratos CSV, OFX, OFC e QFX são normalizados antes da importação. PDF é aceito
 somente para instituições homologadas pelo código. A importação limita tamanho
 e número de linhas, detecta duplicidades por conta e não preserva o arquivo de
-extrato original como mídia.
+extrato original como mídia. A fatura de cartão em CSV tem leitura e
+processamento próprios, descritos em "Importação da fatura".
 
 A conciliação verifica acesso à conta, tipo, valor, status, duplicidade e
 fechamento do período. Um lançamento pode ter no máximo uma conciliação ativa,

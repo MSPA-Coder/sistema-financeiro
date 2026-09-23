@@ -22,7 +22,9 @@
     <h3>Importar extrato bancário</h3>
     <p class="help-text">CSV: cabeçalhos aceitos data/date, descrição/descricao/historico/description e valor/amount.
         OFX/OFC/QFX: transações bancárias padrão. PDF: disponível apenas para corretoras homologadas
-        (extrato de conta corrente). Valores negativos são despesas; positivos são receitas.</p>
+        (extrato de conta corrente). Valores negativos são despesas; positivos são receitas.
+        Fatura de cartão: escolha a conta do cartão e envie o CSV da C6 ou da XP como o banco exporta;
+        a importação abre uma prévia antes de lançar as compras.</p>
 
     {% if not import_accounts %}
     <p class="empty-state">Nenhuma conta disponível para você. Cadastre ou solicite acesso a uma conta antes de importar extratos.</p>

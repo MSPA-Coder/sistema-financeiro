@@ -9,6 +9,8 @@ urlpatterns = [
     path('banking/imports/', views.imports_view, name='imports_view'),
     path('banking/import/', views.create_import_view, name='create_import'),
     path('banking/import/status/<int:batch_id>/', views.import_status_view, name='import_status'),
+    path('banking/import/<int:batch_id>/fatura/', views.fatura_view, name='fatura'),
+    path('banking/import/<int:batch_id>/fatura/processar/', views.processar_fatura_view, name='processar_fatura'),
 
     path('banking/reconciliation/', views.reconciliation_view, name='reconciliation_view'),
     path('banking/reconciliation/refresh/', views.reconciliation_refresh_view, name='reconciliation_refresh'),

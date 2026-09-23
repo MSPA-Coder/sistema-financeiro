@@ -574,6 +574,10 @@ class TransactionRequest:
     # destino, em vez do espelho do valor que saiu da origem. Ver
     # `counterparty_amount_for_transfer`.
     counterparty_amount: Decimal | None = None
+    # Parcelado que já vem andando: a fatura de cartão mostra a compra pela
+    # primeira vez na parcela 10 de 12, e só as parcelas 10 a 12 são criadas,
+    # numeradas como no banco. `due_date` é a da parcela `first_installment`.
+    first_installment: int = 1
 
 
 def _opposite_entry_type(entry_type: str) -> str:
@@ -1041,6 +1045,8 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None, user=N
         counterparty_account = locked_accounts[counterparty_account.id]
 
     installments, monthly_amount = _parcelas_e_valor(req)
+    if not 1 <= req.first_installment <= installments:
+        raise ValueError("Parcela inicial fora do parcelamento.")
 
     counterparty_amount = None
     if eh_transferencia:
@@ -1131,8 +1137,9 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None, user=N
             _add_pair(occurrence_due, 1, 1, is_first=offset == 0)
             offset += 1
     else:
-        for i in range(1, installments + 1):
-            _add_pair(add_months(req.due_date, i - 1), i, installments, is_first=i == 1)
+        first = req.first_installment
+        for i in range(first, installments + 1):
+            _add_pair(add_months(req.due_date, i - first), i, installments, is_first=i == first)
 
     if bank_operation is not None and entries:
         due_dates = [e.due_date for e in entries]
