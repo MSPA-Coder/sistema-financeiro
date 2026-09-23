@@ -211,6 +211,17 @@ O horizonte e o dia mensal de execução são configurados em Parâmetros. A
 projeção estende cada `BankOperation` recorrente até o fim do horizonte, a
 partir da ocorrência de maior vencimento. Reexecutar para o mesmo horizonte é
 idempotente e uma ocorrência removida no meio da série não é recriada.
+
+Excluir uma recorrência com o escopo "este e os próximos" encerra a série: a
+`BankOperation` guarda o vencimento do corte em `recurrence_ended_on` e a
+projeção deixa de estendê-la. Vale para a recorrente simples e para a
+transferência interna recorrente, cujas duas pernas pertencem à mesma operação.
+As ocorrências que restam mantêm `is_recurring`, porque o Planejamento anual
+separa recorrente de não recorrente por esse campo e o histórico não muda de
+classificação. Hoje a interface não reabre uma série encerrada; retomar a
+recorrência é criar um novo lançamento recorrente. Excluir só uma ocorrência abre uma lacuna e não encerra
+nada. Linhas com `is_recurring` desligado à mão, como o contorno aplicado às
+operações 162 e 164 em 23/09/2026, também ficam fora da projeção.
 O middleware é o gatilho atual; um scheduler ou worker também é válido se
 preservar idempotência, retry seguro, auditoria e coordenação entre processos.
 
