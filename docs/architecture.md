@@ -38,6 +38,11 @@ independentes e impede que uma resposta antiga altere o estado de outra.
 As opções específicas restringem os dados antes dos cálculos; `ALL` preserva
 os blocos por moeda, sem conversão ou totais que misturem BRL e USD.
 
+No menu a moeda é uma seleção múltipla (Real, Dólar), mas a URL continua com
+um valor só: as duas marcadas viajam como `ALL`, e `BRL,USD` é aceito como
+sinônimo. Com duas moedas as formas são equivalentes, e o valor único mantém
+favoritos e links válidos.
+
 ### Filtro global de grupos de conta
 
 `grupos=bancos,corretoras,cartoes,aplicacoes` segue o mesmo contrato da moeda:
@@ -47,6 +52,17 @@ partição está em `docs/domain.md`. O filtro entra num lugar só,
 `reports.services.selected_context`/`context_options`, e por isso vale em toda
 tela que monta as contas por ali: Lançamentos, dashboard, Projeções, Próximos
 movimentos, Posição por conta e Controle gerencial.
+
+Os seletores de Instituição e Conta dessas telas respeitam os dois filtros
+globais: listam só as contas dos grupos e da moeda marcados, e só as
+instituições que têm uma delas. A conta e a instituição já escolhidas
+continuam listadas mesmo fora do filtro, para o seletor mostrar o que vale. O
+Planejamento anual, que tem seletor próprio, aplica os mesmos dois filtros às
+suas opções.
+
+No menu, marcar uma caixa não aplica nada: moeda e grupos mudam juntos no
+botão Aplicar, para se mexer em várias caixas sem reabrir o menu. A última
+caixa marcada de cada bloco não desmarca.
 
 No navegador, `static/js/core/application.js` repassa `currency` e `grupos` da
 URL atual para links, formulários GET e requisições HTMX, completando só o que

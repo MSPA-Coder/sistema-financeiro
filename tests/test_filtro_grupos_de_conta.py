@@ -126,8 +126,10 @@ def test_contexto_das_telas_aplica_os_grupos(usuario, contas):
     options = reports_services.context_options(usuario, ctx)
 
     assert set(options.account_ids) == {contas[GROUP_CARDS].id, contas[GROUP_INVESTMENTS].id}
-    # O seletor continua inteiro: é por ele que se escolhe uma conta fora do filtro.
-    assert len(options.accounts) == 4
+    # Os seletores de Conta e Instituição também respeitam o filtro: o cartão e
+    # o CDB são do Banco G, e a corretora não tem nenhum dos dois.
+    assert {conta.id for conta in options.accounts} == {contas[GROUP_CARDS].id, contas[GROUP_INVESTMENTS].id}
+    assert [instituicao.institution_name for instituicao in options.institutions] == ["Banco G"]
 
 
 @pytest.mark.django_db
@@ -135,8 +137,37 @@ def test_conta_escolhida_vence_o_filtro_de_grupos(usuario, contas):
     """Sem isso, a tela ficaria vazia sem dizer por quê."""
     corrente = contas[GROUP_BANKS]
     ctx = reports_services.selected_context(usuario, {"grupos": "cartoes", "account_id": str(corrente.id)})
+    options = reports_services.context_options(usuario, ctx)
 
-    assert reports_services.context_options(usuario, ctx).account_ids == [corrente.id]
+    assert options.account_ids == [corrente.id]
+    # E o seletor mostra a conta que está valendo, mesmo fora do filtro.
+    assert corrente.id in {conta.id for conta in options.accounts}
+
+
+@pytest.mark.django_db
+def test_seletores_respeitam_a_moeda(usuario, contas):
+    corretora = contas[GROUP_BROKERS].institution
+    dolar = FinancialAccount.objects.create(
+        owner=contas[GROUP_BANKS].owner, institution=FinancialInstitution.objects.create(
+            institution_name="Corretora em dólar", institution_type="Corretora",
+        ),
+        account_name="Conta em dólar", currency="USD",
+        initial_balance=Decimal("0.00"), initial_balance_date=date(2025, 12, 31),
+    )
+
+    def seletores(params):
+        options = reports_services.context_options(usuario, reports_services.selected_context(usuario, params))
+        return {conta.id for conta in options.accounts}, {inst.id for inst in options.institutions}
+
+    contas_brl, instituicoes_brl = seletores({})
+    assert dolar.id not in contas_brl and dolar.institution_id not in instituicoes_brl
+    assert corretora.id in instituicoes_brl
+
+    contas_usd, instituicoes_usd = seletores({"currency": "USD"})
+    assert contas_usd == {dolar.id} and instituicoes_usd == {dolar.institution_id}
+
+    contas_todas, _ = seletores({"currency": "BRL,USD"})
+    assert contas_todas == {conta.id for conta in contas.values()} | {dolar.id}
 
 
 def _despesa(conta, valor):
@@ -171,6 +202,20 @@ def test_planejamento_anual_oferece_so_as_contas_dos_grupos(client, usuario, con
     assert {conta.id for conta in resposta.context["accounts"]} == {
         contas[GROUP_BANKS].id, contas[GROUP_BROKERS].id,
     }
+
+
+@pytest.mark.django_db
+def test_planejamento_anual_oferece_so_as_contas_da_moeda(client, usuario, contas):
+    dolar = FinancialAccount.objects.create(
+        owner=contas[GROUP_BANKS].owner, institution=contas[GROUP_BROKERS].institution,
+        account_name="Conta em dólar", currency="USD",
+        initial_balance=Decimal("0.00"), initial_balance_date=date(2025, 12, 31),
+    )
+    client.force_login(usuario)
+
+    resposta = client.get("/reports/annual-planning/?currency=USD")
+
+    assert {conta.id for conta in resposta.context["accounts"]} == {dolar.id}
 
 
 @pytest.mark.django_db
