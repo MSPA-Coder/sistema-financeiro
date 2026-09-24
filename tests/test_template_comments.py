@@ -5,24 +5,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+from django.contrib.auth import get_user_model
 from django.template.loader import get_template, render_to_string
 from django.test import RequestFactory
 
+from core.domain.identity import USER_TYPE_ADMINISTRATOR
+
 TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "templates"
 TEMPLATE_PATHS = sorted(TEMPLATES_DIR.rglob("*.html"))
-
-
-class _AuthenticatedUser:
-    is_authenticated = True
-    is_staff = False
-    username = "teste"
-    user_type = "Teste"
-    ui_theme = "light"
-    table_scroll_rows = 15
-
-    @staticmethod
-    def has_perm(_permission: str) -> bool:
-        return True
 
 
 def _assert_internal_comments_are_absent(rendered_html: str) -> None:
@@ -57,7 +48,14 @@ def test_login_does_not_render_internal_comments(client):
     _assert_internal_comments_are_absent(response.content.decode())
 
 
+@pytest.mark.django_db
 def test_authenticated_pages_do_not_render_global_flash_comment():
+    # Usuário de verdade: o menu lateral conta as contas de cada grupo do
+    # filtro global, e essa contagem consulta o banco.
+    user = get_user_model().objects.create_user(
+        username="teste-comentarios", password="troca-esta-senha-no-primeiro-acesso",
+        user_type=USER_TYPE_ADMINISTRATOR,
+    )
     request_factory = RequestFactory()
 
     for template_name, visible_text in (
@@ -65,7 +63,7 @@ def test_authenticated_pages_do_not_render_global_flash_comment():
         ("reports/projections.html", "Projeções"),
     ):
         request = request_factory.get("/")
-        request.user = _AuthenticatedUser()
+        request.user = user
         rendered_html = render_to_string(template_name, request=request)
 
         assert visible_text in rendered_html

@@ -12,15 +12,18 @@
                 <div class="sidebar-global-filters" data-global-filters>
                     <button type="button" class="sidebar-privacy-toggle sidebar-filter-toggle"
                             data-global-filters-toggle aria-controls="global-filters-menu"
-                            aria-expanded="false" aria-label="Abrir filtros globais" title="Filtros">
+                            aria-expanded="false"
+                            aria-label="Abrir filtros globais{% if global_account_groups_active %} (filtro de contas ativo){% endif %}"
+                            title="Filtros">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M7 12h10M10 19h4"/></svg>
+                        {% if global_account_groups_active %}<span class="sidebar-filter-dot" aria-hidden="true"></span>{% endif %}
                     </button>
                     <div class="sidebar-global-filters-menu" id="global-filters-menu"
                          data-global-filters-menu hidden>
                         <form method="get" action="{{ request.path }}" data-global-currency-form>
                             <label for="global-currency">Moeda</label>
                             {% for key, values in request.GET.lists %}
-                                {% if key != 'currency' %}
+                                {% if key != 'currency' and key != 'grupos' %}
                                     {% for value in values %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
                                 {% endif %}
                             {% endfor %}
@@ -29,6 +32,19 @@
                                 <option value="USD" {% if global_currency == 'USD' %}selected{% endif %}>Dólar</option>
                                 <option value="ALL" {% if global_currency == 'ALL' %}selected{% endif %}>Todas</option>
                             </select>
+                            {# Cada conta cai em um grupo só: ver core/account_group_filter.py. #}
+                            <fieldset class="sidebar-global-groups" data-global-groups>
+                                <legend>Contas</legend>
+                                {% for group in global_account_group_options %}
+                                <label class="sidebar-global-group">
+                                    <input type="checkbox" value="{{ group.code }}" data-global-group {% if group.selected %}checked{% endif %}>
+                                    <span>{{ group.label }}</span>
+                                    <small>{{ group.count }}</small>
+                                </label>
+                                {% endfor %}
+                                <input type="hidden" name="grupos" value="{{ global_account_groups_param }}"
+                                       data-global-groups-value {% if not global_account_groups_active %}disabled{% endif %}>
+                            </fieldset>
                         </form>
                         <button type="button" class="sidebar-privacy-menu-toggle" data-privacy-toggle
                                 aria-pressed="false" aria-label="Ativar modo discreto" title="Ativar modo discreto">

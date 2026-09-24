@@ -1,3 +1,6 @@
+{% if currency_notice %}
+<p class="dashboard-currency-notice" role="status">O painel mostra uma moeda por vez: exibindo {{ currency_label }}. Para ver outra, escolha a moeda no filtro global.</p>
+{% endif %}
 <div class="charts-grid">
     <div class="chart-card">
         <div class="chart-header">
@@ -50,7 +53,7 @@
     </div>
 
     <div class="chart-card">
-        <div class="chart-header"><h4>📈 Evolução Mensal - {% if view_mode == 'realizado' %}Realizado{% else %}{{ view_mode|title }}{% endif %}</h4></div>
+        <div class="chart-header"><h4>📈 Evolução Mensal - {{ view_mode_label }}</h4></div>
         <canvas id="evolutionChart" width="800" height="300"></canvas>
     </div>
 </div>

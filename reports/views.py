@@ -9,6 +9,7 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
 from banking.services import currency_blocks
+from core.account_group_filter import parse_account_groups
 from core.currency_filter import selected_currency
 from core.domain.finance import (
     VIEW_ALL,
@@ -165,7 +166,12 @@ def account_position_view(request):
     today_period = services.month_input_value(date(today.year, today.month, 1))
 
     selected_ctx = services.selected_context(request.user, request.GET, request=request)
-    ctx = services.FinancialContext(owner_id=selected_ctx.owner_id, institution_id=selected_ctx.institution_id, account_id=None)
+    ctx = services.FinancialContext(
+        owner_id=selected_ctx.owner_id,
+        institution_id=selected_ctx.institution_id,
+        account_id=None,
+        account_groups=selected_ctx.account_groups,
+    )
     options = services.context_options(request.user, ctx)
     rows = services.account_cash_report_rows(options.account_ids, selected_month, selected_month, view_mode)
     # As linhas convivem numa tabela só, cada uma com o símbolo da sua conta --
@@ -247,7 +253,9 @@ def annual_planning_view(request):
     owners = list(
         services.AccountOwner.objects.filter(id__in=allowed_owner_ids).order_by("name", "id")
     )
-    accounts = services.annual_planning_account_options(request.user, selected_owner_ids)
+    accounts = services.annual_planning_account_options(
+        request.user, selected_owner_ids, parse_account_groups(request.GET)
+    )
     allowed_account_ids = {account.id for account in accounts}
     selected_account_ids = (
         sorted(allowed_account_ids)

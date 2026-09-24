@@ -29,6 +29,7 @@ from accounts.models import AccountOwner
 from accounts.services import accessible_owner_ids, hidden_account_ids
 from banking.models import FinancialAccount, FinancialInstitution
 from banking.services import currency_of_accounts
+from core.account_group_filter import ALL_ACCOUNT_GROUPS, account_group_q, parse_account_groups
 from core.domain.finance import (
     BASE_CURRENCY,
     ENTRY_TYPE_INCOME,
@@ -233,6 +234,9 @@ class FinancialContext:
     owner_id: int | None
     institution_id: int | None
     account_id: int | None
+    # Filtro global de grupos (`core/account_group_filter.py`). O padrão é
+    # "todos", para que quem monta um contexto à mão continue vendo tudo.
+    account_groups: frozenset[str] = ALL_ACCOUNT_GROUPS
 
 
 @dataclass(frozen=True)
@@ -300,7 +304,12 @@ def selected_context(user, params, *, request=None) -> FinancialContext:
     if request is not None and descartados:
         request.filtros_descartados = descartados
 
-    return FinancialContext(owner_id=owner_id, institution_id=institution_id, account_id=account_id)
+    return FinancialContext(
+        owner_id=owner_id,
+        institution_id=institution_id,
+        account_id=account_id,
+        account_groups=parse_account_groups(params),
+    )
 
 
 def context_options(user, ctx: FinancialContext, *, hidden_scope: str | None = None) -> ContextOptions:
@@ -315,6 +324,9 @@ def context_options(user, ctx: FinancialContext, *, hidden_scope: str | None = N
     A ocultação vale para a visão agregada. Se o usuário escolher
     explicitamente uma conta no filtro (`ctx.account_id`), essa escolha vence:
     caso contrário a tela ficaria vazia sem explicar por quê.
+
+    O filtro global de grupos (`ctx.account_groups`) segue a mesma regra: tira
+    contas de `account_ids`, deixa o seletor inteiro e cede à conta escolhida.
     """
     allowed_owner_ids = accessible_owner_ids(user)
     if not allowed_owner_ids:
@@ -331,11 +343,13 @@ def context_options(user, ctx: FinancialContext, *, hidden_scope: str | None = N
         selected_qs = selected_qs.filter(institution_id=ctx.institution_id)
     if ctx.account_id:
         selected_qs = selected_qs.filter(pk=ctx.account_id)
+    else:
+        selected_qs = selected_qs.filter(account_group_q(ctx.account_groups))
 
     account_ids = list(selected_qs.order_by("account_name").values_list("id", flat=True))
 
     if hidden_scope and not ctx.account_id:
-        hidden = hidden_account_ids(user, hidden_scope)
+        hidden = hidden_account_ids(user, hidden_scope, allowed_owner_ids)
         if hidden:
             account_ids = [account_id for account_id in account_ids if account_id not in hidden]
 
@@ -504,15 +518,30 @@ def _authorized_planning_accounts(
     return accounts, [account.id for account in accounts]
 
 
-def annual_planning_account_options(user, owner_ids: Iterable[int] | None = None) -> list[FinancialAccount]:
+def annual_planning_account_options(
+    user,
+    owner_ids: Iterable[int] | None = None,
+    account_groups: frozenset[str] = ALL_ACCOUNT_GROUPS,
+) -> list[FinancialAccount]:
     """Lista as contas elegíveis para o filtro do Planejamento anual.
 
     A lista usa a mesma resolução de autorização e ocultação do relatório.
     Assim, a opção não aparece no dropdown e também não pode ser reintroduzida
     por um ``account_ids`` antigo ou montado manualmente.
+
+    Nesta tela o seletor de contas É o escopo (seleção múltipla, tudo marcado
+    por padrão), então o filtro global de grupos age sobre as opções: conta
+    fora dos grupos pedidos não aparece para ser marcada.
     """
     accounts, _ = _authorized_planning_accounts(user, owner_ids, None)
-    return accounts
+    if account_groups == ALL_ACCOUNT_GROUPS or not accounts:
+        return accounts
+    in_groups = set(
+        FinancialAccount.objects.filter(id__in=[account.id for account in accounts])
+        .filter(account_group_q(account_groups))
+        .values_list("id", flat=True)
+    )
+    return [account for account in accounts if account.id in in_groups]
 
 
 def _planning_add_category(bucket: dict, entry: CashFlowEntry, amount: Decimal) -> None:
@@ -1237,6 +1266,11 @@ def _entry_is_realized_for_mode(entry: CashFlowEntry, view_mode: str) -> bool:
     return view_mode == VIEW_REALIZED or entry.status == STATUS_REALIZED
 
 
+def entry_amount_for_view_mode(entry: CashFlowEntry, view_mode: str) -> Decimal:
+    """O valor que o lançamento vale neste modo: o realizado quando há."""
+    return _entry_amount(entry, realized=_entry_is_realized_for_mode(entry, view_mode))
+
+
 def entry_date_for_view_mode(entry: CashFlowEntry, view_mode: str) -> date | None:
     if view_mode == VIEW_REALIZED or (view_mode == VIEW_ALL and entry.status == STATUS_REALIZED):
         return entry.realized_date
@@ -1316,12 +1350,28 @@ def _add_entry_to_bucket(month: dict, entry: CashFlowEntry, view_mode: str) -> N
                 month["despesa_projetada"] += amount
 
 
-def projection_months_between(account_ids: list[int], start_month: date, end_month: date, view_mode: str) -> list[dict]:
-    """Calcula projeção mensal em intervalo inclusivo de meses."""
+def projection_months_between(
+    account_ids: list[int],
+    start_month: date,
+    end_month: date,
+    view_mode: str,
+    *,
+    period_entries: list[CashFlowEntry] | None = None,
+) -> list[dict]:
+    """Calcula projeção mensal em intervalo inclusivo de meses.
+
+    `period_entries` é `entries_for_period` do mesmo intervalo e modo, quando o
+    chamador já o leu (o painel lê para recortar o mês escolhido): evita ler de
+    novo o que acabou de ser lido.
+    """
     first_month, last_month = bounded_projection_month_range(start_month, end_month)
     final_end = add_months(last_month, 1)
 
-    all_entries = entries_for_period(account_ids, first_month, final_end, view_mode)
+    all_entries = (
+        period_entries
+        if period_entries is not None
+        else entries_for_period(account_ids, first_month, final_end, view_mode)
+    )
     entries_by_month: dict[date, list[CashFlowEntry]] = defaultdict(list)
     for entry in all_entries:
         mk = _entry_month_key(entry, view_mode)
@@ -1333,7 +1383,8 @@ def projection_months_between(account_ids: list[int], start_month: date, end_mon
     # saldo e alimentar o mês seguinte com outro. O saldo usa sempre o livro
     # completo (realizados pela data de realização, demais pela de vencimento).
     balance_entries_by_month: dict[date, list[CashFlowEntry]] = defaultdict(list)
-    for entry in entries_for_period(account_ids, first_month, final_end, VIEW_ALL):
+    ledger = all_entries if view_mode == VIEW_ALL else entries_for_period(account_ids, first_month, final_end, VIEW_ALL)
+    for entry in ledger:
         mk = _entry_month_key(entry, VIEW_ALL)
         if mk is not None:
             balance_entries_by_month[mk].append(entry)

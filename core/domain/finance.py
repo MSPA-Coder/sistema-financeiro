@@ -142,12 +142,21 @@ def normalize_view_mode(value: str | None, default: str = VIEW_PROJECTED) -> str
 # despesas nela, na data da compra e com a categoria real -- mas o saldo dele é
 # dívida: fica negativo por natureza, e pagar a fatura é transferência de uma
 # ou mais contas para ele, não despesa. Ver "Cartão de crédito" em docs/domain.md.
+#
+# Aplicação (CDB, caixinha, Tesouro) é uma conta comum para o saldo -- não tem
+# dado de cartão nenhum --, mas é um tipo e não um marcador: uma conta não é
+# cartão e aplicação ao mesmo tempo. Existe para que o filtro global de contas
+# (`core/account_group_filter.py`) reparta toda conta em exatamente um grupo.
 ACCOUNT_KIND_REGULAR: Final = "conta"
 ACCOUNT_KIND_CREDIT_CARD: Final = "cartao_credito"
+ACCOUNT_KIND_INVESTMENT: Final = "aplicacao"
 ACCOUNT_KIND_OPTIONS: Final = (
     (ACCOUNT_KIND_REGULAR, "Conta"),
     (ACCOUNT_KIND_CREDIT_CARD, "Cartão de crédito"),
+    (ACCOUNT_KIND_INVESTMENT, "Aplicação"),
 )
-VALID_ACCOUNT_KINDS: Final = (ACCOUNT_KIND_REGULAR, ACCOUNT_KIND_CREDIT_CARD)
+VALID_ACCOUNT_KINDS: Final = (ACCOUNT_KIND_REGULAR, ACCOUNT_KIND_CREDIT_CARD, ACCOUNT_KIND_INVESTMENT)
+# Os tipos sem dado de cartão: tudo que não é cartão.
+NON_CARD_ACCOUNT_KINDS: Final = (ACCOUNT_KIND_REGULAR, ACCOUNT_KIND_INVESTMENT)
 CARD_DAY_MIN: Final = 1
 CARD_DAY_MAX: Final = 31

@@ -5,7 +5,7 @@
     <tr>
         <td>{{ account.owner.name }}</td>
         <td>{{ account.institution.institution_name }}</td>
-        <td>{{ account.account_name }}{% if account.is_credit_card %}<br><small class="text-muted">Cartão de crédito · fecha dia {{ account.card_closing_day }} · vence dia {{ account.card_due_day }}{% if account.card_payment_account %} · paga por {{ account.card_payment_account.account_name }}{% endif %}{% if account.card_estimated_spend is not None %} · gasto fixado em {{ account.card_estimated_spend|money:account.currency }}/mês{% endif %}</small>{% endif %}</td>
+        <td>{{ account.account_name }}{% if account.is_credit_card %}<br><small class="text-muted">Cartão de crédito · fecha dia {{ account.card_closing_day }} · vence dia {{ account.card_due_day }}{% if account.card_payment_account %} · paga por {{ account.card_payment_account.account_name }}{% endif %}{% if account.card_estimated_spend is not None %} · gasto fixado em {{ account.card_estimated_spend|money:account.currency }}/mês{% endif %}</small>{% elif account.account_kind == 'aplicacao' %}<br><small class="text-muted">Aplicação</small>{% endif %}</td>
         <td>{{ account.get_currency_display }}</td>
         <td class="amount {{ account.initial_balance|amount_class }}">{{ account.initial_balance|money:account.currency }}</td>
         <td>{{ account.initial_balance_date|date:'d/m/Y' }}</td>

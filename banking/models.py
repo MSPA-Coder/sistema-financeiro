@@ -11,6 +11,7 @@ from core.domain.finance import (
     CARD_DAY_MIN,
     CURRENCY_BRL,
     CURRENCY_OPTIONS,
+    NON_CARD_ACCOUNT_KINDS,
     VALID_ACCOUNT_KINDS,
     VALID_CURRENCIES,
 )
@@ -127,7 +128,8 @@ class FinancialAccount(models.Model):
                 condition=models.Q(account_kind__in=VALID_ACCOUNT_KINDS),
                 name='ck_financial_account_kind_valid',
             ),
-            # Cartão tem os dois dias; conta comum não tem nenhum dado de cartão.
+            # Cartão tem os dois dias; conta comum e aplicação não têm nenhum
+            # dado de cartão.
             # O `isnull=False` é necessário: no CHECK, `NULL >= 1` não é falso,
             # é desconhecido, e o PostgreSQL deixaria passar um cartão sem dias.
             models.CheckConstraint(
@@ -143,7 +145,7 @@ class FinancialAccount(models.Model):
                     )
                     & (models.Q(card_estimated_spend__isnull=True) | models.Q(card_estimated_spend__gte=0))
                     | models.Q(
-                        account_kind=ACCOUNT_KIND_REGULAR,
+                        account_kind__in=NON_CARD_ACCOUNT_KINDS,
                         card_closing_day__isnull=True,
                         card_due_day__isnull=True,
                         card_payment_account__isnull=True,
@@ -165,7 +167,7 @@ class FinancialAccount(models.Model):
     @property
     def is_credit_card(self) -> bool:
         return self.account_kind == ACCOUNT_KIND_CREDIT_CARD
-    
+
     def save(self, *args, **kwargs):
         if self.pk:
             self.updated_at = timezone.now()

@@ -13,7 +13,7 @@
    ter de lembrar de mexer nos dois lugares.
 
    `currencySymbol` vem do servidor: o Painel mostra uma moeda por vez (o
-   seletor de moeda na barra de filtros diz qual), e um `R$` fixo no código
+   filtro global de moeda diz qual), e um `R$` fixo no código
    escreveria real num gráfico em dólar. */
 (function () {
     var CANVAS_IDS = ['coverageChart', 'generationChart', 'catChart', 'dailyChart', 'projChart', 'evolutionChart'];
@@ -105,6 +105,12 @@
             setParamIfPresent(params, 'owner_id', d.currentOwnerId);
             setParamIfPresent(params, 'institution_id', d.currentInstitutionId);
             setParamIfPresent(params, 'account_id', d.currentAccountId);
+            /* A troca de página aqui é por `location.href`, que o repasse dos
+               filtros globais em `application.js` (feito em cliques de link)
+               não vê. Sem estes dois, a fatia clicada abria Lançamentos em outra
+               moeda e com todos os grupos -- outra soma. */
+            setParamIfPresent(params, 'currency', d.currency);
+            setParamIfPresent(params, d.groupsParam || 'grupos', d.accountGroups);
             Object.entries(extraParams || {}).forEach(function (kv) { setParamIfPresent(params, kv[0], kv[1]); });
             var query = params.toString();
             return query ? d.transactionsUrl + '?' + query : d.transactionsUrl;

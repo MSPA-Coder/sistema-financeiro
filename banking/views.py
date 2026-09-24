@@ -13,7 +13,6 @@ from django.views.decorators.http import require_POST
 from accounts.services import accessible_owner_ids
 from core.domain.finance import (
     ACCOUNT_KIND_OPTIONS,
-    ACCOUNT_KIND_REGULAR,
     CURRENCY_OPTIONS,
     VIEW_PROJECTED,
     VIEW_REALIZED,
@@ -213,11 +212,12 @@ def accounts_view(request):
         "institutions": list_institutions(),
         "currencies": CURRENCY_OPTIONS,
         "account_kinds": ACCOUNT_KIND_OPTIONS,
-        # Candidatas a conta de pagamento padrão de um cartão: contas comuns
-        # que o usuário enxerga. A validação final é do service.
+        # Candidatas a conta de pagamento padrão de um cartão: o que não é
+        # cartão e o usuário enxerga -- a mesma regra do service, que tem a
+        # validação final.
         "payment_accounts": [
             account for account in list_accounts_for_user(request.user)
-            if account.account_kind == ACCOUNT_KIND_REGULAR
+            if not account.is_credit_card
         ],
         "current_filter_owner_id": int(current_filter_owner_id) if current_filter_owner_id else None,
         "current_filter_institution_id": int(current_filter_institution_id) if current_filter_institution_id else None,

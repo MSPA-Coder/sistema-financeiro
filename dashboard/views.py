@@ -1,40 +1,67 @@
-"""Views do dashboard com suporte a HTMX."""
+"""Views do dashboard com suporte a HTMX.
+
+Nenhum gráfico do painel tem cálculo próprio. Eles tinham, e o cálculo próprio
+divergia do resto do sistema em quatro pontos ao mesmo tempo: somava
+transferência e movimentação como receita e despesa (um pagamento de fatura
+inflava os dois lados), usava vencimento e valor previsto para o que já foi
+realizado, lia o modo como um status só, e chamava de "saldo" uma soma que
+começava em zero. Os números agora saem do mesmo motor dos relatórios:
+
+- receitas, despesas, geração e cobertura por mês: `projection_months_between`,
+  o da tela Projeções -- só categorias gerenciais;
+- saldo: o saldo real, abertura mais movimentos, o mesmo da tela Lançamentos e
+  da coluna Saldo das Projeções;
+- data e valor por modo: realizado vale pela data e pelo valor da realização.
+
+As contas saem de `selected_context` + `context_options`, como nas outras
+telas: titular, instituição, conta, contas ocultas e o filtro global de grupos
+valem aqui exatamente como lá.
+"""
 
 from __future__ import annotations
 
-from calendar import monthrange
 from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth.decorators import login_required
-from django.db.models import Sum
-from django.db.models.functions import TruncMonth
 from django.shortcuts import render
 from django.urls import reverse
 
-from accounts.models import AccountOwner
-from accounts.services import accessible_owner_ids, hidden_account_ids
-from banking.models import FinancialAccount
+from core.account_group_filter import ACCOUNT_GROUP_OPTIONS, GROUPS_PARAM, is_filtering
 from core.currency_filter import ALL_CURRENCIES, parse_currency_filter
 from core.domain.finance import (
 	BASE_CURRENCY,
+	CURRENCY_OPTIONS,
 	CURRENCY_SYMBOLS,
 	ENTRY_TYPE_EXPENSE,
 	ENTRY_TYPE_INCOME,
 	STATUS_REALIZED,
+	VIEW_ALL,
+	VIEW_MODE_OPTIONS,
+	VIEW_PENDING,
+	VIEW_PROJECTED,
+	normalize_view_mode,
 )
 from core.htmx import invalid_period_response, quer_fragmento, recusa_moedas_misturadas
 from core.permissions import permission_required
 from core.services import system_start_date
-from reports.services import InvalidMonthPeriodError, month_bounds
-from transactions.models import CashFlowEntry
+from reports.services import (
+	InvalidMonthPeriodError,
+	ReportSizeLimitError,
+	context_options,
+	decimal_period_start_balance,
+	entries_for_period,
+	entry_amount_for_view_mode,
+	entry_date_for_view_mode,
+	month_bounds,
+	projection_months_between,
+	selected_context,
+)
 
 MONEY_QUANT = Decimal("0.01")
-
-
-def _month_start_end(year: int, month: int) -> tuple[date, date]:
-	end_day = monthrange(year, month)[1]
-	return date(year, month, 1), date(year, month, end_day)
+# O painel mostra o mês escolhido no meio de uma janela de 13 meses.
+WINDOW_BEFORE = 6
+WINDOW_AFTER = 6
 
 
 def _shift_month(year: int, month: int, delta: int) -> tuple[int, int]:
@@ -42,15 +69,6 @@ def _shift_month(year: int, month: int, delta: int) -> tuple[int, int]:
 	shifted_year = total // 12
 	shifted_month = (total % 12) + 1
 	return shifted_year, shifted_month
-
-
-def _parse_int(value: str | None) -> int | None:
-	if value is None or value == "":
-		return None
-	try:
-		return int(value)
-	except (TypeError, ValueError):
-		return None
 
 
 def _to_float(value: Decimal | int | float | None) -> float:
@@ -61,6 +79,141 @@ def _to_float(value: Decimal | int | float | None) -> float:
 
 def _month_label(year: int, month: int) -> str:
 	return f"{month:02d}/{year}"
+
+
+def _moeda_do_painel(pedida: str, moedas: tuple[str, ...]) -> tuple[str, bool]:
+	"""A moeda que o painel mostra, e se ele teve de escolher no lugar da pessoa.
+
+	Gráfico não tem bloco por moeda como as tabelas: duas moedas não cabem no
+	mesmo eixo, e somá-las é o erro que `MixedCurrencyError` existe para
+	impedir. Então o painel mostra uma moeda por vez:
+
+	- a pedida, se houver conta dela no escopo;
+	- a única do escopo, se só houver uma: a corretora em dólar traz o dólar;
+	- com "Todas" e mais de uma moeda, a moeda base, avisando.
+	"""
+	if pedida in moedas:
+		return pedida, False
+	if len(moedas) == 1:
+		return moedas[0], False
+	if not moedas:
+		return (BASE_CURRENCY if pedida == ALL_CURRENCIES else pedida), False
+	return (BASE_CURRENCY if BASE_CURRENCY in moedas else moedas[0]), True
+
+
+def _contas_por_moeda(options) -> dict[str, list[int]]:
+	"""`options.account_ids` repartidos por moeda, moeda base primeiro.
+
+	O mesmo que `account_ids_by_currency`, lido das contas que `context_options`
+	já carregou para os seletores, em vez de uma consulta a mais.
+	"""
+	selecionadas = set(options.account_ids)
+	contas = sorted(
+		(conta for conta in options.accounts if conta.id in selecionadas),
+		key=lambda conta: (conta.account_name, conta.id),
+	)
+	por_moeda: dict[str, list[int]] = {}
+	for conta in contas:
+		por_moeda.setdefault(conta.currency, []).append(conta.id)
+	return {
+		moeda: por_moeda[moeda]
+		for moeda in sorted(por_moeda, key=lambda moeda: (moeda != BASE_CURRENCY, moeda))
+	}
+
+
+def _saldo_diario(account_ids, month_start: date, next_month: date, view_mode: str, month_entries) -> list[tuple[date, Decimal]]:
+	"""Saldo ao fim de cada dia com movimento, pelo mesmo cálculo do extrato.
+
+	Abertura do período mais cada lançamento, na ordem da listagem -- é o
+	`running_balance` da tela Lançamentos (`compute_statement`). Aqui entra tudo,
+	inclusive transferência: ela não é receita nem despesa, mas muda o saldo.
+	"""
+	saldo = decimal_period_start_balance(account_ids, month_start, next_month, view_mode)
+	por_dia: dict[date, Decimal] = {}
+	for entry in month_entries:
+		if view_mode in {VIEW_PROJECTED, VIEW_PENDING} and entry.status == STATUS_REALIZED:
+			continue
+		valor = entry_amount_for_view_mode(entry, view_mode)
+		saldo += valor if entry.entry_type == ENTRY_TYPE_INCOME else -valor
+		por_dia[entry_date_for_view_mode(entry, view_mode)] = saldo.quantize(MONEY_QUANT)
+	return list(por_dia.items())
+
+
+def _categorias(month_entries, view_mode: str, filter_type: str) -> list[tuple[str, Decimal]]:
+	"""Total por categoria gerencial no mês, maior primeiro.
+
+	Transferência e movimentação ficam fora, como no drill-down para
+	Lançamentos (`dashboard_drilldown=1`): a fatia do gráfico tem de ser a
+	soma da tela que ele abre.
+	"""
+	totais: dict[str, Decimal] = {}
+	for entry in month_entries:
+		if entry.entry_type != filter_type or entry.category is None or entry.category.is_internal:
+			continue
+		nome = entry.category.category_name
+		totais[nome] = totais.get(nome, Decimal("0.00")) + entry_amount_for_view_mode(entry, view_mode)
+	return sorted(totais.items(), key=lambda item: (-item[1], item[0]))
+
+
+def _saude(months: list[dict], selected_index: int) -> dict:
+	income = [m["receita"].quantize(MONEY_QUANT) for m in months]
+	expense = [m["despesa"].quantize(MONEY_QUANT) for m in months]
+	generation = [(i - e).quantize(MONEY_QUANT) for i, e in zip(income, expense, strict=True)]
+	coverage = [None if e <= 0 else (i / e).quantize(MONEY_QUANT) for i, e in zip(income, expense, strict=True)]
+
+	moving_average: list[Decimal | None] = []
+	for idx in range(len(generation)):
+		if idx < 2:
+			moving_average.append(None)
+			continue
+		moving_average.append((sum(generation[idx - 2 : idx + 1], Decimal("0.00")) / 3).quantize(MONEY_QUANT))
+
+	valid_coverage = [v for v in coverage if v is not None]
+	avg_coverage = (sum(valid_coverage, Decimal("0.00")) / len(valid_coverage)) if valid_coverage else Decimal("0.00")
+
+	# Mês sem movimento nenhum não "fechou com sobra": não entra na conta.
+	with_movement = [idx for idx in range(len(months)) if income[idx] or expense[idx]]
+	positive_months = len([idx for idx in with_movement if generation[idx] >= 0])
+
+	# Os 3 meses que terminam no escolhido contra os 3 anteriores. Era o fim da
+	# janela contra o meio dela -- dois trimestres futuros, que o rótulo
+	# "últimos 3m" não descrevia.
+	last3 = generation[max(0, selected_index - 2) : selected_index + 1]
+	prev3 = generation[max(0, selected_index - 5) : max(0, selected_index - 2)]
+	prev_sum = sum(prev3, Decimal("0.00"))
+	last_sum = sum(last3, Decimal("0.00"))
+	if prev3 and prev_sum != 0:
+		trend_percent = ((last_sum - prev_sum) / abs(prev_sum)) * 100
+	elif prev3:
+		trend_percent = Decimal("100.0") if last_sum > 0 else Decimal("0.0")
+	else:
+		trend_percent = Decimal("0.0")
+
+	if trend_percent > Decimal("5"):
+		trend = ("amount-positive", "↑", "Melhora consistente")
+	elif trend_percent < Decimal("-5"):
+		trend = ("amount-negative", "↓", "Queda de geração")
+	else:
+		trend = ("amount-neutral", "→", "Estabilidade")
+
+	return {
+		"income": income,
+		"expense": expense,
+		"generation": generation,
+		"summary": {
+			"average_coverage": f"{avg_coverage:.2f}x",
+			"average_coverage_class": "amount-positive" if avg_coverage >= 1 else "amount-negative",
+			"positive_months": positive_months,
+			"total_months": len(with_movement),
+			"trend_class": trend[0],
+			"trend_symbol": trend[1],
+			"trend_percent": f"{trend_percent:+.1f}%",
+			"trend_caption": trend[2],
+			"coverage": [_to_float(v) if v is not None else None for v in coverage],
+			"generation": [_to_float(v) for v in generation],
+			"moving_average": [_to_float(v) if v is not None else None for v in moving_average],
+		},
+	}
 
 
 @login_required
@@ -77,301 +230,123 @@ def dashboard_view(request):
 	except (TypeError, ValueError):
 		selected_year = today.year
 		selected_month = today.month
-		raw_period = f"{selected_year:04d}-{selected_month:02d}"
+	selected_period = f"{selected_year:04d}-{selected_month:02d}"
 
-	view_mode = (request.GET.get("mode") or "todos").strip().lower()
-	valid_modes = {"todos", "a_vencer", "vencidos", "realizado"}
-	if view_mode not in valid_modes:
-		view_mode = "todos"
-	try:
-		month_bounds(selected_year, selected_month)
-		month_bounds(*_shift_month(selected_year, selected_month, 6))
-	except InvalidMonthPeriodError as exc:
-		return invalid_period_response(request, str(exc))
+	view_mode = normalize_view_mode((request.GET.get("mode") or "").strip().lower(), default=VIEW_ALL)
 
 	filter_type = (request.GET.get("filter_type") or ENTRY_TYPE_EXPENSE).strip().lower()
 	if filter_type not in {ENTRY_TYPE_INCOME, ENTRY_TYPE_EXPENSE}:
 		filter_type = ENTRY_TYPE_EXPENSE
 
-	owner_id = _parse_int(request.GET.get("owner_id"))
-	institution_id = _parse_int(request.GET.get("institution_id"))
-	account_id = _parse_int(request.GET.get("account_id"))
+	try:
+		month_bounds(selected_year, selected_month)
+		month_bounds(*_shift_month(selected_year, selected_month, WINDOW_AFTER))
+	except InvalidMonthPeriodError as exc:
+		return invalid_period_response(request, str(exc))
 
-	# Mesmo escopo de acesso das demais telas. O join direto em
-	# UserOwnerAccess que existia aqui ignorava o acesso amplo de
-	# administrador/super user: quem nao tivesse concessao explicita via um
-	# dashboard vazio enquanto enxergava tudo no resto do sistema.
-	allowed_owner_ids = accessible_owner_ids(request.user, "view")
+	ctx = selected_context(request.user, request.GET, request=request)
+	options = context_options(request.user, ctx, hidden_scope="dashboard")
+	contas_por_moeda = _contas_por_moeda(options)
+	moedas = tuple(contas_por_moeda)
+	currency, currency_notice = _moeda_do_painel(parse_currency_filter(request.GET), moedas)
+	account_ids = contas_por_moeda.get(currency, [])
 
-	entries_qs = CashFlowEntry.objects.select_related("account", "category").filter(
-		account__owner_id__in=allowed_owner_ids,
+	first_month = date(*_shift_month(selected_year, selected_month, -WINDOW_BEFORE), 1)
+	last_month = date(*_shift_month(selected_year, selected_month, WINDOW_AFTER), 1)
+	month_start = date(selected_year, selected_month, 1)
+	next_month = date(*_shift_month(selected_year, selected_month, 1), 1)
+	try:
+		# A janela é lida uma vez: o motor mensal e o recorte do mês usam a mesma lista.
+		window_entries = entries_for_period(
+			account_ids, first_month, date(*_shift_month(last_month.year, last_month.month, 1), 1), view_mode
+		)
+		months = projection_months_between(
+			account_ids, first_month, last_month, view_mode, period_entries=window_entries
+		)
+	except (InvalidMonthPeriodError, ReportSizeLimitError) as exc:
+		return invalid_period_response(request, str(exc))
+	month_entries = [
+		entry for entry in window_entries
+		if month_start <= entry_date_for_view_mode(entry, view_mode) < next_month
+	]
+
+	categorias = _categorias(month_entries, view_mode, filter_type)
+	saldo_diario = _saldo_diario(account_ids, month_start, next_month, view_mode, month_entries)
+
+	chart_periods = [m["month"] for m in months]
+	chart_labels = [_month_label(*(int(part) for part in period.split("-"))) for period in chart_periods]
+	selected_index = chart_periods.index(selected_period)
+	saude = _saude(months, selected_index)
+	chart_income = [_to_float(v) for v in saude["income"]]
+	chart_expense = [_to_float(v) for v in saude["expense"]]
+	chart_generation = saude["summary"]["generation"]
+	chart_saldo = [_to_float(m["saldo"]) for m in months]
+
+	financial_health = {**saude["summary"], "labels": chart_labels}
+	account_groups = ctx.account_groups
+	groups_param = (
+		",".join(code for code, _label in ACCOUNT_GROUP_OPTIONS if code in account_groups)
+		if is_filtering(account_groups)
+		else ""
 	)
-
-	if owner_id:
-		entries_qs = entries_qs.filter(account__owner_id=owner_id)
-	if institution_id:
-		entries_qs = entries_qs.filter(account__institution_id=institution_id)
-	if account_id:
-		entries_qs = entries_qs.filter(account_id=account_id)
-
-	# Os seletores de banco/conta continuam listando tudo a que o usuario tem
-	# acesso, inclusive o que ele ocultou: se a conta sumisse da lista, ele
-	# nao teria mais como escolhe-la para ver isoladamente.
-	selector_qs = entries_qs
-
-	# Preferencia pessoal de Configuracoes > Contas em analises: as contas
-	# marcadas saem dos agregados do dashboard. Vale so para a visao
-	# agregada -- escolher a conta explicitamente no filtro vence, senao a
-	# tela ficaria vazia sem explicar por que.
-	hidden_ids = hidden_account_ids(request.user, "dashboard") if not account_id else set()
-	if hidden_ids:
-		entries_qs = entries_qs.exclude(account_id__in=hidden_ids)
-
-	if view_mode != "todos":
-		entries_qs = entries_qs.filter(status=view_mode)
-		selector_qs = selector_qs.filter(status=view_mode)
-
-	# Tudo daqui para baixo soma lançamentos de várias contas em um número só, e
-	# esse número só existe dentro de uma moeda. O painel é feito de gráficos, e
-	# duas moedas não cabem no mesmo eixo -- não existe o gráfico que compara
-	# uma barra em real com uma barra em dólar. Então aqui a resposta não é
-	# repetir a página: é escolher a moeda, com um seletor visível ao lado dos
-	# demais filtros. O que as telas de tabela fazem é outra coisa: elas
-	# mostram um bloco por moeda, porque linha embaixo de linha cabe.
-	# As opcoes de moeda vêm das CONTAS no escopo, não dos lançamentos: uma conta
-	# em dólar recém-aberta tem saldo e ainda não tem movimento, e ler os
-	# lançamentos esconderia o seletor justamente de quem acabou de abri-la.
-	contas_qs = FinancialAccount.objects.filter(owner_id__in=allowed_owner_ids)
-	if owner_id:
-		contas_qs = contas_qs.filter(owner_id=owner_id)
-	if institution_id:
-		contas_qs = contas_qs.filter(institution_id=institution_id)
-	if account_id:
-		contas_qs = contas_qs.filter(id=account_id)
-	if hidden_ids:
-		contas_qs = contas_qs.exclude(id__in=hidden_ids)
-	moedas = tuple(sorted(
-		set(contas_qs.values_list("currency", flat=True)),
-		key=lambda moeda: (moeda != BASE_CURRENCY, moeda),
-	))
-	# Moeda pedida que não existe na seleção não vence: o filtro de conta manda.
-	# Escolher a corretora em dólar já traz a moeda junto, sem um segundo clique
-	# -- e a tela nunca fica vazia sem explicar por quê.
-	currency = parse_currency_filter(request.GET)
-	if currency != ALL_CURRENCIES:
-		entries_qs = entries_qs.filter(account__currency=currency)
-
-	month_start, month_end = _month_start_end(selected_year, selected_month)
-	month_entries = entries_qs.filter(due_date__gte=month_start, due_date__lte=month_end)
-
-	categories_data = list(
-		month_entries.filter(entry_type=filter_type)
-		.values("category__category_name")
-		.annotate(total=Sum("entry_amount"))
-		.order_by("-total")
-	)
-	chart_cats_labels = [row["category__category_name"] for row in categories_data]
-	chart_cats_values_decimal = [row["total"] or Decimal("0.00") for row in categories_data]
-
-	daily_data = list(
-		month_entries.values("due_date", "entry_type").annotate(total=Sum("entry_amount")).order_by("due_date")
-	)
-	daily_delta: dict[date, Decimal] = {}
-	for row in daily_data:
-		row_date = row["due_date"]
-		total = row["total"] or Decimal("0.00")
-		signed = total if row["entry_type"] == ENTRY_TYPE_INCOME else -total
-		daily_delta[row_date] = daily_delta.get(row_date, Decimal("0.00")) + signed
-	daily_dates = [d.strftime("%d/%m") for d in sorted(daily_delta)]
-	daily_balance_decimal: list[Decimal] = []
-	acc = Decimal("0.00")
-	for row_date in sorted(daily_delta):
-		acc = (acc + daily_delta[row_date]).quantize(MONEY_QUANT)
-		daily_balance_decimal.append(acc)
-
-	# Janela comum aos gráficos de projeção e evolução: mês selecionado ±6.
-	# A agregação única evita uma consulta por mês para cada gráfico.
-	month_offsets = [_shift_month(selected_year, selected_month, offset) for offset in range(-6, 7)]
-	range_start, _ = _month_start_end(*month_offsets[0])
-	_, range_end = _month_start_end(*month_offsets[-1])
-	grouped_by_month = (
-		entries_qs.filter(due_date__gte=range_start, due_date__lte=range_end)
-		.annotate(bucket_month=TruncMonth("due_date"))
-		.values("bucket_month", "entry_type")
-		.annotate(total=Sum("entry_amount"))
-	)
-	totals_by_month: dict[tuple[int, int], dict[str, Decimal]] = {}
-	for row in grouped_by_month:
-		key = (row["bucket_month"].year, row["bucket_month"].month)
-		bucket = totals_by_month.setdefault(key, {"income": Decimal("0.00"), "expense": Decimal("0.00")})
-		if row["entry_type"] == ENTRY_TYPE_INCOME:
-			bucket["income"] = row["total"] or Decimal("0.00")
-		else:
-			bucket["expense"] = row["total"] or Decimal("0.00")
-
-	monthly_points: list[tuple[str, str, Decimal, Decimal]] = []
-	for year_i, month_i in month_offsets:
-		bucket = totals_by_month.get((year_i, month_i), {"income": Decimal("0.00"), "expense": Decimal("0.00")})
-		monthly_points.append((f"{year_i:04d}-{month_i:02d}", _month_label(year_i, month_i), bucket["income"], bucket["expense"]))
-
-	chart_periods = [p[0] for p in monthly_points]
-	chart_labels = [p[1] for p in monthly_points]
-	chart_income_decimal = [p[2].quantize(MONEY_QUANT) for p in monthly_points]
-	chart_expense_decimal = [p[3].quantize(MONEY_QUANT) for p in monthly_points]
-	chart_balance_decimal = [(p[2] - p[3]).quantize(MONEY_QUANT) for p in monthly_points]
-	chart_proj_months = chart_labels[:]
-	chart_proj_receitas_decimal = chart_income_decimal[:]
-	chart_proj_despesas_decimal = chart_expense_decimal[:]
-	chart_proj_saldo_decimal: list[Decimal] = []
-	running_balance = Decimal("0.00")
-	for generation in chart_balance_decimal:
-		running_balance = (running_balance + generation).quantize(MONEY_QUANT)
-		chart_proj_saldo_decimal.append(running_balance)
-
-	health_labels = chart_labels[:]
-	health_coverage_decimal: list[Decimal | None] = []
-	health_generation_decimal: list[Decimal] = []
-	for income, expense in zip(chart_income_decimal, chart_expense_decimal, strict=True):
-		generation = (income - expense).quantize(MONEY_QUANT)
-		health_generation_decimal.append(generation)
-		if expense <= 0:
-			health_coverage_decimal.append(None)
-		else:
-			health_coverage_decimal.append((income / expense).quantize(MONEY_QUANT))
-
-	moving_average_decimal: list[Decimal | None] = []
-	for idx in range(len(health_generation_decimal)):
-		if idx < 2:
-			moving_average_decimal.append(None)
-			continue
-		avg3 = sum(health_generation_decimal[idx - 2 : idx + 1], Decimal("0.00")) / 3
-		moving_average_decimal.append(avg3.quantize(MONEY_QUANT))
-
-	valid_coverage = [v for v in health_coverage_decimal if v is not None]
-	avg_coverage_val = (sum(valid_coverage, Decimal("0.00")) / len(valid_coverage)) if valid_coverage else Decimal("0.00")
-	avg_coverage_class = "amount-positive" if avg_coverage_val >= 1 else "amount-negative"
-	positive_months = len([v for v in health_generation_decimal if v >= 0])
-	total_months = len(health_generation_decimal)
-
-	prev3 = health_generation_decimal[-6:-3]
-	last3 = health_generation_decimal[-3:]
-	prev_sum = sum(prev3, Decimal("0.00")) if prev3 else Decimal("0.00")
-	last_sum = sum(last3, Decimal("0.00")) if last3 else Decimal("0.00")
-	if prev3 and prev_sum != 0:
-		trend_percent = ((last_sum - prev_sum) / abs(prev_sum)) * 100
-	elif prev3:
-		trend_percent = Decimal("100.0") if last_sum > 0 else Decimal("0.0")
-	else:
-		trend_percent = Decimal("0.0")
-
-	if trend_percent > Decimal("5"):
-		trend_class = "amount-positive"
-		trend_symbol = "↑"
-		trend_caption = "Melhora consistente"
-	elif trend_percent < Decimal("-5"):
-		trend_class = "amount-negative"
-		trend_symbol = "↓"
-		trend_caption = "Queda de geração"
-	else:
-		trend_class = "amount-neutral"
-		trend_symbol = "→"
-		trend_caption = "Estabilidade"
-
-	# Conversão numérica somente na fronteira com o template/JSON dos gráficos.
-	chart_cats_values = [_to_float(value) for value in chart_cats_values_decimal]
-	chart_income = [_to_float(value) for value in chart_income_decimal]
-	chart_expense = [_to_float(value) for value in chart_expense_decimal]
-	chart_balance = [_to_float(value) for value in chart_balance_decimal]
-	chart_proj_receitas = [_to_float(value) for value in chart_proj_receitas_decimal]
-	chart_proj_despesas = [_to_float(value) for value in chart_proj_despesas_decimal]
-	chart_proj_saldo = [_to_float(value) for value in chart_proj_saldo_decimal]
-	daily_balance = [_to_float(value) for value in daily_balance_decimal]
-	health_coverage = [_to_float(value) if value is not None else None for value in health_coverage_decimal]
-	health_generation = [_to_float(value) for value in health_generation_decimal]
-	moving_average = [_to_float(value) if value is not None else None for value in moving_average_decimal]
-
-	financial_health = {
-		"average_coverage": f"{avg_coverage_val:.2f}x",
-		"average_coverage_class": avg_coverage_class,
-		"positive_months": positive_months,
-		"total_months": total_months,
-		"trend_class": trend_class,
-		"trend_symbol": trend_symbol,
-		"trend_percent": f"{trend_percent:+.1f}%",
-		"trend_caption": trend_caption,
-		"labels": health_labels,
-		"coverage": health_coverage,
-		"generation": health_generation,
-		"moving_average": moving_average,
-	}
 
 	chart_data = {
-		"projMonths": chart_proj_months,
-		"projRec": chart_proj_receitas,
-		"projDesp": chart_proj_despesas,
-		"projSaldo": chart_proj_saldo,
-		"catLabels": chart_cats_labels,
-		"catValues": chart_cats_values,
-		"dailyDates": daily_dates,
-		"dailyBal": daily_balance,
+		"projMonths": chart_labels,
+		"projRec": chart_income,
+		"projDesp": chart_expense,
+		"projSaldo": chart_saldo,
+		"catLabels": [nome for nome, _total in categorias],
+		"catValues": [_to_float(total) for _nome, total in categorias],
+		"dailyDates": [dia.strftime("%d/%m") for dia, _saldo in saldo_diario],
+		"dailyBal": [_to_float(saldo) for _dia, saldo in saldo_diario],
 		"chartPeriods": chart_periods,
 		"chartLabels": chart_labels,
 		"chartIncome": chart_income,
 		"chartExpense": chart_expense,
-		"chartBalance": chart_balance,
-		"selectedPeriod": raw_period,
+		"chartBalance": chart_generation,
+		"selectedPeriod": selected_period,
 		# Os gráficos escreviam `R$` fixo em tooltips e eixos. O símbolo é da
 		# moeda que o painel está mostrando, e quem sabe qual é é o servidor.
 		"currencySymbol": CURRENCY_SYMBOLS.get(currency, CURRENCY_SYMBOLS[BASE_CURRENCY]),
 		"viewMode": view_mode,
 		"filterType": filter_type,
-		"currentOwnerId": owner_id,
-		"currentInstitutionId": institution_id,
-		"currentAccountId": account_id,
+		"currentOwnerId": ctx.owner_id,
+		"currentInstitutionId": ctx.institution_id,
+		"currentAccountId": ctx.account_id,
+		# O drill-down abre Lançamentos na mesma moeda e nos mesmos grupos.
+		"currency": currency,
+		"accountGroups": groups_param,
+		"groupsParam": GROUPS_PARAM,
 		"transactionsUrl": reverse("transactions:transactions_view"),
 		"health": financial_health,
 	}
 
-	owner_options = AccountOwner.objects.filter(id__in=allowed_owner_ids).order_by("name")
-
 	context = {
 		"currency": currency,
+		"currency_label": dict(CURRENCY_OPTIONS).get(currency, currency),
+		"currency_notice": currency_notice,
 		# O seletor só aparece quando há mais de uma moeda ao alcance do
 		# usuário: com uma só, ele seria um controle que nunca muda nada.
 		"currency_options": [(moeda, CURRENCY_SYMBOLS.get(moeda, moeda)) for moeda in moedas],
 		"show_currency_filter": len(moedas) > 1,
-		"selected_period": raw_period,
+		"selected_period": selected_period,
 		"selected_year": selected_year,
 		"selected_month": selected_month,
 		"today_period": today.strftime("%Y-%m"),
 		"system_start_date": system_start_date(),
 		"view_mode": view_mode,
-		"view_mode_options": [
-			("todos", "Todos"),
-			("a_vencer", "A vencer"),
-			("vencidos", "Vencidos"),
-			(STATUS_REALIZED, "Realizado"),
-		],
+		"view_mode_label": dict(VIEW_MODE_OPTIONS).get(view_mode, view_mode),
+		"view_mode_options": VIEW_MODE_OPTIONS,
 		"filter_type": filter_type,
-		"owners": owner_options,
-		"banks": selector_qs.values("account__institution_id", "account__institution__institution_name").distinct().order_by("account__institution__institution_name"),
-		"accounts": selector_qs.values("account_id", "account__account_name").distinct().order_by("account__account_name"),
-		"current_owner_id": owner_id,
-		"current_institution_id": institution_id,
-		"current_account_id": account_id,
-		"chart_proj_months": chart_proj_months,
-		"chart_proj_receitas": chart_proj_receitas,
-		"chart_proj_despesas": chart_proj_despesas,
-		"chart_proj_saldo": chart_proj_saldo,
-		"chart_cats_labels": chart_cats_labels,
-		"chart_cats_values": chart_cats_values,
-		"daily_dates": daily_dates,
-		"daily_balance": daily_balance,
-		"chart_periods": chart_periods,
-		"chart_labels": chart_labels,
-		"chart_income": chart_income,
-		"chart_expense": chart_expense,
-		"chart_balance": chart_balance,
+		"owners": options.owners,
+		"banks": options.institutions,
+		"accounts": options.accounts,
+		"current_owner_id": ctx.owner_id,
+		"current_institution_id": ctx.institution_id,
+		"current_account_id": ctx.account_id,
+		"chart_proj_months": chart_labels,
+		"chart_cats_labels": chart_data["catLabels"],
+		"daily_dates": chart_data["dailyDates"],
 		"financial_health": financial_health,
 		"chart_data": chart_data,
 	}

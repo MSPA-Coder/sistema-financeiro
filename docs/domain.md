@@ -53,9 +53,10 @@ telas mostram. O número único convertido pertence a quem consolida.
 - na tela, `core.htmx.recusa_moedas_misturadas` transforma o erro em aviso
   (HTTP 400 com o gatilho `app:moedas-misturadas`), nunca em 500;
 - **o painel é a exceção**: ele é feito de gráficos, e duas moedas não cabem no
-  mesmo eixo. Em vez de repetir a página, ele tem um filtro de moeda ao lado dos
-  demais — visível só quando há mais de uma. Moeda pedida que não existe na
-  seleção não vence: escolher a conta em dólar traz a moeda junto;
+  mesmo eixo. Ele mostra uma moeda por vez, a do filtro global. Moeda pedida que
+  não existe na seleção não vence: escolher a conta em dólar traz a moeda junto.
+  Com "Todas" e mais de uma moeda no escopo, ele mostra a moeda base e avisa —
+  nunca soma as duas;
 - linha por conta não é agregação: relatórios detalhados continuam listando
   contas de moedas diferentes lado a lado, cada uma com o seu símbolo. O que não
   existe é o TOTAL delas — esse é um por moeda;
@@ -177,6 +178,11 @@ O banco garante que um cartão tem os dois dias e que uma conta comum não tem
 nenhum dado de cartão (`ck_financial_account_card_fields`). Os contratos
 patrimoniais publicam o tipo em cada conta (`tipo`), para o consumidor tratar o
 saldo do cartão como passivo.
+
+Uma conta também pode ser `account_kind = "aplicacao"` (CDB, caixinha,
+Tesouro). Para o saldo ela é uma conta comum, sem nenhum dado de cartão (o
+mesmo CHECK garante), e aplicar ou resgatar continua sendo transferência. O
+tipo existe para o filtro global de grupos, descrito abaixo.
 
 O modelo anterior -- a fatura inteira como uma despesa recorrente de valor
 estimado na conta corrente -- continua válido para o histórico. Cada cartão
@@ -361,6 +367,29 @@ controle usam timezone e são persistidas pelo PostgreSQL com suporte a fuso;
 As preferências pessoais de ocultação afetam somente os agregados do Dashboard
 e de Projeções. Uma conta explicitamente escolhida no filtro continua visível,
 assim como nos seletores e nas demais telas permitidas ao usuário.
+
+## Grupos de conta (filtro global)
+
+O filtro global de contas reparte **toda** conta em exatamente um grupo, e é
+isso que torna a seleção múltipla legível (`core/account_group_filter.py`):
+
+| Conta | Grupo |
+|---|---|
+| `cartao_credito`, em qualquer instituição | Cartões |
+| `aplicacao`, em qualquer instituição | Aplicações |
+| `conta` em instituição do tipo Banco | Bancos |
+| `conta` em instituição do tipo Corretora | Corretoras |
+
+O tipo da conta vence o da instituição: o cartão emitido por um banco não
+aparece ao marcar só "Bancos". Como a moeda, o filtro vive na URL
+(`grupos=bancos,cartoes`) e não é gravado; ausente, valem todos. Ele segue a
+regra das contas ocultas: tira contas dos números, deixa os seletores inteiros
+e cede à conta escolhida explicitamente. No Planejamento anual, cujo seletor de
+contas é o próprio escopo, ele restringe as opções.
+
+Tirar um grupo tira as contas dele da seleção, e com elas o saldo: aplicar R$
+500 no CDB baixa o saldo de "Bancos" em R$ 500 sem virar despesa, porque o
+destino ficou fora do recorte.
 
 ## Gestão gerencial: ciclo de vida
 

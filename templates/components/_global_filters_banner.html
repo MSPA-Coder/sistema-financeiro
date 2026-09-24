@@ -1,0 +1,11 @@
+{% comment %}Filtro global que tira contas de todas as telas precisa estar a vista: escondido
+   no menu, ele e esquecido, e o saldo que ele muda passa por saldo errado.
+   Fica fora de #appMain e #appPageHeader porque so muda com recarga inteira:
+   os filtros globais trocam de pagina, nao de fragmento.
+{% endcomment %}
+{% if global_account_groups_active %}
+<div class="global-filter-banner" role="status">
+    <span>Mostrando só <strong>{{ global_account_groups_labels|join:", " }}</strong>.</span>
+    <a href="{{ global_account_groups_reset_url }}">Mostrar todas as contas</a>
+</div>
+{% endif %}

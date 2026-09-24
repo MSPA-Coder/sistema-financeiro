@@ -38,6 +38,29 @@ independentes e impede que uma resposta antiga altere o estado de outra.
 As opções específicas restringem os dados antes dos cálculos; `ALL` preserva
 os blocos por moeda, sem conversão ou totais que misturem BRL e USD.
 
+### Filtro global de grupos de conta
+
+`grupos=bancos,corretoras,cartoes,aplicacoes` segue o mesmo contrato da moeda:
+lido da query string por `core.account_group_filter.parse_account_groups`,
+ausente vale todos, valor desconhecido responde 400, nada é gravado. A regra de
+partição está em `docs/domain.md`. O filtro entra num lugar só,
+`reports.services.selected_context`/`context_options`, e por isso vale em toda
+tela que monta as contas por ali: Lançamentos, dashboard, Projeções, Próximos
+movimentos, Posição por conta e Controle gerencial.
+
+No navegador, `static/js/core/application.js` repassa `currency` e `grupos` da
+URL atual para links, formulários GET e requisições HTMX, completando só o que
+o destino não traz. O menu lateral e a faixa "Mostrando só..." ficam fora de
+`#appMain`, porque os filtros globais trocam de página e não de fragmento.
+
+### Dashboard
+
+O painel não tem cálculo próprio: meses, receitas, despesas, geração e saldo
+saem de `reports.services.projection_months_between`, e o saldo diário do
+mesmo cálculo do extrato. Só categorias gerenciais entram em receita e
+despesa; o saldo é o real. Assim a fatia ou a barra clicada é a soma da tela de
+Lançamentos que ela abre.
+
 O fluxo de referência é:
 
 ```text

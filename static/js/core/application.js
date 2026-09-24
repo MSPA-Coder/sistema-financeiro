@@ -67,6 +67,16 @@
         return value === 'USD' || value === 'ALL' ? value : 'BRL';
     }
 
+    /* Os filtros globais que viajam na URL: a moeda e os grupos de conta
+       (`core/account_group_filter.py`). Grupos ausentes valem "todos" e não
+       são repassados -- o endereço limpo continua sendo o padrão. */
+    function _globalParamsFromUrl() {
+        var params = { currency: _currencyFromUrl() };
+        var grupos = new URL(window.location.href).searchParams.get('grupos');
+        if (grupos) params.grupos = grupos;
+        return params;
+    }
+
     function _closeGlobalFilters() {
         document.querySelectorAll('[data-global-filters-menu]').forEach(function (menu) {
             menu.hidden = true;
@@ -115,14 +125,45 @@
         if (toggle) toggle.focus({ preventScroll: true });
     });
 
+    /* Grupos de conta: seleção múltipla, então marcar não pode recarregar a
+       página a cada clique. A aplicação espera uma pausa curta, e o último
+       grupo não desmarca -- seleção vazia seria uma tela sempre zerada. Todos
+       marcados desligam o campo: o endereço volta a não ter `grupos`. */
+    var _groupsTimer = null;
+    document.addEventListener('change', function (event) {
+        var box = event.target;
+        if (!box.matches || !box.matches('[data-global-group]')) return;
+        var fieldset = box.closest('[data-global-groups]');
+        if (!fieldset) return;
+        var boxes = Array.prototype.slice.call(fieldset.querySelectorAll('[data-global-group]'));
+        var checked = boxes.filter(function (item) { return item.checked; });
+        if (!checked.length) { box.checked = true; return; }
+        var field = fieldset.querySelector('[data-global-groups-value]');
+        var all = checked.length === boxes.length;
+        field.value = all ? '' : checked.map(function (item) { return item.value; }).join(',');
+        field.disabled = all;
+        var form = box.form || box.closest('form');
+        if (!form) return;
+        clearTimeout(_groupsTimer);
+        _groupsTimer = setTimeout(function () {
+            if (form.dataset.submitting === '1') return;
+            if (typeof form.requestSubmit === 'function') form.requestSubmit();
+            else form.submit();
+        }, 700);
+    });
+
     document.addEventListener('submit', function (event) {
         var form = event.target;
-        if (form.matches && form.matches('form[method="get"]') && !form.querySelector('[name="currency"]')) {
-            var currency = document.createElement('input');
-            currency.type = 'hidden';
-            currency.name = 'currency';
-            currency.value = _currencyFromUrl();
-            form.appendChild(currency);
+        if (form.matches && form.matches('form[method="get"]')) {
+            var globals = _globalParamsFromUrl();
+            Object.keys(globals).forEach(function (name) {
+                if (form.querySelector('[name="' + name + '"]')) return;
+                var input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = name;
+                input.value = globals[name];
+                form.appendChild(input);
+            });
         }
         if (form.matches && form.matches('[data-global-currency-form]')) {
             if (form.dataset.submitting === '1') { event.preventDefault(); return; }
@@ -130,30 +171,41 @@
         }
     });
 
-    /* Menus laterais são links nativos. Propague a moeda atual sem reescrever
-       hrefs no servidor nem guardar estado fora da URL. HTMX boost também
-       passa pela guarda de `configRequest` abaixo. */
+    /* Menus laterais são links nativos. Propague os filtros globais sem
+       reescrever hrefs no servidor nem guardar estado fora da URL. Cada
+       parâmetro é completado só se o link não o trouxer: o que o link diz
+       vence (é assim que "Mostrar todas as contas" leva `grupos=` vazio). HTMX
+       boost também passa pela guarda de `configRequest` abaixo. */
     document.addEventListener('click', function (event) {
         if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         var link = event.target.closest && event.target.closest('a[href]');
         if (!link || link.hasAttribute('data-no-global-currency')) return;
         var href;
         try { href = new URL(link.href, window.location.href); } catch (_) { return; }
-        if (href.origin !== window.location.origin || href.hash || href.searchParams.has('currency')) return;
-        href.searchParams.set('currency', _currencyFromUrl());
-        link.href = href.href;
+        if (href.origin !== window.location.origin || href.hash) return;
+        var globals = _globalParamsFromUrl();
+        var changed = false;
+        Object.keys(globals).forEach(function (name) {
+            if (href.searchParams.has(name)) return;
+            href.searchParams.set(name, globals[name]);
+            changed = true;
+        });
+        if (changed) link.href = href.href;
     });
 
-    /* GETs disparados pelo HTMX recebem a moeda atual sem exigir que cada
-       formulário declare um hidden input. Se o próprio formulário já traz a
-       moeda (o popover), a escolha explícita vence o valor da URL anterior. */
+    /* GETs disparados pelo HTMX recebem os filtros globais sem exigir que
+       cada formulário declare um hidden input. Se o próprio formulário já traz
+       o parâmetro (o popover), a escolha explícita vence o valor da URL. */
     document.addEventListener('htmx:configRequest', function (event) {
         var detail = event.detail || {};
         var method = String(detail.verb || detail.requestConfig && detail.requestConfig.verb || '').toLowerCase();
         if (method !== 'get' || !detail.parameters) return;
-        if (detail.parameters.currency === undefined || detail.parameters.currency === '') {
-            detail.parameters.currency = _currencyFromUrl();
-        }
+        var globals = _globalParamsFromUrl();
+        Object.keys(globals).forEach(function (name) {
+            if (detail.parameters[name] === undefined || detail.parameters[name] === '') {
+                detail.parameters[name] = globals[name];
+            }
+        });
     });
 
     /* O HTMX não impõe ordem entre respostas. Uma troca antiga de #appMain
