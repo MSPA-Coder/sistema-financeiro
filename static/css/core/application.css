@@ -424,6 +424,30 @@ a:hover { text-decoration: underline; }
 }
 .sidebar-privacy-menu-toggle:hover, .sidebar-privacy-menu-toggle:focus-visible { color: var(--primary); }
 .sidebar-global-filters-menu [disabled] { cursor: wait; opacity: .6; }
+.sidebar-filter-toggle { position: relative; }
+.sidebar-filter-dot {
+    position: absolute; top: .1rem; right: .1rem; width: .45rem; height: .45rem;
+    border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 2px var(--card);
+}
+.sidebar-global-groups { display: grid; gap: .2rem; margin: .35rem 0 0; padding: 0; border: 0; min-width: 0; }
+.sidebar-global-groups legend { padding: 0; margin-bottom: .15rem; color: var(--muted); font-size: .72rem; font-weight: 700; }
+.sidebar-global-filters-menu .sidebar-global-group {
+    display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .45rem;
+    padding: .2rem 0; color: var(--text); font-size: .85rem; font-weight: 500; cursor: pointer;
+}
+.sidebar-global-group input { margin: 0; }
+.sidebar-global-group small { color: var(--muted); font-variant-numeric: tabular-nums; }
+.global-filter-banner {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .9rem;
+    margin: .5rem 1rem 0; padding: .45rem .8rem; font-size: .85rem;
+    color: var(--text); background: var(--primary-light); border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.global-filter-banner a { font-weight: 600; }
+.dashboard-currency-notice {
+    margin: 0 0 .75rem; padding: .45rem .8rem; font-size: .85rem;
+    background: var(--primary-light); border: 1px solid var(--border); border-radius: var(--radius);
+}
 
 .sidebar-menu {
     display: flex;
@@ -530,6 +554,12 @@ a:hover { text-decoration: underline; }
         flex: 0 0 auto; border-right: none; border-bottom: 1px solid var(--border);
     }
     .sidebar-menu { max-height: 26vh; overflow-y: auto; }
+    /* A barra lateral vira faixa de 40vh com rolagem própria, e cortaria o menu
+       de filtros (moeda, grupos de conta, modo discreto): fixo, ele sai do corte. */
+    .sidebar-global-filters-menu {
+        position: fixed; top: 4.25rem; left: 1rem; right: auto;
+        max-height: calc(100vh - 5.5rem); overflow-y: auto;
+    }
 }
 
 /* ============================================================

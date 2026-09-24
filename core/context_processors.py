@@ -5,6 +5,14 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from core.account_group_filter import (
+    ACCOUNT_GROUP_OPTIONS,
+    ALL_ACCOUNT_GROUPS,
+    GROUPS_PARAM,
+    account_group,
+    is_filtering,
+    parse_account_groups,
+)
 from core.currency_filter import parse_currency_filter
 
 
@@ -239,12 +247,61 @@ def _serialize_menu(items: Iterable[MenuItem], user, path: str):
     return serialized_items
 
 
+def _account_group_counts(user) -> dict[str, int]:
+    """Quantas contas o usuário enxerga em cada grupo, para o menu de filtros."""
+    from accounts.services import accessible_owner_ids
+    from banking.models import FinancialAccount
+
+    counts = dict.fromkeys(ALL_ACCOUNT_GROUPS, 0)
+    if user is None:
+        return counts
+    for kind, institution_type in FinancialAccount.objects.filter(
+        owner_id__in=accessible_owner_ids(user, "view")
+    ).values_list("account_kind", "institution__institution_type"):
+        counts[account_group(kind, institution_type)] += 1
+    return counts
+
+
+def _global_account_groups(request, user) -> dict:
+    """O filtro global de grupos para o menu e para a faixa de aviso.
+
+    As contagens vão como função: o template só as chama no menu da página
+    inteira, e um fragmento HTMX não paga a consulta.
+    """
+    groups = parse_account_groups(request.GET)
+    filtering = is_filtering(groups)
+    selected_labels = [label for code, label in ACCOUNT_GROUP_OPTIONS if code in groups]
+
+    def options():
+        counts = _account_group_counts(user)
+        return [
+            {"code": code, "label": label, "selected": code in groups, "count": counts[code]}
+            for code, label in ACCOUNT_GROUP_OPTIONS
+        ]
+
+    # "Mostrar todas" leva `grupos=` vazio, e não a ausência: o repasse dos
+    # filtros globais em `application.js` completa o que falta na URL, e
+    # devolveria o filtro que o link quer tirar.
+    reset = request.GET.copy()
+    reset[GROUPS_PARAM] = ""
+    return {
+        "global_account_groups_active": filtering,
+        "global_account_groups_param": (
+            ",".join(code for code, _label in ACCOUNT_GROUP_OPTIONS if code in groups) if filtering else ""
+        ),
+        "global_account_groups_labels": selected_labels,
+        "global_account_group_options": options,
+        "global_account_groups_reset_url": f"{request.path}?{reset.urlencode()}",
+    }
+
+
 def app_shell(request):
     """Expoe dados comuns de layout para templates Django."""
     user = request.user if getattr(request, "user", None) and request.user.is_authenticated else None
     menu_items = _serialize_menu(_build_menu_items(), user, request.path)
 
     return {
+        **_global_account_groups(request, user),
         "global_currency": parse_currency_filter(request.GET),
         "ui_theme": getattr(user, "ui_theme", "light") if user else "light",
         "table_scroll_rows": getattr(user, "table_scroll_rows", 15) if user else 15,

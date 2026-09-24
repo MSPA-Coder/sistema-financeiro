@@ -702,11 +702,15 @@ def account_visibility_options(user: AppUser | None):
     ]
 
 
-def hidden_account_ids(user: AppUser | None, scope: str) -> set[int]:
-    """IDs de contas ocultas para `user` no escopo informado ('dashboard' ou 'projections')."""
+def hidden_account_ids(user: AppUser | None, scope: str, owner_ids: list[int] | None = None) -> set[int]:
+    """IDs de contas ocultas para `user` no escopo informado ('dashboard' ou 'projections').
+
+    `owner_ids` é `accessible_owner_ids(user, "view")` quando o chamador já o tem.
+    """
     if user is None or scope not in {"dashboard", "projections"}:
         return set()
-    owner_ids = accessible_owner_ids(user, "view")
+    if owner_ids is None:
+        owner_ids = accessible_owner_ids(user, "view")
     if not owner_ids:
         return set()
     field = "hide_from_dashboard" if scope == "dashboard" else "hide_from_projections"

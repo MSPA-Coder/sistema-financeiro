@@ -15,6 +15,7 @@ from core.domain.finance import (
     BASE_CURRENCY,
     CARD_DAY_MAX,
     CARD_DAY_MIN,
+    NON_CARD_ACCOUNT_KINDS,
     VALID_ACCOUNT_KINDS,
     VALID_CURRENCIES,
     MixedCurrencyError,
@@ -308,7 +309,7 @@ def _clean_card_fields(
     currency: str,
     account_id: int | None = None,
 ) -> dict:
-    """Os campos de cartão, validados. Conta comum sai com todos vazios.
+    """Os campos de cartão, validados. Conta comum e aplicação saem com todos vazios.
 
     A conta de pagamento padrão é opcional: a fatura pode ser paga de mais de
     uma conta, com uma transferência de cada. Ela só diz de onde a fatura
@@ -318,7 +319,7 @@ def _clean_card_fields(
     kind = (account_kind or ACCOUNT_KIND_REGULAR).strip()
     if kind not in VALID_ACCOUNT_KINDS:
         raise ValueError("Tipo de conta inválido.")
-    if kind == ACCOUNT_KIND_REGULAR:
+    if kind in NON_CARD_ACCOUNT_KINDS:
         return {
             "account_kind": kind,
             "card_closing_day": None,

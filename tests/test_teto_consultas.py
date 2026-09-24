@@ -161,7 +161,11 @@ TETO_LANCAMENTOS = {
     (VIEW_ALL, "pagina"): 35,  # (33)
     (VIEW_ALL, "fragmento"): 35,  # (33)
 }
-TETO_DASHBOARD = {"pagina": 18, "fragmento": 15}  # (16) e (13)
+# Subiu de (16) e (13) em 24/09/2026, quando o painel passou a mostrar saldo
+# real: são duas aberturas de saldo (a da janela de 13 meses e a do mês), três
+# consultas cada, que o cálculo antigo não fazia porque somava a partir de zero.
+# Na página, mais duas para contar as contas de cada grupo no menu de filtros.
+TETO_DASHBOARD = {"pagina": 24, "fragmento": 22}  # (22) e (20)
 
 
 @pytest.mark.parametrize("modo", [VIEW_REALIZED, VIEW_ALL])

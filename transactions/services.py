@@ -13,7 +13,7 @@ from django.utils import timezone
 from accounts.services import can_use_transfer_destination, transfer_destination_access_ids
 from banking.models import FinancialAccount
 from banking.services import can_access_account, currency_blocks
-from core.currency_filter import selected_currency
+from core.currency_filter import ALL_CURRENCIES, selected_currency
 from core.domain.finance import (
     CALC_DIVIDE,
     CALC_REPEAT,
@@ -2041,11 +2041,16 @@ def resolve_statement_request(user, get_params, session, *, request=None) -> Sta
     if minimum_date and end_selected < minimum_date:
         end_selected = minimum_date
 
+    # Conta escolhida vence o filtro de moeda, como vence o de grupos e as
+    # contas ocultas: escolher a conta em dólar com o filtro em real mostraria
+    # uma tela vazia sem dizer por quê.
+    currency_filter = ALL_CURRENCIES if ctx.account_id else selected_currency(get_params)
+
     scope = StatementScope(
         account_ids=tuple(account_ids),
         start_selected=start_selected,
         end_selected=end_selected,
-        currency_filter=selected_currency(get_params),
+        currency_filter=currency_filter,
         filter_type=get_params.get("filter_type", ""),
         filter_category=get_params.get("filter_category", ""),
         filter_date=filter_date_parsed,
@@ -2070,7 +2075,11 @@ def compute_statement(scope: StatementScope, view_mode: str) -> tuple[list[CashF
     from core.domain.finance import VIEW_REALIZED
     from reports import services as report_services
 
-    account_ids = list(scope.account_ids)
+    # As linhas saem só das contas dos blocos. Listar todas e repartir depois
+    # fazia a conta em dólar aparecer com o filtro em real, e -- sem bloco
+    # próprio -- ser somada no bloco do real.
+    currency_groups = currency_blocks(scope.account_ids, scope.currency_filter)
+    account_ids = [account_id for _currency, ids in currency_groups for account_id in ids]
     current_txs = list_transactions_for_view(
         account_ids=account_ids, view_mode=view_mode,
         start_selected=scope.start_selected, end_selected=scope.end_selected,
@@ -2088,7 +2097,7 @@ def compute_statement(scope: StatementScope, view_mode: str) -> tuple[list[CashF
     # para o outro -- uma linha em dólar não entra no saldo em real.
     blocos: list[dict] = []
     running_by_entry_id: dict[int, Decimal] = {}
-    for currency, ids in currency_blocks(account_ids, scope.currency_filter):
+    for currency, ids in currency_groups:
         saldo_inicial_do_bloco = report_services.decimal_period_start_balance(
             ids, start_selected, end_exclusive, view_mode
         )
