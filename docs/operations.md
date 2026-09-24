@@ -46,9 +46,14 @@ Variáveis principais:
 | `CSRF_TRUSTED_ORIGINS` | origens públicas autorizadas para CSRF | vazio |
 | `DEBUG` | depuração | `False` |
 | `USE_HTTPS` | endurecimento para proxy TLS | `False` |
+| `AUDIT_TRUSTED_PROXY_CIDRS` | redes do proxy cujo `X-Forwarded-For` vale para a auditoria e a trava de login | vazio |
 
 `USE_HTTPS=True` exige `CSRF_TRUSTED_ORIGINS` com origens HTTPS e um proxy TLS
 que envie `X-Forwarded-Proto`. `DEBUG` é independente dessa opção.
+
+No VPS, `AUDIT_TRUSTED_PROXY_CIDRS=172.16.0.0/12`: a conexão chega do gateway
+da rede do Docker, que muda quando a rede é recriada. Vazia, a trilha de
+auditoria e a trava de login registram esse gateway para todo mundo.
 
 Limites de upload podem ser ajustados por
 `MAX_BANK_STATEMENT_SIZE_BYTES`, `MAX_BANK_STATEMENT_ROWS` e

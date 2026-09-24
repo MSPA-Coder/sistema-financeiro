@@ -27,6 +27,7 @@ from accounts.services import (
 )
 from core.htmx import quer_fragmento
 from core.permissions import permission_required
+from core.services import request_client_ip
 
 
 def _owners_context():
@@ -105,7 +106,9 @@ class AppLoginView(LoginView):
     """LoginView padrao com bloqueio de tentativas e desvio para troca obrigatoria de senha."""
 
     def post(self, request, *args, **kwargs):
-        remote_addr = request.META.get('REMOTE_ADDR')
+        # O IP vem da mesma regra da auditoria: atras do nginx, REMOTE_ADDR e
+        # o gateway do Docker, e a trava viraria so por usuario.
+        remote_addr = request_client_ip(request)
         try:
             assert_login_not_throttled(request.POST.get('username'), remote_addr)
         except LoginThrottledError as exc:
@@ -114,7 +117,7 @@ class AppLoginView(LoginView):
         return super().post(request, *args, **kwargs)
 
     def form_valid(self, form):
-        clear_login_failures(form.get_user().username, self.request.META.get('REMOTE_ADDR'))
+        clear_login_failures(form.get_user().username, request_client_ip(self.request))
         response = super().form_valid(form)
         user = form.get_user()
         if getattr(user, 'must_change_password', False):
@@ -125,7 +128,7 @@ class AppLoginView(LoginView):
 
     def form_invalid(self, form):
         attempts_remaining, wait_seconds = register_failed_login_attempt(
-            self.request.POST.get('username'), self.request.META.get('REMOTE_ADDR')
+            self.request.POST.get('username'), request_client_ip(self.request)
         )
         messages.error(self.request, failed_login_message(attempts_remaining, wait_seconds))
         return super().form_invalid(form)
