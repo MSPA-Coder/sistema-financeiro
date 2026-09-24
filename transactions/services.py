@@ -1078,9 +1078,6 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None, user=N
             description=description,
             status=req.status,
             installment_total=installments,
-            first_due_date=req.due_date,
-            last_due_date=req.due_date,
-            entry_count=0,
             responsible_user=user,
         )
 
@@ -1155,11 +1152,6 @@ def create_transaction_batch(req: TransactionRequest, audit_context=None, user=N
             _add_pair(add_months(req.due_date, i - first), i, installments, is_first=i == first)
 
     if bank_operation is not None and entries:
-        due_dates = [e.due_date for e in entries]
-        bank_operation.first_due_date = min(due_dates)
-        bank_operation.last_due_date = max(due_dates)
-        bank_operation.entry_count = len(entries)
-        bank_operation.save(update_fields=["first_due_date", "last_due_date", "entry_count", "updated_at"])
         # Nasceu com o status pedido, mas só a primeira ocorrência o recebe
         # quando ele é "realizado": a operação passa a refletir as ocorrências.
         _sync_bank_operation_status(bank_operation.id)
@@ -1383,9 +1375,6 @@ def _convert_single_to_internal_transfer(tx: CashFlowEntry, req: TransactionRequ
             description=(req.description or "")[:255],
             status=req.status,
             installment_total=installments,
-            first_due_date=req.due_date,
-            last_due_date=req.due_date,
-            entry_count=2,
             responsible_user=user,
         )
 
@@ -1782,7 +1771,7 @@ def delete_transaction_or_operation(
         if remaining_count == 0:
             BankOperation.objects.filter(id=bank_operation_id).delete()
         else:
-            campos = {"entry_count": remaining_count, "updated_at": timezone.now()}
+            campos = {"updated_at": timezone.now()}
             if operation_scope == OPERATION_SCOPE_CURRENT_FUTURE and tx.is_recurring:
                 # Apagar a cauda encerra a série. Sem o registro, a projeção
                 # partiria da maior data que restou e recriaria tudo o que foi

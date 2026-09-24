@@ -283,16 +283,13 @@ def _categoria_da_estimativa() -> CashFlowCategory:
     return categoria
 
 
-def _operacao(chave: str, tipo: str, descricao: str, vencimento: date, quantidade: int) -> BankOperation:
+def _operacao(chave: str, tipo: str, descricao: str) -> BankOperation:
     return BankOperation.objects.create(
         operation_key=chave,
         operation_type=tipo,
         description=descricao[:255],
         status=STATUS_PROJECTED,
         installment_total=1,
-        first_due_date=vencimento,
-        last_due_date=vencimento,
-        entry_count=quantidade,
     )
 
 
@@ -314,8 +311,7 @@ def _apagar_projecao_anterior(conta: FinancialAccount) -> None:
         | Q(operation_key__startswith=f"{PREFIXO_PAGAMENTO}:{conta.id}:")
     ):
         operacao.operation_key = f"realizado-{operacao.operation_key}"[:80]
-        operacao.entry_count = operacao.entries.count()
-        operacao.save(update_fields=["operation_key", "entry_count", "updated_at"])
+        operacao.save(update_fields=["operation_key", "updated_at"])
 
 
 @transaction.atomic
@@ -347,7 +343,7 @@ def atualizar(conta: FinancialAccount, *, hoje: date | None = None, fim: date | 
             )
             operacao = _operacao(
                 f"{PREFIXO_ESTIMATIVA}:{conta.id}:{plano.fechamento.isoformat()}",
-                OPERATION_SINGLE, descricao, quando, 1,
+                OPERATION_SINGLE, descricao,
             )
             CashFlowEntry.objects.create(
                 account=conta, category=categoria, entry_type=ENTRY_TYPE_EXPENSE,
@@ -360,7 +356,6 @@ def atualizar(conta: FinancialAccount, *, hoje: date | None = None, fim: date | 
                 f"{PREFIXO_PAGAMENTO}:{conta.id}:{plano.vencimento.isoformat()}",
                 OPERATION_INTERNAL_TRANSFER,
                 f"Fatura projetada {conta.account_name} {plano.vencimento:%d/%m/%Y}",
-                plano.vencimento, 2,
             )
             origem = CashFlowEntry.objects.create(
                 account=pagadora, category=transferencia, entry_type=ENTRY_TYPE_EXPENSE,

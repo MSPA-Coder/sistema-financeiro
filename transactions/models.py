@@ -113,9 +113,6 @@ class BankOperation(models.Model):
         default=STATUS_PROJECTED,
     )
     installment_total = models.IntegerField(default=1)
-    first_due_date = models.DateField(null=True, blank=True)
-    last_due_date = models.DateField(null=True, blank=True)
-    entry_count = models.IntegerField(default=0)
     responsible_user = models.ForeignKey(
         'accounts.AppUser', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='responsible_bank_operations',
@@ -145,10 +142,6 @@ class BankOperation(models.Model):
             models.CheckConstraint(
                 condition=models.Q(installment_total__gte=1),
                 name='ck_bank_operation_installment_total_positive',
-            ),
-            models.CheckConstraint(
-                condition=models.Q(entry_count__gte=0),
-                name='ck_bank_operation_entry_count_non_negative',
             ),
         ]
         indexes = [

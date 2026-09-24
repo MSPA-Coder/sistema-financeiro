@@ -770,9 +770,6 @@ class Command(BaseCommand):
             description=entry.description[:255],
             status=entry.status,
             installment_total=1,
-            first_due_date=entry.due_date,
-            last_due_date=entry.due_date,
-            entry_count=2,
             responsible_user=usuario,
         )
         entry.category = linha.categoria_destino
