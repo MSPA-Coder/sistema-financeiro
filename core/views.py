@@ -595,8 +595,6 @@ def settings_monthly_close_view(request):
 def settings_close_month_view(request):
     from banking.models import FinancialAccount
     from banking.services import can_access_account
-    from core.domain.finance import VIEW_REALIZED
-    from reports.services import decimal_balance_before, month_bounds
 
     try:
         account_id = int(request.POST.get('account_id'))
@@ -605,13 +603,12 @@ def settings_close_month_view(request):
         account = FinancialAccount.objects.get(id=account_id)
         if not can_access_account(request.user, account.id, "update"):
             raise ValueError("Acesso negado: usuário sem permissão para fechar este mês.")
-        _start, end_exclusive = month_bounds(year, month)
-        closing_balance = decimal_balance_before([account.id], end_exclusive, VIEW_REALIZED)
+        # O saldo é calculado dentro de `close_month`, depois do lock da conta.
         closed = close_month(
             account,
             year,
             month,
-            closing_balance,
+            None,
             request.user,
             audit_context=audit_request_context(request),
         )

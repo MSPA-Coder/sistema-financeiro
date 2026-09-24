@@ -15,7 +15,8 @@ import csv
 import hashlib
 import io
 import re
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Protocol, runtime_checkable
@@ -144,6 +145,39 @@ def line_hash(account_id: int, statement_date: date, description: str, amount: D
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
+def numerar_repeticoes(linhas: list[ParsedStatementLine], account_id: int) -> list[ParsedStatementLine]:
+    """Duas linhas iguais no mesmo arquivo são dois movimentos, não uma duplicata.
+
+    Dois PIX de R$ 50 à mesma pessoa no mesmo dia têm data, descrição e valor
+    idênticos. Com o hash só desses três campos, a segunda linha recebia o hash
+    da primeira e a importação a descartava como "duplicada" -- o movimento
+    sumia da conciliação. A fatura do cartão já resolvia isso com um contador
+    (`fatura_csv.py`); aqui é o mesmo, com uma diferença deliberada: a PRIMEIRA
+    ocorrência mantém o hash antigo. Assim, reenviar um arquivo já importado
+    acrescenta só as repetições que se perderam, e não duplica o resto.
+
+    O contador segue a ordem do arquivo, então reenviar o mesmo arquivo gera os
+    mesmos hashes.
+    """
+    vistas: Counter[tuple[date, str, Decimal]] = Counter()
+    numeradas = []
+    for linha in linhas:
+        chave = (linha.statement_date, linha.description.strip().lower(), linha.amount)
+        vistas[chave] += 1
+        if vistas[chave] > 1:
+            linha = replace(
+                linha,
+                line_hash=line_hash(
+                    account_id,
+                    linha.statement_date,
+                    f"{linha.description}|repeticao {vistas[chave]}",
+                    linha.amount,
+                ),
+            )
+        numeradas.append(linha)
+    return numeradas
+
+
 class CsvStatementAdapter:
     """Adapter padrão para arquivos CSV de extrato."""
 
@@ -181,7 +215,7 @@ class CsvStatementAdapter:
             )
         if not parsed:
             raise ValueError("Nenhuma linha válida encontrada no CSV.")
-        return parsed
+        return numerar_repeticoes(parsed, account_id)
 
 
 # --- OFX / OFC / QFX ---
@@ -411,7 +445,7 @@ def _parse_genial_lines(text: str, account_id: int) -> list[ParsedStatementLine]
     max_rows = max_statement_rows()
     if len(parsed) > max_rows:
         raise ValueError(f"Extrato Genial excede o limite de {max_rows} linha(s).")
-    return parsed
+    return numerar_repeticoes(parsed, account_id)
 
 
 class GenialPdfStatementAdapter:

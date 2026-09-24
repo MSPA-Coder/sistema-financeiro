@@ -360,11 +360,18 @@ def close_month(
     account: FinancialAccount,
     year: int,
     month: int,
-    closing_balance: Decimal,
+    closing_balance: Decimal | None,
     user,
     audit_context=None,
 ) -> AccountMonthClose:
-    """Fecha um mês para uma conta específica."""
+    """Fecha um mês para uma conta específica.
+
+    `closing_balance=None` calcula o saldo realizado do mês DEPOIS de trancar a
+    conta. É o que a tela usa: calculado antes do lock, uma realização que
+    entrasse entre o cálculo e o fechamento deixava o mês fechado com um saldo
+    que já não era o dele. Quem passa um valor (reclassificação, testes) já o
+    calculou dentro da própria transação.
+    """
     if not can_access_account(user, account.id, "update"):
         raise ValueError("Acesso negado: usuário sem permissão para fechar este mês.")
 
@@ -372,6 +379,12 @@ def close_month(
     # serializa dois fechamentos concorrentes do mesmo período e permite
     # reativar o registro existente em vez de tentar um novo INSERT.
     account = _lock_accounts([account.pk])[account.pk]
+    if closing_balance is None:
+        from core.domain.finance import VIEW_REALIZED
+        from reports.services import decimal_balance_before, month_bounds
+
+        _inicio, fim_exclusivo = month_bounds(year, month)
+        closing_balance = decimal_balance_before([account.id], fim_exclusivo, VIEW_REALIZED)
     try:
         month_close = AccountMonthClose.objects.select_for_update().get(
             account=account,
