@@ -191,21 +191,38 @@ def _trusted_proxy(remote_addr: str | None) -> bool:
     return False
 
 
-def audit_request_context(request) -> AuditRequestContext:
-    """Extrai a origem sem confiar em cabecalhos enviados diretamente pelo cliente.
+def _client_and_proxy_ip(request) -> tuple[str | None, str | None]:
+    """(cliente, proxy) da requisicao, sem acreditar no que o cliente escreve.
 
-    X-Forwarded-For so e aceito quando a conexao TCP vem de uma rede de proxy
-    explicitamente configurada. Sem essa configuracao, REMOTE_ADDR e o cliente.
+    X-Forwarded-For so e consultado quando a conexao TCP vem de uma rede de
+    proxy configurada em `AUDIT_TRUSTED_PROXY_CIDRS`; sem ela, REMOTE_ADDR e o
+    cliente. A leitura e da DIREITA para a esquerda, pulando os proxies
+    conhecidos: o nginx acrescenta o endereco real no fim da lista, e o que
+    esta a esquerda foi escrito pelo proprio cliente. Ler o primeiro item,
+    como se fazia ate 24/09/2026, deixaria qualquer um escolher o IP gravado.
     """
     remote_addr = _valid_ip(request.META.get("REMOTE_ADDR"))
-    client_ip = remote_addr
-    proxy_ip = None
-    if remote_addr and _trusted_proxy(remote_addr):
-        forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")
-        forwarded_ips = [_valid_ip(value) for value in forwarded]
-        if forwarded_ips and all(forwarded_ips):
-            client_ip = forwarded_ips[0]
-            proxy_ip = remote_addr
+    if not remote_addr or not _trusted_proxy(remote_addr):
+        return remote_addr, None
+    forwarded = [value.strip() for value in request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")]
+    for candidate in reversed([value for value in forwarded if value]):
+        candidate_ip = _valid_ip(candidate)
+        if candidate_ip is None:
+            # Lixo no meio da cadeia: o que esta a esquerda dele nao e confiavel.
+            break
+        if not _trusted_proxy(candidate_ip):
+            return candidate_ip, remote_addr
+    return remote_addr, None
+
+
+def request_client_ip(request) -> str | None:
+    """Endereco do cliente, com a mesma regra da trilha de auditoria."""
+    return _client_and_proxy_ip(request)[0]
+
+
+def audit_request_context(request) -> AuditRequestContext:
+    """Extrai a origem sem confiar em cabecalhos enviados diretamente pelo cliente."""
+    client_ip, proxy_ip = _client_and_proxy_ip(request)
 
     supplied_request_id = (request.META.get("HTTP_X_REQUEST_ID") or "").strip()
     request_id = supplied_request_id if supplied_request_id.isascii() and 1 <= len(supplied_request_id) <= 64 else uuid4().hex
