@@ -27,6 +27,7 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 from django.urls import reverse
 
+from banking.services import account_ids_by_currency
 from core.account_group_filter import ACCOUNT_GROUP_OPTIONS, GROUPS_PARAM, is_filtering
 from core.currency_filter import ALL_CURRENCIES, parse_currency_filter
 from core.domain.finance import (
@@ -99,26 +100,6 @@ def _moeda_do_painel(pedida: str, moedas: tuple[str, ...]) -> tuple[str, bool]:
 	if not moedas:
 		return (BASE_CURRENCY if pedida == ALL_CURRENCIES else pedida), False
 	return (BASE_CURRENCY if BASE_CURRENCY in moedas else moedas[0]), True
-
-
-def _contas_por_moeda(options) -> dict[str, list[int]]:
-	"""`options.account_ids` repartidos por moeda, moeda base primeiro.
-
-	O mesmo que `account_ids_by_currency`, lido das contas que `context_options`
-	já carregou para os seletores, em vez de uma consulta a mais.
-	"""
-	selecionadas = set(options.account_ids)
-	contas = sorted(
-		(conta for conta in options.accounts if conta.id in selecionadas),
-		key=lambda conta: (conta.account_name, conta.id),
-	)
-	por_moeda: dict[str, list[int]] = {}
-	for conta in contas:
-		por_moeda.setdefault(conta.currency, []).append(conta.id)
-	return {
-		moeda: por_moeda[moeda]
-		for moeda in sorted(por_moeda, key=lambda moeda: (moeda != BASE_CURRENCY, moeda))
-	}
 
 
 def _saldo_diario(account_ids, month_start: date, next_month: date, view_mode: str, month_entries) -> list[tuple[date, Decimal]]:
@@ -247,7 +228,10 @@ def dashboard_view(request):
 
 	ctx = selected_context(request.user, request.GET, request=request)
 	options = context_options(request.user, ctx)
-	contas_por_moeda = _contas_por_moeda(options)
+	# Das contas do escopo, e não da lista do seletor: o seletor já vem
+	# recortado pela moeda pedida, e é daqui que sai a moeda que o painel
+	# escolhe quando a pedida não tem conta (a corretora em dólar traz o dólar).
+	contas_por_moeda = account_ids_by_currency(options.account_ids)
 	moedas = tuple(contas_por_moeda)
 	currency, currency_notice = _moeda_do_painel(parse_currency_filter(request.GET), moedas)
 	account_ids = contas_por_moeda.get(currency, [])

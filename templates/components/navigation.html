@@ -20,31 +20,39 @@
                     </button>
                     <div class="sidebar-global-filters-menu" id="global-filters-menu"
                          data-global-filters-menu hidden>
+                        {# Nada se aplica ao marcar: moeda e contas mudam juntas no Aplicar. #}
                         <form method="get" action="{{ request.path }}" data-global-currency-form>
-                            <label for="global-currency">Moeda</label>
                             {% for key, values in request.GET.lists %}
                                 {% if key != 'currency' and key != 'grupos' %}
                                     {% for value in values %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
                                 {% endif %}
                             {% endfor %}
-                            <select id="global-currency" name="currency" data-global-currency>
-                                <option value="BRL" {% if global_currency == 'BRL' %}selected{% endif %}>Real</option>
-                                <option value="USD" {% if global_currency == 'USD' %}selected{% endif %}>Dólar</option>
-                                <option value="ALL" {% if global_currency == 'ALL' %}selected{% endif %}>Todas</option>
-                            </select>
+                            {# As duas marcadas viajam como `ALL`: ver core/currency_filter.py. #}
+                            <fieldset class="sidebar-global-groups" data-global-choice="currency">
+                                <legend>Moeda</legend>
+                                {% for option in global_currency_options %}
+                                <label class="sidebar-global-group">
+                                    <input type="checkbox" value="{{ option.code }}" data-global-choice-box {% if option.selected %}checked{% endif %}>
+                                    <span>{{ option.label }}</span>
+                                </label>
+                                {% endfor %}
+                                <input type="hidden" name="currency" value="{{ global_currency }}"
+                                       data-global-choice-value data-all-value="ALL">
+                            </fieldset>
                             {# Cada conta cai em um grupo só: ver core/account_group_filter.py. #}
-                            <fieldset class="sidebar-global-groups" data-global-groups>
+                            <fieldset class="sidebar-global-groups" data-global-choice="grupos">
                                 <legend>Contas</legend>
                                 {% for group in global_account_group_options %}
                                 <label class="sidebar-global-group">
-                                    <input type="checkbox" value="{{ group.code }}" data-global-group {% if group.selected %}checked{% endif %}>
+                                    <input type="checkbox" value="{{ group.code }}" data-global-choice-box {% if group.selected %}checked{% endif %}>
                                     <span>{{ group.label }}</span>
                                     <small>{{ group.count }}</small>
                                 </label>
                                 {% endfor %}
                                 <input type="hidden" name="grupos" value="{{ global_account_groups_param }}"
-                                       data-global-groups-value {% if not global_account_groups_active %}disabled{% endif %}>
+                                       data-global-choice-value {% if not global_account_groups_active %}disabled{% endif %}>
                             </fieldset>
+                            <button type="submit" class="btn btn-primary btn-sm" data-global-filters-submit>Aplicar</button>
                         </form>
                         <button type="button" class="sidebar-privacy-menu-toggle" data-privacy-toggle
                                 aria-pressed="false" aria-label="Ativar modo discreto" title="Ativar modo discreto">

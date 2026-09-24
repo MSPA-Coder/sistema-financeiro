@@ -13,7 +13,7 @@ from core.account_group_filter import (
     is_filtering,
     parse_account_groups,
 )
-from core.currency_filter import parse_currency_filter
+from core.currency_filter import currency_filter_options, parse_currency_filter
 
 
 @dataclass(frozen=True)
@@ -299,9 +299,11 @@ def app_shell(request):
     user = request.user if getattr(request, "user", None) and request.user.is_authenticated else None
     menu_items = _serialize_menu(_build_menu_items(), user, request.path)
 
+    global_currency = parse_currency_filter(request.GET)
     return {
         **_global_account_groups(request, user),
-        "global_currency": parse_currency_filter(request.GET),
+        "global_currency": global_currency,
+        "global_currency_options": currency_filter_options(global_currency),
         "ui_theme": getattr(user, "ui_theme", "light") if user else "light",
         "table_scroll_rows": getattr(user, "table_scroll_rows", 15) if user else 15,
         "current_active_user": user,

@@ -253,8 +253,9 @@ def annual_planning_view(request):
     owners = list(
         services.AccountOwner.objects.filter(id__in=allowed_owner_ids).order_by("name", "id")
     )
+    currency_filter = selected_currency(request.GET)
     accounts = services.annual_planning_account_options(
-        request.user, selected_owner_ids, parse_account_groups(request.GET)
+        request.user, selected_owner_ids, parse_account_groups(request.GET), currency_filter
     )
     allowed_account_ids = {account.id for account in accounts}
     selected_account_ids = (
@@ -266,7 +267,6 @@ def annual_planning_view(request):
     # Uma grade por moeda: a grade soma titulares e meses numa coluna só, e essa
     # coluna não existe entre moedas. Passar os ids do grupo é equivalente ao
     # que a apresentação já resolveria sozinha quando há uma moeda só.
-    currency_filter = selected_currency(request.GET)
     blocos = [
         {
             "currency": currency,

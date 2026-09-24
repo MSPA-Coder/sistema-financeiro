@@ -63,7 +63,11 @@
        momento em que é criada; não reutiliza a resposta de outra requisição.
        ============================================================ */
     function _currencyFromUrl() {
-        var value = new URL(window.location.href).searchParams.get('currency');
+        var value = String(new URL(window.location.href).searchParams.get('currency') || '').toUpperCase();
+        if (value.indexOf(',') !== -1) {
+            var parts = value.split(',').map(function (part) { return part.trim(); });
+            return parts.indexOf('BRL') !== -1 && parts.indexOf('USD') !== -1 ? 'ALL' : (parts[0] === 'USD' ? 'USD' : 'BRL');
+        }
         return value === 'USD' || value === 'ALL' ? value : 'BRL';
     }
 
@@ -86,19 +90,6 @@
         });
     }
 
-    /* A seleção de moeda já é a confirmação da escolha: não há uma segunda
-       ação necessária para aplicar o filtro. `requestSubmit` preserva o
-       comportamento nativo do formulário e a guarda do submit abaixo evita
-       envios duplicados por eventos repetidos. */
-    document.addEventListener('change', function (event) {
-        var select = event.target;
-        if (!select.matches || !select.matches('[data-global-currency]')) return;
-        var form = select.form || select.closest('form');
-        if (!form || form.dataset.submitting === '1') return;
-        if (typeof form.requestSubmit === 'function') form.requestSubmit();
-        else form.submit();
-    });
-
     document.addEventListener('click', function (event) {
         var toggle = event.target.closest && event.target.closest('[data-global-filters-toggle]');
         if (toggle) {
@@ -109,8 +100,8 @@
             if (opening) {
                 menu.hidden = false;
                 toggle.setAttribute('aria-expanded', 'true');
-                var select = menu.querySelector('[data-global-currency]');
-                if (select) select.focus({ preventScroll: true });
+                var first = menu.querySelector('[data-global-choice-box]');
+                if (first) first.focus({ preventScroll: true });
             }
             return;
         }
@@ -125,31 +116,32 @@
         if (toggle) toggle.focus({ preventScroll: true });
     });
 
-    /* Grupos de conta: seleção múltipla, então marcar não pode recarregar a
-       página a cada clique. A aplicação espera uma pausa curta, e o último
-       grupo não desmarca -- seleção vazia seria uma tela sempre zerada. Todos
-       marcados desligam o campo: o endereço volta a não ter `grupos`. */
-    var _groupsTimer = null;
+    /* Moeda e grupos de conta: seleção múltipla, e NADA se aplica ao marcar.
+       Aplicar a cada clique obrigava a reabrir o menu para cada caixa; agora
+       se mexe em quantas quiser e o botão Aplicar grava tudo de uma vez.
+
+       Cada caixa só mantém o campo escondido em dia. A última marcada não
+       desmarca -- seleção vazia seria uma tela sempre zerada. Todas marcadas
+       viram o valor de "todas": `ALL` na moeda (`data-all-value`), e campo
+       desligado nos grupos, para o endereço voltar a não ter `grupos`. */
     document.addEventListener('change', function (event) {
         var box = event.target;
-        if (!box.matches || !box.matches('[data-global-group]')) return;
-        var fieldset = box.closest('[data-global-groups]');
+        if (!box.matches || !box.matches('[data-global-choice-box]')) return;
+        var fieldset = box.closest('[data-global-choice]');
         if (!fieldset) return;
-        var boxes = Array.prototype.slice.call(fieldset.querySelectorAll('[data-global-group]'));
+        var boxes = Array.prototype.slice.call(fieldset.querySelectorAll('[data-global-choice-box]'));
         var checked = boxes.filter(function (item) { return item.checked; });
         if (!checked.length) { box.checked = true; return; }
-        var field = fieldset.querySelector('[data-global-groups-value]');
+        var field = fieldset.querySelector('[data-global-choice-value]');
         var all = checked.length === boxes.length;
-        field.value = all ? '' : checked.map(function (item) { return item.value; }).join(',');
-        field.disabled = all;
-        var form = box.form || box.closest('form');
-        if (!form) return;
-        clearTimeout(_groupsTimer);
-        _groupsTimer = setTimeout(function () {
-            if (form.dataset.submitting === '1') return;
-            if (typeof form.requestSubmit === 'function') form.requestSubmit();
-            else form.submit();
-        }, 700);
+        var allValue = field.getAttribute('data-all-value');
+        if (all && allValue) {
+            field.value = allValue;
+            field.disabled = false;
+        } else {
+            field.value = all ? '' : checked.map(function (item) { return item.value; }).join(',');
+            field.disabled = all;
+        }
     });
 
     document.addEventListener('submit', function (event) {

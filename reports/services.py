@@ -30,6 +30,7 @@ from accounts.services import accessible_owner_ids
 from banking.models import FinancialAccount, FinancialInstitution
 from banking.services import currency_of_accounts
 from core.account_group_filter import ALL_ACCOUNT_GROUPS, account_group_q, parse_account_groups
+from core.currency_filter import ALL_CURRENCIES, currency_q, parse_currency_filter
 from core.domain.finance import (
     BASE_CURRENCY,
     ENTRY_TYPE_INCOME,
@@ -237,6 +238,9 @@ class FinancialContext:
     # Filtro global de grupos (`core/account_group_filter.py`). O padrão é
     # "todos", para que quem monta um contexto à mão continue vendo tudo.
     account_groups: frozenset[str] = ALL_ACCOUNT_GROUPS
+    # Filtro global de moeda. Aqui ele só recorta os SELETORES; os totais já
+    # saem um bloco por moeda (`currency_blocks`), que é quem o aplica.
+    currency: str = ALL_CURRENCIES
 
 
 @dataclass(frozen=True)
@@ -309,6 +313,7 @@ def selected_context(user, params, *, request=None) -> FinancialContext:
         institution_id=institution_id,
         account_id=account_id,
         account_groups=parse_account_groups(params),
+        currency=parse_currency_filter(params),
     )
 
 
@@ -316,11 +321,15 @@ def context_options(user, ctx: FinancialContext) -> ContextOptions:
     """Retorna opções para os filtros (dropdowns) e os ids de conta resultantes.
 
     O filtro global de grupos (`ctx.account_groups`) tira contas de
-    `account_ids` e, portanto, de todo agregado calculado a partir dele. O
-    seletor (`accounts`) continua inteiro, porque é por ele que se escolhe
-    uma conta fora do filtro; e a conta escolhida explicitamente
-    (`ctx.account_id`) vence os grupos -- senão a tela ficaria vazia sem
-    explicar por quê.
+    `account_ids` e, portanto, de todo agregado calculado a partir dele. A
+    conta escolhida explicitamente (`ctx.account_id`) vence os grupos --
+    senão a tela ficaria vazia sem explicar por quê.
+
+    Os seletores de Instituição e Conta respeitam os filtros globais de grupos
+    e de moeda: com "só Cartões", a lista de contas é de cartões, e a de
+    instituições é a das instituições que têm um. A conta e a instituição já
+    escolhidas continuam na lista mesmo fora do filtro -- o seletor tem de
+    mostrar o que está valendo.
     """
     allowed_owner_ids = accessible_owner_ids(user)
     if not allowed_owner_ids:
@@ -345,12 +354,17 @@ def context_options(user, ctx: FinancialContext) -> ContextOptions:
     owners = list(
         AccountOwner.objects.filter(id__in=base_qs.values_list("owner_id", flat=True)).distinct().order_by("name")
     )
+    in_filters = account_group_q(ctx.account_groups) & currency_q(ctx.currency)
+    if ctx.account_id:
+        in_filters |= Q(pk=ctx.account_id)
+    listed_qs = base_qs.filter(in_filters)
+    institution_filter = Q(id__in=listed_qs.values_list("institution_id", flat=True))
+    if ctx.institution_id:
+        institution_filter |= Q(id=ctx.institution_id, id__in=base_qs.values_list("institution_id", flat=True))
     institutions = list(
-        FinancialInstitution.objects.filter(id__in=base_qs.values_list("institution_id", flat=True))
-        .distinct()
-        .order_by("institution_name")
+        FinancialInstitution.objects.filter(institution_filter).distinct().order_by("institution_name")
     )
-    accounts = list(base_qs.order_by("owner__name", "institution__institution_name", "account_name"))
+    accounts = list(listed_qs.order_by("owner__name", "institution__institution_name", "account_name"))
 
     return ContextOptions(owners=owners, institutions=institutions, accounts=accounts, account_ids=account_ids)
 
@@ -508,6 +522,7 @@ def annual_planning_account_options(
     user,
     owner_ids: Iterable[int] | None = None,
     account_groups: frozenset[str] = ALL_ACCOUNT_GROUPS,
+    currency: str = ALL_CURRENCIES,
 ) -> list[FinancialAccount]:
     """Lista as contas elegíveis para o filtro do Planejamento anual.
 
@@ -516,18 +531,18 @@ def annual_planning_account_options(
     por um ``account_ids`` antigo ou montado manualmente.
 
     Nesta tela o seletor de contas É o escopo (seleção múltipla, tudo marcado
-    por padrão), então o filtro global de grupos age sobre as opções: conta
-    fora dos grupos pedidos não aparece para ser marcada.
+    por padrão), então os filtros globais de grupos e de moeda agem sobre as
+    opções: conta fora deles não aparece para ser marcada.
     """
     accounts, _ = _authorized_planning_accounts(user, owner_ids, None)
-    if account_groups == ALL_ACCOUNT_GROUPS or not accounts:
+    if (account_groups == ALL_ACCOUNT_GROUPS and currency == ALL_CURRENCIES) or not accounts:
         return accounts
-    in_groups = set(
+    in_filters = set(
         FinancialAccount.objects.filter(id__in=[account.id for account in accounts])
-        .filter(account_group_q(account_groups))
+        .filter(account_group_q(account_groups) & currency_q(currency))
         .values_list("id", flat=True)
     )
-    return [account for account in accounts if account.id in in_groups]
+    return [account for account in accounts if account.id in in_filters]
 
 
 def _planning_add_category(bucket: dict, entry: CashFlowEntry, amount: Decimal) -> None:
