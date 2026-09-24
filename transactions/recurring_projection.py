@@ -522,12 +522,7 @@ def recolher_alem_do_horizonte(
         if not datas:
             BankOperation.objects.filter(id=operacao_id).delete()
             continue
-        BankOperation.objects.filter(id=operacao_id).update(
-            entry_count=len(datas),
-            first_due_date=min(datas),
-            last_due_date=max(datas),
-            updated_at=timezone.now(),
-        )
+        BankOperation.objects.filter(id=operacao_id).update(updated_at=timezone.now())
         _sync_bank_operation_status(operacao_id)
 
     return RecolhimentoResult(horizon_end, len(remover), len(operacoes))

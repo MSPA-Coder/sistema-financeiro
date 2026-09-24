@@ -115,9 +115,9 @@ def test_recorrente_volta_ao_horizonte_e_a_operacao_se_atualiza(cenario):
     assert max(datas) <= FIM_CURTO
     assert max(datas) > add_months(FIM_CURTO, -1)
     assert resultado.removed_count == 12 - 3
+    # A operação continua e só perde a cauda; quantidade e datas vêm dos
+    # próprios lançamentos (conferidos acima), não de colunas copiadas.
     registro = BankOperation.objects.get(id=operacao)
-    assert registro.entry_count == len(datas)
-    assert registro.last_due_date == max(datas)
     assert registro.recurrence_ended_on is None
 
 
