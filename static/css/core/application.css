@@ -554,6 +554,12 @@ a:hover { text-decoration: underline; }
         flex: 0 0 auto; border-right: none; border-bottom: 1px solid var(--border);
     }
     .sidebar-menu { max-height: 26vh; overflow-y: auto; }
+    /* A barra lateral vira faixa de 40vh com rolagem própria, e cortaria o menu
+       de filtros (moeda, grupos de conta, modo discreto): fixo, ele sai do corte. */
+    .sidebar-global-filters-menu {
+        position: fixed; top: 4.25rem; left: 1rem; right: auto;
+        max-height: calc(100vh - 5.5rem); overflow-y: auto;
+    }
 }
 
 /* ============================================================
