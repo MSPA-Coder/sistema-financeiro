@@ -2041,8 +2041,8 @@ def resolve_statement_request(user, get_params, session, *, request=None) -> Sta
     if minimum_date and end_selected < minimum_date:
         end_selected = minimum_date
 
-    # Conta escolhida vence o filtro de moeda, como vence o de grupos e as
-    # contas ocultas: escolher a conta em dólar com o filtro em real mostraria
+    # Conta escolhida vence o filtro de moeda, como vence o de grupos:
+    # escolher a conta em dólar com o filtro em real mostraria
     # uma tela vazia sem dizer por quê.
     currency_filter = ALL_CURRENCIES if ctx.account_id else selected_currency(get_params)
 

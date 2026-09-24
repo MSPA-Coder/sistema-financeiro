@@ -54,7 +54,7 @@ def projections_view(request):
     default_start_month, default_end_month = services.resolve_projection_month_range(None, None, today=today)
 
     ctx = services.selected_context(request.user, request.GET, request=request)
-    options = services.context_options(request.user, ctx, hidden_scope="projections")
+    options = services.context_options(request.user, ctx)
     # Um bloco por moeda: cada grupo é de uma moeda só, então os agregados
     # continuam recebendo exatamente o que sempre exigiram. Com uma moeda só --
     # que é o caso de hoje -- há um bloco, e a tela sai idêntica.

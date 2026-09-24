@@ -10,8 +10,7 @@ da conta vence o tipo da instituição:
 - conta comum -> Bancos ou Corretoras, pelo tipo da instituição.
 
 Como a moeda, o filtro vive na URL (`grupos=bancos,cartoes`) e não é gravado:
-ausente, valem todos, e as telas ficam como sempre foram. Não se confunde com
-Configurações > Contas em análises, que é preferência gravada por usuário.
+ausente, valem todos, e as telas ficam como sempre foram.
 """
 
 from __future__ import annotations

@@ -149,7 +149,6 @@ def _build_menu_items() -> list[MenuItem]:
             required_permission="settings.view",
             children=(
                 MenuItem("Perfil e tema", "/settings/profile/", "\U0001F3A8", "/settings/profile/"),
-                MenuItem("Contas em análises", "/settings/account-visibility/", "\U0001F3E6", "/settings/account-visibility/"),
                 MenuItem("Parâmetros", "/settings/", "\U0001F6E0", "/settings/", exact_match=True),
                 MenuItem("Banco de dados", "/settings/database/", "\U0001F5C4", "/settings/database/"),
             ),

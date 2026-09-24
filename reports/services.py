@@ -26,7 +26,7 @@ from django.db.models import Case, DecimalField, F, Q, Sum, Value, When
 from django.db.models.functions import Coalesce, TruncMonth
 
 from accounts.models import AccountOwner
-from accounts.services import accessible_owner_ids, hidden_account_ids
+from accounts.services import accessible_owner_ids
 from banking.models import FinancialAccount, FinancialInstitution
 from banking.services import currency_of_accounts
 from core.account_group_filter import ALL_ACCOUNT_GROUPS, account_group_q, parse_account_groups
@@ -312,21 +312,15 @@ def selected_context(user, params, *, request=None) -> FinancialContext:
     )
 
 
-def context_options(user, ctx: FinancialContext, *, hidden_scope: str | None = None) -> ContextOptions:
+def context_options(user, ctx: FinancialContext) -> ContextOptions:
     """Retorna opções para os filtros (dropdowns) e os ids de conta resultantes.
 
-    `hidden_scope` ("dashboard" ou "projections") aplica a preferência pessoal
-    de Configurações > Contas em análises: as contas marcadas como ocultas
-    saem de `account_ids` e, portanto, de todo agregado calculado a partir
-    dele. Elas continuam listadas em `accounts` (o seletor), porque o usuário
-    não perdeu acesso — só pediu para não vê-las somadas.
-
-    A ocultação vale para a visão agregada. Se o usuário escolher
-    explicitamente uma conta no filtro (`ctx.account_id`), essa escolha vence:
-    caso contrário a tela ficaria vazia sem explicar por quê.
-
-    O filtro global de grupos (`ctx.account_groups`) segue a mesma regra: tira
-    contas de `account_ids`, deixa o seletor inteiro e cede à conta escolhida.
+    O filtro global de grupos (`ctx.account_groups`) tira contas de
+    `account_ids` e, portanto, de todo agregado calculado a partir dele. O
+    seletor (`accounts`) continua inteiro, porque é por ele que se escolhe
+    uma conta fora do filtro; e a conta escolhida explicitamente
+    (`ctx.account_id`) vence os grupos -- senão a tela ficaria vazia sem
+    explicar por quê.
     """
     allowed_owner_ids = accessible_owner_ids(user)
     if not allowed_owner_ids:
@@ -347,11 +341,6 @@ def context_options(user, ctx: FinancialContext, *, hidden_scope: str | None = N
         selected_qs = selected_qs.filter(account_group_q(ctx.account_groups))
 
     account_ids = list(selected_qs.order_by("account_name").values_list("id", flat=True))
-
-    if hidden_scope and not ctx.account_id:
-        hidden = hidden_account_ids(user, hidden_scope, allowed_owner_ids)
-        if hidden:
-            account_ids = [account_id for account_id in account_ids if account_id not in hidden]
 
     owners = list(
         AccountOwner.objects.filter(id__in=base_qs.values_list("owner_id", flat=True)).distinct().order_by("name")
@@ -509,9 +498,6 @@ def _authorized_planning_accounts(
     queryset = FinancialAccount.objects.select_related("owner").filter(
         owner_id__in=selected_owner_ids,
     )
-    hidden_ids = hidden_account_ids(user, "projections")
-    if hidden_ids:
-        queryset = queryset.exclude(id__in=hidden_ids)
     if requested_account_ids is not None:
         queryset = queryset.filter(id__in=requested_account_ids)
     accounts = list(queryset.order_by("owner__name", "account_name", "id"))

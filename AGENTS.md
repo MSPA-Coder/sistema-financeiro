@@ -179,7 +179,6 @@ backups sem autorização inequívoca.
 - operações compostas são atômicas e services delimitam transações;
 - datas/horas persistidas usam timezone;
 - autorização por titular e permissões são controles de servidor;
-- preferências de visibilidade não são permissões;
 - a projeção recorrente automática é disparada hoje pelo middleware em
   requisições autenticadas, uma vez no mês a partir do dia configurado; o
   botão manual permanece disponível e a rotina é idempotente. Um worker,

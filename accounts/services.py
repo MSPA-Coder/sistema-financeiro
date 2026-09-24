@@ -16,7 +16,6 @@ from .models import (
     AccountOwner,
     AppPermission,
     AppUser,
-    UserAccountVisibility,
     UserOwnerAccess,
     UserPermission,
     UserTransferDestinationAccess,
@@ -669,87 +668,6 @@ def change_user_password(
     user.password_updated_at = timezone.now()
     user.must_change_password = False
     user.save(update_fields=["password", "password_updated_at", "must_change_password", "updated_at"])
-
-
-# --- Visibilidade de contas (Configurações > Visibilidade de contas) ---
-
-def _visible_accounts_for_user(user: AppUser | None):
-    from banking.models import FinancialAccount
-
-    if user is None:
-        return FinancialAccount.objects.none()
-    owner_ids = accessible_owner_ids(user, "view")
-    if not owner_ids:
-        return FinancialAccount.objects.none()
-    return FinancialAccount.objects.select_related("owner", "institution").filter(
-        owner_id__in=owner_ids
-    ).order_by("owner__name", "institution__institution_name", "account_name")
-
-
-def account_visibility_options(user: AppUser | None):
-    """Lista (account, hide_from_dashboard, hide_from_projections) para o formulário."""
-    visibility = {
-        row.account_id: row
-        for row in UserAccountVisibility.objects.filter(user=user)
-    } if user else {}
-    return [
-        {
-            "account": account,
-            "hide_from_dashboard": bool(visibility.get(account.id) and visibility[account.id].hide_from_dashboard),
-            "hide_from_projections": bool(visibility.get(account.id) and visibility[account.id].hide_from_projections),
-        }
-        for account in _visible_accounts_for_user(user)
-    ]
-
-
-def hidden_account_ids(user: AppUser | None, scope: str, owner_ids: list[int] | None = None) -> set[int]:
-    """IDs de contas ocultas para `user` no escopo informado ('dashboard' ou 'projections').
-
-    `owner_ids` é `accessible_owner_ids(user, "view")` quando o chamador já o tem.
-    """
-    if user is None or scope not in {"dashboard", "projections"}:
-        return set()
-    if owner_ids is None:
-        owner_ids = accessible_owner_ids(user, "view")
-    if not owner_ids:
-        return set()
-    field = "hide_from_dashboard" if scope == "dashboard" else "hide_from_projections"
-    return set(
-        UserAccountVisibility.objects.filter(
-            user=user, account__owner_id__in=owner_ids, **{field: True}
-        ).values_list("account_id", flat=True)
-    )
-
-
-def update_user_account_visibility(
-    user: AppUser,
-    *,
-    hidden_dashboard_ids: set[int],
-    hidden_projection_ids: set[int],
-) -> None:
-    visible_ids = {account.id for account in _visible_accounts_for_user(user)}
-    dashboard_ids = hidden_dashboard_ids & visible_ids
-    projection_ids = hidden_projection_ids & visible_ids
-    desired_ids = dashboard_ids | projection_ids
-
-    existing = {row.account_id: row for row in UserAccountVisibility.objects.filter(user=user)}
-    for account_id, row in existing.items():
-        if account_id not in visible_ids:
-            continue
-        if account_id not in desired_ids:
-            row.delete()
-            continue
-        row.hide_from_dashboard = account_id in dashboard_ids
-        row.hide_from_projections = account_id in projection_ids
-        row.save(update_fields=["hide_from_dashboard", "hide_from_projections", "updated_at"])
-
-    for account_id in sorted(desired_ids - existing.keys()):
-        UserAccountVisibility.objects.create(
-            user=user,
-            account_id=account_id,
-            hide_from_dashboard=account_id in dashboard_ids,
-            hide_from_projections=account_id in projection_ids,
-        )
 
 
 def transfer_destination_access_ids(user: AppUser | None) -> set[int]:

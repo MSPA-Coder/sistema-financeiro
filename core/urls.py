@@ -31,7 +31,6 @@ urlpatterns = [
     path("settings/theme/", views.settings_update_theme_view, name="settings_update_theme"),
     path("settings/table-scroll/", views.settings_update_table_scroll_view, name="settings_update_table_scroll"),
 
-    path("settings/account-visibility/", views.settings_visibility_view, name="settings_visibility"),
 
     path("settings/monthly-close/", views.settings_monthly_close_view, name="settings_monthly_close"),
     path("settings/month-close/close/", views.settings_close_month_view, name="settings_close_month"),

@@ -18,7 +18,6 @@ from accounts.services import (
     PERMISSION_DEFINITIONS,
     PERMISSION_DEPENDENCIES,
     PROFILE_DEFINITIONS,
-    account_visibility_options,
     allowed_permission_keys,
     can_use_transfer_destination,
     create_managed_user,
@@ -35,7 +34,6 @@ from accounts.services import (
     save_transfer_destination_accesses,
     transfer_destination_access_ids,
     update_managed_user,
-    update_user_account_visibility,
     user_mutation_block_message,
 )
 from bank_statements.fatura_projetada import atualizar_todos as atualizar_faturas_projetadas
@@ -453,27 +451,6 @@ def settings_update_table_scroll_view(request):
         except ValueError as exc:
             messages.error(request, str(exc))
     return redirect('core:settings_profile')
-
-
-# --- Configurações > Visibilidade de contas ---
-
-@login_required
-@permission_required('settings.view')
-def settings_visibility_view(request):
-    if request.method == 'POST':
-        hidden_dashboard_ids = {int(v) for v in request.POST.getlist('hide_from_dashboard')}
-        hidden_projection_ids = {int(v) for v in request.POST.getlist('hide_from_projections')}
-        update_user_account_visibility(
-            request.user,
-            hidden_dashboard_ids=hidden_dashboard_ids,
-            hidden_projection_ids=hidden_projection_ids,
-        )
-        messages.success(request, "Preferências de contas atualizadas.")
-        return redirect('core:settings_visibility')
-
-    return render(request, "settings/account_visibility.html", {
-        "account_visibility_options": account_visibility_options(request.user),
-    })
 
 
 # --- Configurações > Fechamento mensal ---
