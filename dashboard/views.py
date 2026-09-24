@@ -171,9 +171,10 @@ def _saude(months: list[dict], selected_index: int) -> dict:
 	valid_coverage = [v for v in coverage if v is not None]
 	avg_coverage = (sum(valid_coverage, Decimal("0.00")) / len(valid_coverage)) if valid_coverage else Decimal("0.00")
 
-	# Mês sem movimento nenhum não "fechou com sobra": não entra na conta.
+	# Mês sem movimento nenhum não entra na conta, e mês que empatou não
+	# "fechou com sobra": o cartão diz sobra, então só conta geração positiva.
 	with_movement = [idx for idx in range(len(months)) if income[idx] or expense[idx]]
-	positive_months = len([idx for idx in with_movement if generation[idx] >= 0])
+	positive_months = len([idx for idx in with_movement if generation[idx] > 0])
 
 	# Os 3 meses que terminam no escolhido contra os 3 anteriores. Era o fim da
 	# janela contra o meio dela -- dois trimestres futuros, que o rótulo
@@ -325,10 +326,6 @@ def dashboard_view(request):
 		"currency": currency,
 		"currency_label": dict(CURRENCY_OPTIONS).get(currency, currency),
 		"currency_notice": currency_notice,
-		# O seletor só aparece quando há mais de uma moeda ao alcance do
-		# usuário: com uma só, ele seria um controle que nunca muda nada.
-		"currency_options": [(moeda, CURRENCY_SYMBOLS.get(moeda, moeda)) for moeda in moedas],
-		"show_currency_filter": len(moedas) > 1,
 		"selected_period": selected_period,
 		"selected_year": selected_year,
 		"selected_month": selected_month,

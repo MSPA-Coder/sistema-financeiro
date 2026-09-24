@@ -292,38 +292,37 @@ def test_extrato_monta_um_bloco_por_moeda(usuario, titular, instituicao):
     ]
 
 
-def test_painel_oferece_o_seletor_de_moeda_antes_do_primeiro_lancamento(
+def test_painel_mostra_o_dolar_antes_do_primeiro_lancamento(
     client, usuario, titular, instituicao
 ):
     """Uma conta em dólar nasce com saldo e sem nenhum movimento.
 
-    A primeira versão deste seletor lia as moedas dos LANÇAMENTOS, e por isso
-    ele não aparecia justamente para quem tinha acabado de abrir a conta em
-    dólar: sem movimento, a única moeda "existente" era o real. As opções vêm
-    das contas no escopo.
+    A primeira versão lia as moedas dos LANÇAMENTOS, e por isso o dólar não
+    existia justamente para quem tinha acabado de abrir a conta: sem
+    movimento, a única moeda "existente" era o real. As moedas vêm das contas
+    no escopo, e o dólar pedido é o dólar mostrado.
     """
     _conta(titular, instituicao, "Conta em real", CURRENCY_BRL)
     _conta(titular, instituicao, "Conta em dólar", CURRENCY_USD)
     assert CashFlowEntry.objects.count() == 0
     client.force_login(usuario)
 
-    resposta = client.get("/dashboard/")
+    resposta = client.get("/dashboard/", {"currency": CURRENCY_USD})
 
     assert resposta.status_code == 200
-    assert resposta.context["show_currency_filter"] is True
-    assert [moeda for moeda, _simbolo in resposta.context["currency_options"]] == [
-        CURRENCY_BRL, CURRENCY_USD
-    ]
+    assert resposta.context["currency"] == CURRENCY_USD
+    assert resposta.context["currency_notice"] is False
 
 
-def test_painel_de_quem_so_tem_real_nao_ganha_seletor(client, usuario, titular, instituicao):
-    """Controle que nunca muda nada é ruído: só aparece com duas moedas."""
+def test_painel_de_quem_so_tem_real_nao_avisa_nada_com_todas(client, usuario, titular, instituicao):
+    """O aviso de "uma moeda por vez" só faz sentido com duas moedas no escopo."""
     _conta(titular, instituicao, "Conta em real", CURRENCY_BRL)
     client.force_login(usuario)
 
-    resposta = client.get("/dashboard/")
+    resposta = client.get("/dashboard/", {"currency": "ALL"})
 
-    assert resposta.context["show_currency_filter"] is False
+    assert resposta.context["currency"] == CURRENCY_BRL
+    assert resposta.context["currency_notice"] is False
 
 
 def test_uma_moeda_so_continua_rendendo_um_bloco_no_extrato(usuario, titular, instituicao):
