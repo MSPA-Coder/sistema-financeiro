@@ -35,7 +35,10 @@ function New-UrlSafeSecret {
     param([int]$ByteCount = 48)
 
     $bytes = [byte[]]::new($ByteCount)
-    [Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    # `RandomNumberGenerator::Fill` só existe no PowerShell 7; `Create()` e
+    # `GetBytes` funcionam também no Windows PowerShell 5.1.
+    $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
     return [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
 }
 
@@ -89,6 +92,18 @@ if (($Force -or -not (Test-Path -LiteralPath $patrimonioPath)) -and
     Assert-SecretValue -Name "PATRIMONIO_TOKEN" -Value $settings["PATRIMONIO_TOKEN"]
 }
 $secretSources["patrimonio_token"] = "PATRIMONIO_TOKEN"
+
+# A senha do papel restrito da aplicação também não é escolhida por ninguém:
+# o `db-provision` a aplica ao papel a cada subida. Gerada quando ausente, ou
+# lida de POSTGRES_APP_PASSWORD se o arquivo de ambiente a fixar.
+$appPasswordPath = Join-Path $secretsPath "postgres_app_password"
+if (($Force -or -not (Test-Path -LiteralPath $appPasswordPath)) -and
+    (-not $settings.ContainsKey("POSTGRES_APP_PASSWORD") -or [string]::IsNullOrWhiteSpace($settings["POSTGRES_APP_PASSWORD"]))) {
+    $settings["POSTGRES_APP_PASSWORD"] = New-UrlSafeSecret
+} elseif ($Force -or -not (Test-Path -LiteralPath $appPasswordPath)) {
+    Assert-SecretValue -Name "POSTGRES_APP_PASSWORD" -Value $settings["POSTGRES_APP_PASSWORD"]
+}
+$secretSources["postgres_app_password"] = "POSTGRES_APP_PASSWORD"
 
 # A suíte roda em um banco efêmero e nunca precisa receber os segredos
 # operacionais. Estes valores são sempre novos e vivem em arquivos distintos;

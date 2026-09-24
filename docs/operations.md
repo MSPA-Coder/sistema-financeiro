@@ -2,12 +2,33 @@
 
 ## Configuração e serviços
 
-O Compose exige os arquivos secretos `django_secret_key`, `postgres_password` e
-`patrimonio_token`. Por padrão ficam em `.secrets/`;
-`COMPOSE_SECRETS_DIRECTORY` altera esse diretório. Os três são provisionados
+O Compose exige os arquivos secretos `django_secret_key`, `postgres_password`,
+`postgres_app_password` e `patrimonio_token`. Por padrão ficam em `.secrets/`;
+`COMPOSE_SECRETS_DIRECTORY` altera esse diretório. Todos são provisionados
 por `.\scripts\provision_compose_secrets.ps1`, que **gera** o
-`patrimonio_token` quando o arquivo de ambiente não traz um — ele é a única
-credencial daqui que ninguém precisa escolher.
+`patrimonio_token` e o `postgres_app_password` quando o arquivo de ambiente não
+os traz — são as credenciais daqui que ninguém precisa escolher.
+
+### Dois papéis no banco
+
+`POSTGRES_USER` é o papel **administrativo**: a imagem oficial o cria como
+superusuário, e ele é dono das tabelas. Só o serviço `postgres`, o
+`db-provision` e o `migrate` o recebem. O `web` conecta com o papel
+**restrito** `POSTGRES_APP_USER` (padrão `controle_bancario_app`), que tem só
+SELECT/INSERT/UPDATE/DELETE, uso de sequências e MAINTAIN (para o VACUUM
+ANALYZE de Configurações > Banco de dados) — nenhum DDL.
+
+O `db-provision` roda `scripts/provision-db-runtime.sh` a cada subida, antes
+do `migrate`: cria o papel se faltar, reaplica a senha do arquivo e concede o
+acesso às tabelas existentes; os privilégios padrão cobrem as que o `migrate`
+criar. `DB_EXIGIR_PAPEL_RESTRITO=1` no `web` faz a aplicação recusar uma
+conexão superusuária (`core/papel_do_banco.py`) — o `/health/` responde 503 e o
+`deploy.sh` reverte. Até 24/09/2026 a produção conectava como superusuário, e a
+recusa do nome `postgres` no `settings.py` não percebia.
+
+O `postgres_app_password` precisa ser legível pelo uid 70 (o `db-provision`
+roda como `postgres`) e pelo usuário do `web`: no VPS, `0444`, como o
+`postgres_password`.
 
 Certificados locais opcionais entram no build por `.certs/local-root-ca.crt`.
 Esses caminhos não são versionados.
@@ -17,7 +38,8 @@ Variáveis principais:
 | Variável | Função | Padrão no Compose |
 |---|---|---|
 | `POSTGRES_DB` | banco da aplicação | `controle_bancario` |
-| `POSTGRES_USER` | usuário dedicado da aplicação | `controle_bancario` |
+| `POSTGRES_USER` | papel administrativo (dono das tabelas; `migrate`) | `controle_bancario` |
+| `POSTGRES_APP_USER` | papel restrito com que o `web` conecta | `controle_bancario_app` |
 | `POSTGRES_PORT` | porta local publicada | `5202` |
 | `APP_PORT` | porta local da aplicação | `5201` |
 | `ALLOWED_HOSTS` | hosts aceitos pelo Django | `localhost,127.0.0.1` |

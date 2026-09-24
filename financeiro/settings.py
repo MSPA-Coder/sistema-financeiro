@@ -162,9 +162,9 @@ DATABASES = {
 
 # A aplicacao nunca deve conectar como 'postgres': e o superusuario
 # administrativo do cluster, com privilegio sobre todo banco, nao so o
-# proprio. Mesma familia de validacao de boot que USE_HTTPS/CSRF_TRUSTED_ORIGINS
-# ja tem abaixo -- transforma uma configuracao perigosa em erro de subida, em
-# vez de um risco silencioso.
+# proprio. Esta checagem so pega o NOME, no boot; ela nao basta, porque o
+# POSTGRES_USER da imagem nasce superusuario com qualquer nome. A garantia de
+# verdade e `core.papel_do_banco`, que pergunta ao servidor em cada conexao.
 if DATABASES['default']['USER'] == 'postgres':
     raise RuntimeError(
         "POSTGRES_USER nao pode ser 'postgres': e o superusuario "

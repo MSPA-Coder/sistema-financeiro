@@ -14,12 +14,18 @@ x-app-build: &app-build
     secrets:
       - local_ca
 
+# O runtime conecta com o papel restrito (só DML), provisionado pelo serviço
+# `db-provision`. O papel administrativo `POSTGRES_USER` -- superusuário, dono
+# das tabelas -- só aparece no `postgres`, no `db-provision` e no `migrate`.
+# `DB_EXIGIR_PAPEL_RESTRITO` faz a aplicação recusar uma conexão superusuária
+# (ver `core/papel_do_banco.py`).
 x-app-environment: &app-environment
   DJANGO_SETTINGS_MODULE: financeiro.settings
   POSTGRES_HOST: postgres
   POSTGRES_PORT: "5432"
-  POSTGRES_USER: ${POSTGRES_USER:-controle_bancario}
-  POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+  POSTGRES_USER: ${POSTGRES_APP_USER:-controle_bancario_app}
+  POSTGRES_PASSWORD_FILE: /run/secrets/postgres_app_password
+  DB_EXIGIR_PAPEL_RESTRITO: "1"
   POSTGRES_DB: ${POSTGRES_DB:-controle_bancario}
   DJANGO_SECRET_KEY_FILE: /run/secrets/django_secret_key
   # Token da rota /patrimonio/v1/resumo, lida pelo consolidador. A integração é
@@ -32,7 +38,7 @@ x-app-environment: &app-environment
 x-app-secrets: &app-secrets
   secrets:
     - django_secret_key
-    - postgres_password
+    - postgres_app_password
     - patrimonio_token
 
 # A suíte nunca precisa ler os arquivos usados pelos serviços operacionais.
@@ -130,21 +136,71 @@ services:
       timeout: 5s
       retries: 20
 
+  # Cria ou atualiza, de forma idempotente, o papel restrito da aplicação. Roda
+  # a cada `up`, antes do `migrate`: numa instalação existente, concede acesso
+  # às tabelas que já existem; nas novas, os privilégios padrão cobrem o que o
+  # `migrate` criar depois. `DB_APP_MAINTAIN` libera o VACUUM ANALYZE da tela
+  # Configurações > Banco de dados.
+  db-provision:
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    user: postgres
+    read_only: true
+    cpus: 0.5
+    mem_limit: 256m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:mode=1777,rw,nosuid,nodev,noexec,size=16m
+      - /var/run/postgresql:mode=1777,rw,nosuid,nodev,noexec,size=16m
+    pids_limit: 64
+    logging: *service-logging
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-controle_bancario}
+      DB_ADMIN_USER: ${POSTGRES_USER:-controle_bancario}
+      DB_ADMIN_PASSWORD_FILE: /run/secrets/postgres_password
+      DB_APP_USER: ${POSTGRES_APP_USER:-controle_bancario_app}
+      DB_APP_PASSWORD_FILE: /run/secrets/postgres_app_password
+      DB_APP_MAINTAIN: "1"
+    secrets:
+      - postgres_password
+      - postgres_app_password
+    volumes:
+      - ./scripts/provision-db-runtime.sh:/usr/local/bin/provision-db-runtime.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["sh", "/usr/local/bin/provision-db-runtime.sh"]
+    restart: "no"
+
   # Etapa controlada de inicializacao: aplica migrations e materializa os
   # assets com hash no volume que o `web` consome. O `web` so sobe depois que
-  # esta etapa termina com sucesso.
+  # esta etapa termina com sucesso. É o único serviço de aplicação com a
+  # credencial administrativa: migration é DDL.
   migrate:
-    <<: [*app-build, *app-hardening, *app-secrets]
+    <<: [*app-build, *app-hardening]
     cpus: 1.0
     mem_limit: 512m
     environment:
       <<: *app-environment
+      POSTGRES_USER: ${POSTGRES_USER:-controle_bancario}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      DB_EXIGIR_PAPEL_RESTRITO: "0"
+    secrets:
+      - django_secret_key
+      - postgres_password
+      - patrimonio_token
     pids_limit: 128
     stop_grace_period: 30s
     logging: *service-logging
     depends_on:
       postgres:
         condition: service_healthy
+      db-provision:
+        condition: service_completed_successfully
     # `--clear` é necessário: sem ele, um asset removido do código continua
     # sendo servido a partir do volume indefinidamente.
     command:
@@ -279,6 +335,10 @@ secrets:
     file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/django_secret_key
   postgres_password:
     file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/postgres_password
+  # Senha do papel restrito da aplicação. Precisa ser legível pelo uid 70 (o
+  # `db-provision` roda como `postgres`) e pelo usuário do `web`.
+  postgres_app_password:
+    file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/postgres_app_password
   # Gerado por `provision_compose_secrets.ps1` junto com os outros dois. O
   # arquivo precisa existir para o Compose subir, mas o conteúdo só importa
   # para quem usa a integração de patrimônio.
