@@ -81,10 +81,17 @@ $env:POSTGRES_PASSWORD = "dev-only"
 .\.venv\Scripts\python.exe -m ruff check .
 ```
 
+O que merece teste, em que camada e em que forma está em `docs/TESTES.md`,
+comum aos repositórios; leia antes de escrever ou remover um teste. Diante de
+vermelho, decida de quem é o defeito antes de mexer: teste que mede texto
+literal reprova mudança legítima, e nesse caso quem se corrige é a asserção.
+Nunca escreva código para o teste passar.
+
 A suíte tem duas camadas (ver o docstring de `tests/conftest.py`). A maior
-parte não toca o banco e roda no host sem PostgreSQL algum; os arquivos
-marcados com `django_db` — `test_invariantes_persistidos.py` e
-`test_migracoes_aplicadas.py` — precisam de banco e são o portão da fase F1.
+parte não toca o banco e roda no host sem PostgreSQL algum; os testes marcados
+com `django_db` precisam de banco. O marcador é a fonte da verdade sobre quem
+está em cada camada. Os testes marcados com `sentinela_front` leem JS ou CSS
+porque nenhum teste executa o navegador (T6 em `docs/TESTES.md`).
 
 No venv, portanto, o laço rápido exclui essa camada:
 

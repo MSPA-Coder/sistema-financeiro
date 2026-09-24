@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
+from django.contrib.messages.storage.fallback import FallbackStorage
 from django.test import RequestFactory
 
 from core import permissions
@@ -55,12 +56,44 @@ def test_item_sem_exigencia_e_visivel():
     assert _is_allowed(_MenuItemFalso(), _UsuarioFalso()) is True
 
 
+def _chamar_view_protegida(perms=(), htmx=False):
+    """Passa uma requisicao pela view decorada e diz se a view chegou a rodar."""
+    chamadas = []
+
+    @permissions.permission_required("transactions.view")
+    def view(request):
+        chamadas.append(request)
+        return "resposta-da-view"
+
+    request = RequestFactory().get("/qualquer/")
+    request.user = _UsuarioFalso(perms=perms)
+    request.htmx = htmx
+    request.session = {}
+    request._messages = FallbackStorage(request)
+    return view(request), chamadas
+
+
 def test_permission_required_nega_quem_nao_tem():
-    fonte = inspect.getsource(permissions.permission_required)
-    # A decisao precisa continuar consultando a permissao e desviar quem nao a
-    # tem; se virar apenas aviso na tela, deixa de ser controle.
-    assert "has_perm" in fonte or "tem_permissao" in fonte
-    assert "redirect" in fonte or "PermissionDenied" in fonte or "403" in fonte
+    # Se a decisao virar apenas aviso na tela, deixa de ser controle: a view
+    # nao pode rodar para quem nao tem a permissao.
+    resposta, chamadas = _chamar_view_protegida(perms=[])
+
+    assert chamadas == []
+    assert resposta.status_code == 302
+
+
+def test_permission_required_nega_tambem_dentro_do_htmx():
+    resposta, chamadas = _chamar_view_protegida(perms=[], htmx=True)
+
+    assert chamadas == []
+    assert resposta["HX-Redirect"]
+
+
+def test_permission_required_deixa_passar_quem_tem():
+    resposta, chamadas = _chamar_view_protegida(perms=["transactions.view"])
+
+    assert resposta == "resposta-da-view"
+    assert len(chamadas) == 1
 
 
 # --- Conceder privilegio e ato administrativo -------------------------------

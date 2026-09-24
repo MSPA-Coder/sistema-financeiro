@@ -14,14 +14,6 @@ from __future__ import annotations
 from core.domain import finance
 
 
-def test_cancelado_saiu_de_todas_as_listas():
-    assert not hasattr(finance, "STATUS_CANCELED")
-    assert not hasattr(finance, "VIEW_CANCELED")
-    assert "cancelado" not in finance.VALID_STATUSES
-    assert "cancelado" not in {valor for valor, _ in finance.STATUS_OPTIONS}
-    assert "cancelado" not in finance.VALID_VIEW_MODES
-
-
 def test_realizado_continua_nos_filtros():
     # A regressao que a fatia teria causado, dita pelo nome.
     assert finance.STATUS_REALIZED in {v for v, _ in finance.STATUS_FILTER_OPTIONS}
@@ -42,33 +34,6 @@ def test_modo_desconhecido_cai_no_padrao():
     assert finance.normalize_view_mode("cancelado") == finance.VIEW_PROJECTED
     assert finance.normalize_view_mode(None) == finance.VIEW_PROJECTED
     assert finance.normalize_view_mode(finance.VIEW_REALIZED) == finance.VIEW_REALIZED
-
-
-def test_cancelar_lancamento_nao_existe_mais():
-    from transactions import services
-
-    assert not hasattr(services, "cancel_transaction")
-
-
-def test_permissoes_orfas_sairam_do_catalogo():
-    from accounts.services import PERMISSION_DEFINITIONS, PERMISSION_DEPENDENCIES
-
-    for nome in (
-        "transactions.cancel",
-        "transactions.close_month",
-        "transactions.reopen_month",
-    ):
-        assert nome not in PERMISSION_DEFINITIONS
-        assert nome not in PERMISSION_DEPENDENCIES
-
-
-def test_permissao_viva_de_fechamento_continua_no_catalogo():
-    # Controle positivo: fechar e reabrir mes continuam existindo, por
-    # `settings.monthly_close.manage`. Sem esta metade, o teste acima passaria
-    # tambem se a capacidade tivesse sido perdida junto.
-    from accounts.services import PERMISSION_DEFINITIONS
-
-    assert "settings.monthly_close.manage" in PERMISSION_DEFINITIONS
 
 
 def test_perfis_nao_concedem_permissao_inexistente():

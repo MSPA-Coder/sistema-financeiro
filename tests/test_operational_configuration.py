@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 from django.db import connection
 
 ROOT_DO_PROJETO = Path(__file__).resolve().parents[1]
@@ -192,17 +193,6 @@ def test_compose_nao_usa_postgres_como_padrao_de_postgres_user():
     )
 
 
-def test_compose_exige_os_segredos_operacionais():
-    """O caminho suportado monta arquivos e não passa segredos no ambiente."""
-    conteudo = COMPOSE.read_text(encoding="utf-8")
-
-    assert "POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password" in conteudo
-    assert "DJANGO_SECRET_KEY_FILE: /run/secrets/django_secret_key" in conteudo
-    assert "REQUIRE_FILE_SECRETS: \"true\"" in conteudo
-    assert "POSTGRES_PASSWORD: ${" not in conteudo
-    assert "DJANGO_SECRET_KEY: ${" not in conteudo
-
-
 def test_contexto_de_build_exclui_segredos_e_estado_local():
     """O contexto nao pode entregar arquivos locais a uma instrucao COPY."""
     regras = set(DOCKERIGNORE.read_text(encoding="utf-8").splitlines())
@@ -220,33 +210,80 @@ def test_contexto_de_build_exclui_segredos_e_estado_local():
         assert regra in regras
 
 
-def test_postgres_tem_hardening_equivalente_ao_runtime():
-    """O banco pode gravar PGDATA, mas nao precisa de privilegios extras."""
-    conteudo = COMPOSE.read_text(encoding="utf-8")
-    inicio = conteudo.index("x-postgres-hardening:")
-    fim = conteudo.index("services:")
-    bloco = conteudo[inicio:fim]
+def _servicos() -> dict:
+    """Serviços do compose com as âncoras (`<<: *...`) já resolvidas.
 
-    assert 'user: "postgres"' in bloco
-    assert "read_only: true" in bloco
-    assert "- ALL" in bloco
-    assert "- no-new-privileges:true" in bloco
-    assert "/tmp:mode=1777,rw,noexec,nosuid,size=64m" in bloco
-    assert "/var/run/postgresql:mode=1777,rw,noexec,nosuid,size=16m" in bloco
-    assert "pids_limit: 256" in bloco
+    Conferir a propriedade no documento carregado, e não um trecho do texto,
+    é o que deixa reordenar chaves ou trocar uma âncora sem reprovar nada -- e
+    o que faz um serviço novo sem endurecimento aparecer pelo nome.
+    """
+    return yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))["services"]
+
+
+def test_todo_servico_roda_sem_privilegios_extras():
+    """Nenhum contêiner ganha escrita na raiz, capability ou escalada.
+
+    O banco pode gravar PGDATA pelo volume, e só; o resto grava em tmpfs.
+    """
+    fora = {
+        nome: campo
+        for nome, servico in _servicos().items()
+        for campo, ok in (
+            ("read_only", servico.get("read_only") is True),
+            ("cap_drop", "ALL" in servico.get("cap_drop", [])),
+            ("security_opt", "no-new-privileges:true" in servico.get("security_opt", [])),
+            ("pids_limit", bool(servico.get("pids_limit"))),
+        )
+        if not ok
+    }
+    assert not fora, f"serviços sem endurecimento: {fora}"
+
+
+def test_segredos_chegam_por_arquivo_montado_e_nunca_pelo_ambiente():
+    """O caminho suportado monta arquivos; segredo no ambiente vaza em `inspect`."""
+    diretos = {"POSTGRES_PASSWORD", "DJANGO_SECRET_KEY", "PATRIMONIO_TOKEN"}
+    problemas = []
+    for nome, servico in _servicos().items():
+        ambiente = servico.get("environment") or {}
+        montados = set(servico.get("secrets") or [])
+        problemas += [f"{nome}: {chave} no ambiente" for chave in diretos & set(ambiente)]
+        for chave, valor in ambiente.items():
+            segredo = valor.removeprefix("/run/secrets/")
+            if chave.endswith("_FILE") and segredo != valor and segredo not in montados:
+                problemas.append(f"{nome}: {chave} aponta para segredo não montado")
+        if "DJANGO_SECRET_KEY_FILE" in ambiente and ambiente.get("REQUIRE_FILE_SECRETS") != "true":
+            problemas.append(f"{nome}: sem REQUIRE_FILE_SECRETS")
+    assert not problemas, problemas
+
+
+def test_web_conecta_com_o_papel_restrito_e_o_migrate_com_o_administrativo():
+    servicos = _servicos()
+
+    web = servicos["web"]["environment"]
+    migrate = servicos["migrate"]["environment"]
+    assert web["POSTGRES_PASSWORD_FILE"] == "/run/secrets/postgres_app_password"
+    assert web["DB_EXIGIR_PAPEL_RESTRITO"] == "1"
+    assert migrate["POSTGRES_PASSWORD_FILE"] == "/run/secrets/postgres_password"
+
+
+def test_quality_nao_recebe_segredo_de_producao():
+    """A suíte usa valores sintéticos próprios, nunca os montados em web/migrate."""
+    servicos = _servicos()
+
+    for nome in ("quality", "postgres-teste"):
+        segredos = servicos[nome].get("secrets") or []
+        assert segredos
+        assert all(segredo.startswith("quality_") for segredo in segredos), (nome, segredos)
 
 
 def test_bootstrap_de_migrations_antecipa_o_web():
     """O serviço web só pode iniciar após a etapa controlada de migrations."""
-    conteudo = COMPOSE.read_text(encoding="utf-8")
-    inicio_migrate = conteudo.index("  migrate:")
-    inicio_web = conteudo.index("  web:")
-    bloco_migrate = conteudo[inicio_migrate:inicio_web]
-    bloco_web = conteudo[inicio_web:conteudo.index("  quality:")]
+    servicos = _servicos()
+    comando = " ".join(servicos["migrate"]["command"])
 
-    assert "python manage.py migrate --noinput" in bloco_migrate
-    assert "python manage.py collectstatic --noinput --clear" in bloco_migrate
-    assert "migrate:\n        condition: service_completed_successfully" in bloco_web
+    assert servicos["web"]["depends_on"]["migrate"]["condition"] == "service_completed_successfully"
+    assert "manage.py migrate --noinput" in comando
+    assert "manage.py collectstatic --noinput --clear" in comando
 
 
 def test_nome_do_banco_de_teste_difere_do_operacional():
