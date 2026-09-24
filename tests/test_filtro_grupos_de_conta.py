@@ -132,7 +132,7 @@ def test_contexto_das_telas_aplica_os_grupos(usuario, contas):
 
 @pytest.mark.django_db
 def test_conta_escolhida_vence_o_filtro_de_grupos(usuario, contas):
-    """Como nas contas ocultas: sem isso, a tela ficaria vazia sem dizer por quê."""
+    """Sem isso, a tela ficaria vazia sem dizer por quê."""
     corrente = contas[GROUP_BANKS]
     ctx = reports_services.selected_context(usuario, {"grupos": "cartoes", "account_id": str(corrente.id)})
 

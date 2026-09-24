@@ -358,15 +358,11 @@ requisições autenticadas após o dia configurado, a execução automática agu
 o próximo acesso. Isso é uma decisão operacional atual, não uma restrição de
 domínio.
 
-## Datas e visibilidade
+## Datas
 
 Datas de vencimento e realização são datas civis. Datas e horas de auditoria e
 controle usam timezone e são persistidas pelo PostgreSQL com suporte a fuso;
 `TIME_ZONE` é `America/Sao_Paulo` e `USE_TZ=True`.
-
-As preferências pessoais de ocultação afetam somente os agregados do Dashboard
-e de Projeções. Uma conta explicitamente escolhida no filtro continua visível,
-assim como nos seletores e nas demais telas permitidas ao usuário.
 
 ## Grupos de conta (filtro global)
 
@@ -382,14 +378,20 @@ isso que torna a seleção múltipla legível (`core/account_group_filter.py`):
 
 O tipo da conta vence o da instituição: o cartão emitido por um banco não
 aparece ao marcar só "Bancos". Como a moeda, o filtro vive na URL
-(`grupos=bancos,cartoes`) e não é gravado; ausente, valem todos. Ele segue a
-regra das contas ocultas: tira contas dos números, deixa os seletores inteiros
-e cede à conta escolhida explicitamente. No Planejamento anual, cujo seletor de
+(`grupos=bancos,cartoes`) e não é gravado; ausente, valem todos. Ele tira
+contas dos números, deixa os seletores inteiros e cede à conta escolhida
+explicitamente. No Planejamento anual, cujo seletor de
 contas é o próprio escopo, ele restringe as opções.
 
 Tirar um grupo tira as contas dele da seleção, e com elas o saldo: aplicar R$
 500 no CDB baixa o saldo de "Bancos" em R$ 500 sem virar despesa, porque o
 destino ficou fora do recorte.
+
+Ele substituiu Configurações > Contas em análises, uma preferência gravada
+por usuário que escondia contas soltas do Dashboard e de Projeções. A tela e
+a tabela `user_account_visibility` saíram em 24/09/2026
+(`accounts.0010_remover_contas_em_analises`): o recorte agora é por grupo, e
+uma conta específica se vê escolhendo-a no filtro de conta.
 
 ## Gestão gerencial: ciclo de vida
 

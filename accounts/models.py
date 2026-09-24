@@ -147,30 +147,6 @@ class UserPermission(models.Model):
         ]
 
 
-class UserAccountVisibility(models.Model):
-    """Preferência analítica por usuário para ocultar contas em visões agregadas."""
-
-    user = models.ForeignKey(AppUser, on_delete=models.CASCADE, related_name='account_visibility_preferences')
-    account = models.ForeignKey('banking.FinancialAccount', on_delete=models.CASCADE, related_name='user_visibility_preferences')
-    hide_from_dashboard = models.BooleanField(default=False)
-    hide_from_projections = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = 'user_account_visibility'
-        constraints = [
-            models.UniqueConstraint(
-                fields=['user', 'account'],
-                name='uq_user_account_visibility_user_account',
-            ),
-        ]
-        indexes = [
-            models.Index(fields=['user']),
-            models.Index(fields=['account']),
-        ]
-
-
 class UserTransferDestinationAccess(models.Model):
     """Concessão explícita para usar uma conta como destino de transferência."""
 

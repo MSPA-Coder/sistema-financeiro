@@ -14,7 +14,7 @@ começava em zero. Os números agora saem do mesmo motor dos relatórios:
 - data e valor por modo: realizado vale pela data e pelo valor da realização.
 
 As contas saem de `selected_context` + `context_options`, como nas outras
-telas: titular, instituição, conta, contas ocultas e o filtro global de grupos
+telas: titular, instituição, conta e o filtro global de grupos
 valem aqui exatamente como lá.
 """
 
@@ -245,7 +245,7 @@ def dashboard_view(request):
 		return invalid_period_response(request, str(exc))
 
 	ctx = selected_context(request.user, request.GET, request=request)
-	options = context_options(request.user, ctx, hidden_scope="dashboard")
+	options = context_options(request.user, ctx)
 	contas_por_moeda = _contas_por_moeda(options)
 	moedas = tuple(contas_por_moeda)
 	currency, currency_notice = _moeda_do_painel(parse_currency_filter(request.GET), moedas)
