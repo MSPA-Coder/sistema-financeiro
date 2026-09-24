@@ -6,8 +6,9 @@ para continuar navegando com a senha que o administrador conhece, e a marca
 ficava ligada para sempre sem efeito. Este arquivo mede a trava que fechou essa
 lacuna, e que roda em toda requisicao.
 
-A suite nao toca o banco (ver `conftest.py`): o middleware e exercitado com
-`RequestFactory` e um duplo de usuario, que e tudo o que ele consulta.
+O middleware e exercitado com `RequestFactory` e um duplo de usuario, que e
+tudo o que ele consulta. A redefinicao e a troca gravam a conta, e por isso
+rodam na camada com banco (`django_db`).
 """
 
 from __future__ import annotations
@@ -129,30 +130,39 @@ def test_o_middleware_esta_instalado_e_depois_do_que_ele_depende():
 # --- redefinicao pelo administrador --------------------------------------
 
 
-def test_a_redefinicao_usa_o_sorteio_compartilhado():
-    # Alfabeto sem `0/O` e `1/l/I`, `secrets.choice` -- o mesmo dos tres apps
-    # Flask. Um sorteio proprio aqui divergiria em silencio.
-    import inspect
+def _conta(username="redefinida", senha="Senha-Atual-Longa-1"):
+    from accounts.models import AppUser
 
+    return AppUser.objects.create_user(username=username, password=senha)
+
+
+@pytest.mark.django_db
+def test_a_redefinicao_sorteia_senha_ditavel_e_liga_a_marca():
+    # Alfabeto sem `0/O` e `1/l/I` -- a senha vai ser ditada --, o mesmo dos
+    # tres apps Flask (`sharedauth.passwords`). E a conta sai obrigada a trocar.
     from accounts import services
 
-    fonte = inspect.getsource(services.reset_managed_user_password)
+    usuario = _conta()
+    senhas = {services.reset_managed_user_password(usuario) for _ in range(20)}
 
-    assert "gerar_senha_temporaria(" in fonte
-    assert "must_change_password = True" in fonte
+    usuario.refresh_from_db()
+    assert usuario.must_change_password is True
+    assert all(not set(senha) & set("0O1lI") for senha in senhas)
+    assert len(senhas) == 20
 
 
-def test_o_sorteio_respeita_o_tamanho_minimo_configurado():
+@pytest.mark.django_db
+def test_o_sorteio_respeita_o_tamanho_minimo_configurado(monkeypatch):
     # A politica deste app e configuravel e pode passar do padrao de 12 da
     # biblioteca -- o banco local esta em 15. Sem isto, a redefinicao recusaria
     # a propria senha que acabou de sortear.
-    import inspect
-
     from accounts import services
 
-    fonte = inspect.getsource(services.reset_managed_user_password)
+    monkeypatch.setattr(services, "current_min_length", lambda: 20)
 
-    assert "current_min_length()" in fonte
+    senha = services.reset_managed_user_password(_conta())
+
+    assert len(senha) >= 20
 
 
 def test_o_tamanho_minimo_tem_fallback_sem_banco():
@@ -163,26 +173,37 @@ def test_o_tamanho_minimo_tem_fallback_sem_banco():
     assert current_min_length() >= DEFAULT_MIN_LENGTH
 
 
+@pytest.mark.django_db
 def test_redigitar_a_senha_temporaria_nao_conclui_a_troca():
     # O caso que esvaziaria a obrigacao: a marca se apagaria e a senha que o
     # administrador conhece continuaria valendo. Mesma regra que
     # `sharedauth.passwords.validar_troca` aplica nos tres apps Flask.
-    import inspect
-
     from accounts import services
 
-    fonte = inspect.getsource(services.change_user_password)
+    usuario = _conta()
+    temporaria = services.reset_managed_user_password(usuario)
 
-    assert "new_password == current_password" in fonte
+    with pytest.raises(ValueError, match="diferente"):
+        services.change_user_password(usuario, temporaria, temporaria, temporaria)
+
+    usuario.refresh_from_db()
+    assert usuario.must_change_password is True
+    assert usuario.check_password(temporaria)
 
 
+@pytest.mark.django_db
 def test_a_senha_temporaria_nao_entra_na_auditoria():
     # Nao ha pergunta que ela responda e ha muitas que ela abre. O snapshot de
     # auditoria do usuario nunca inclui senha nem hash.
-    import inspect
-
+    from accounts import services
     from core import views
 
-    fonte = inspect.getsource(views._user_audit_snapshot)
+    usuario = _conta()
+    temporaria = services.reset_managed_user_password(usuario)
+    usuario.refresh_from_db()
 
-    assert "password" not in fonte.replace("must_change_password", "")
+    snapshot = views._user_audit_snapshot(usuario)
+
+    assert temporaria not in repr(snapshot)
+    assert usuario.password not in repr(snapshot)
+    assert not {chave for chave in snapshot if "password" in chave} - {"must_change_password"}

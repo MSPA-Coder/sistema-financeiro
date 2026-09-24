@@ -47,17 +47,6 @@ def test_monthly_close_form_accounts_obeys_the_selected_list_filter():
     assert core_views._monthly_close_form_accounts(accounts, 2) == [accounts[1]]
 
 
-def test_monthly_close_template_keeps_the_filtered_account_selected_in_the_form():
-    template = (Path(__file__).resolve().parents[1] / "templates/settings/monthly_close.html").read_text(
-        encoding="utf-8",
-    )
-
-    assert (
-        'value="{{ account.id }}" {% if monthly_close_filters.account_id == account.id %}selected{% endif %}'
-        in template
-    )
-
-
 def test_monthly_close_redirect_preserves_the_list_filters():
     request = RequestFactory().post(
         "/settings/month-close/close/",
@@ -329,24 +318,54 @@ def test_htmx_expired_session_redirects_to_login_page():
     assert response["HX-Redirect"] == "/login?next=%2Ftransactions%2F"
 
 
-def test_persist_buttons_have_visual_confirmation():
-    root = Path(__file__).resolve().parents[1]
-    reconciliation = (root / "templates/banking/_reconciliation_tables.html").read_text(encoding="utf-8")
-    monthly_close = (root / "templates/settings/monthly_close.html").read_text(encoding="utf-8")
+def test_todo_formulario_que_grava_nas_telas_de_conciliacao_e_fechamento_confirma():
+    """Conciliar, ignorar, desfazer, fechar e reabrir mês mexem em saldo.
 
-    assert reconciliation.count("data-sa-confirmar=") >= 5
-    assert monthly_close.count("data-sa-confirmar=") == 2
-    assert 'name="reason"' in monthly_close and "required" in monthly_close
+    Varredura, não contagem: um formulário POST novo nessas telas sem
+    `data-sa-confirmar` reprova com o endereço dele; um formulário a mais, com
+    confirmação, não muda nada.
+    """
+    import re
+
+    root = Path(__file__).resolve().parents[1] / "templates"
+    sem_confirmacao = []
+    formularios_post = 0
+    for nome in ("banking/_reconciliation_tables.html", "settings/monthly_close.html"):
+        fonte = (root / nome).read_text(encoding="utf-8")
+        for form in re.findall(r"<form\b[^>]*>.*?</form>", fonte, re.S):
+            cabecalho = re.match(r"<form\b[^>]*>", form).group(0)
+            if 'method="post"' not in cabecalho:
+                continue
+            formularios_post += 1
+            if "data-sa-confirmar" not in form:
+                sem_confirmacao.append(f"{nome}: {cabecalho[:80]}")
+
+    # Sem este piso, um regex quebrado não acharia formulário nenhum e a
+    # varredura passaria vazia.
+    assert formularios_post >= 5
+    assert not sem_confirmacao, sem_confirmacao
 
 
+def test_reabrir_mes_exige_motivo():
+    import re
+
+    fonte = (Path(__file__).resolve().parents[1] / "templates/settings/monthly_close.html").read_text(encoding="utf-8")
+    campo = re.search(r'<(?:input|textarea)[^>]*name="reason"[^>]*>', fonte)
+
+    assert campo and "required" in campo.group(0)
+
+
+@pytest.mark.sentinela_front
 def test_transaction_scope_confirmation_covers_submit_and_fail_closed_path():
+    """Salvar com escopo "esta e as seguintes" recria parcelas e apaga anexos.
+
+    Sem o componente de confirmação, o envio é barrado em vez de seguir sem
+    perguntar.
+    """
     script = (Path(__file__).resolve().parents[1] / "static/js/transactions.js").read_text(encoding="utf-8")
+
     assert "form.addEventListener('submit'" in script
-    assert "form.checkValidity()" in script
     assert "confirmationBypassed" in script
-    assert "A confirmação visual é necessária" in (
-        Path(__file__).resolve().parents[1] / "templates/transactions/_fields.html"
-    ).read_text(encoding="utf-8")
 
 
 @override_settings(AUDIT_TRUSTED_PROXY_CIDRS=())

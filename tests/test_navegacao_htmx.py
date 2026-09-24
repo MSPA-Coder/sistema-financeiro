@@ -361,14 +361,36 @@ def test_descarte_e_o_unico_motivo_basta_para_reescrever() -> None:
     assert url_canonica(pedido) == "/lancamentos/?owner_id=3"
 
 
+@pytest.mark.django_db
 def test_selected_context_anota_a_conta_que_anulou() -> None:
-    """O contrato entre `reports.services` e o middleware, nos dois lados."""
-    import inspect
+    """O contrato entre `reports.services` e o middleware, nos dois lados.
 
+    Titular escolhido que nao e dono da conta anula a conta; a anotacao no
+    `request` e o que faz o middleware tirar `account_id` da barra.
+    """
+    from datetime import date
+    from decimal import Decimal
+
+    from django.contrib.auth import get_user_model
+
+    from accounts.models import AccountOwner, UserOwnerAccess
+    from banking.models import FinancialAccount, FinancialInstitution
     from reports import services
 
-    assinatura = inspect.signature(services.selected_context)
-    assert "request" in assinatura.parameters, (
-        "selected_context precisa aceitar `request` para anotar o descarte"
+    usuario = get_user_model().objects.create_user(username="filtro", password="senha-segura")
+    dono, outro = (AccountOwner.objects.create(name=nome) for nome in ("Dono", "Outro"))
+    for titular in (dono, outro):
+        UserOwnerAccess.objects.create(user=usuario, owner=titular, can_view=True)
+    banco = FinancialInstitution.objects.create(institution_name="Banco", institution_type="Banco")
+    conta = FinancialAccount.objects.create(
+        owner=dono, institution=banco, account_name="Conta",
+        initial_balance=Decimal("0"), initial_balance_date=date(2026, 1, 1),
     )
-    assert "filtros_descartados" in inspect.getsource(services.selected_context)
+    pedido = _pedido(f"owner_id={outro.id}&account_id={conta.id}")
+
+    contexto = services.selected_context(usuario, pedido.GET, request=pedido)
+
+    assert contexto.account_id is None
+    assert contexto.owner_id == outro.id
+    assert pedido.filtros_descartados == {"account_id"}
+    assert url_canonica(pedido) == f"/lancamentos/?owner_id={outro.id}"

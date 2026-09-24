@@ -1,66 +1,70 @@
-"""Regressões dos achados CB-03, CB-04, CB-12 e CB-13 sem banco real."""
+"""Regressões dos achados CB-03, CB-04, CB-12 e CB-13.
 
-from pathlib import Path
-from unittest.mock import patch
+Nomes duplicados são recusados em duas camadas -- o serviço dá a mensagem, o
+índice do banco fecha a corrida entre duas gravações --, e as duas são medidas
+contra o PostgreSQL, não contra um duble do ORM.
+"""
+
+from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
+from django.db import IntegrityError, transaction
+from django.template.loader import render_to_string
 
 from accounts import services as account_services
 from banking import services as banking_services
 
 
-def test_owner_duplicate_is_rejected_case_insensitively_before_insert():
-    with patch("accounts.services.AccountOwner.objects.filter") as lookup:
-        lookup.return_value.exists.return_value = True
+@pytest.mark.django_db
+def test_owner_duplicate_is_rejected_case_insensitively():
+    account_services.create_owner("Ana")
 
-        with pytest.raises(ValueError, match="Já existe um titular"):
-            account_services.create_owner("Ana")
-
-
-def test_institution_duplicate_is_rejected_case_insensitively_before_insert():
-    with patch("banking.services.FinancialInstitution.objects.filter") as lookup:
-        lookup.return_value.exists.return_value = True
-
-        with pytest.raises(ValueError, match="Já existe uma instituição"):
-            banking_services.create_institution("Banco Azul", "Banco")
+    with pytest.raises(ValueError, match="Já existe um titular"):
+        account_services.create_owner("ANA")
 
 
+@pytest.mark.django_db
+def test_institution_duplicate_is_rejected_case_insensitively():
+    banking_services.create_institution("Banco Azul", "Banco")
+
+    with pytest.raises(ValueError, match="Já existe uma instituição"):
+        banking_services.create_institution("banco azul", "Banco")
+
+
+@pytest.mark.django_db
 def test_name_duplicates_also_have_database_constraints():
+    """Duas gravações simultâneas passam juntas pela checagem do serviço."""
     from accounts.models import AccountOwner
     from banking.models import FinancialInstitution
 
-    assert any(constraint.name == "uq_account_owner_name_ci" for constraint in AccountOwner._meta.constraints)
-    assert any(
-        constraint.name == "uq_financial_institution_name_ci"
-        for constraint in FinancialInstitution._meta.constraints
-    )
+    AccountOwner.objects.create(name="Ana")
+    FinancialInstitution.objects.create(institution_name="Banco Azul", institution_type="Banco")
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        AccountOwner.objects.create(name="ana")
+    with pytest.raises(IntegrityError), transaction.atomic():
+        FinancialInstitution.objects.create(institution_name="BANCO AZUL", institution_type="Banco")
 
 
 def test_management_template_displays_expense_with_negative_sign():
-    template = (Path(__file__).resolve().parents[1] / "templates/management/partials/management_content.html").read_text(encoding="utf-8")
+    """Despesa é gravada positiva; na tela ela sai com o sinal de saída."""
+    conta = SimpleNamespace(currency="BRL", account_name="Conta", owner=SimpleNamespace(name="Ana"))
+    despesa = SimpleNamespace(
+        id=1, due_date=None, account=conta, description="Mercado", entry_type="despesa",
+        entry_amount=Decimal("12.50"), linked_project=None, linked_tags=[],
+    )
 
-    assert "entry.entry_type == 'despesa'" in template
-    assert "entry.entry_amount|neg|money_signed" in template
+    html = render_to_string("management/partials/management_content.html", {"recent_entries": [despesa]})
 
-
-def test_password_minimum_input_uses_domain_floor_not_current_value():
-    template = (Path(__file__).resolve().parents[1] / "templates/settings/index.html").read_text(encoding="utf-8")
-
-    assert 'name="min_length"' in template
-    assert 'min="8"' in template
-    assert 'min="15"' not in template
+    assert "- R$ 12,50" in html
 
 
-def test_native_constraint_messages_are_overridden_in_portuguese():
-    script = (Path(__file__).resolve().parents[1] / "static/js/core/application.js").read_text(encoding="utf-8")
+def test_password_floor_cannot_be_configured_away(monkeypatch):
+    """O piso de 8 vale mesmo que a configuração grave um valor menor."""
+    from accounts import password_validators
+    from core import services as core_services
 
-    assert "setCustomValidity" in script
-    assert "Preencha este campo." in script
-    assert "mínimo permitido" in script
+    monkeypatch.setattr(core_services, "get_app_setting", lambda chave, padrao: "4")
 
-
-def test_audit_template_handles_legacy_rows_without_a_user():
-    template = (Path(__file__).resolve().parents[1] / "templates/settings/audit_log.html").read_text(encoding="utf-8")
-
-    assert "{% elif log.user %}{{ log.user.username }}" in template
-    assert "default:log.user.username" not in template
+    assert password_validators.current_min_length() == password_validators.MIN_LENGTH_FLOOR

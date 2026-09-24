@@ -77,38 +77,47 @@ def test_simbolo_sozinho_serve_de_rotulo_de_formulario():
     assert currency_symbol(None) == "R$"
 
 
-def test_o_formulario_de_lancamento_nao_fixa_o_simbolo_no_html():
+def _formulario_de_edicao(moeda: str) -> str:
+    """O formulário renderizado para um lançamento de uma conta em `moeda`."""
+    from types import SimpleNamespace
+
+    from django.template.loader import render_to_string
+
+    conta = SimpleNamespace(
+        id=7, currency=moeda, account_name="Conta", owner=SimpleNamespace(name="Ana"),
+        institution=SimpleNamespace(institution_name="Banco"),
+    )
+    lancamento = SimpleNamespace(
+        account=conta, account_id=7, entry_type="despesa", entry_amount="10", supports_scope=False,
+        counterparty_entry_amount=None, realized_amount=None,
+    )
+    return render_to_string(
+        "transactions/_fields.html",
+        {"t": lancamento, "update_accounts": [conta], "counterparty_accounts": [conta]},
+    )
+
+
+def test_o_formulario_de_lancamento_mostra_a_moeda_da_conta():
     """Os rótulos de valor traziam `(R$)` escrito no template. Com conta em
     dólar, isso ofereceria um valor em real para quem digita dólar."""
-    from pathlib import Path
+    html = _formulario_de_edicao(CURRENCY_USD)
 
-    formulario = (
-        Path(__file__).resolve().parents[1] / "templates/transactions/_fields.html"
-    ).read_text(encoding="utf-8")
-
-    assert "(R$)" not in formulario
-    assert 'data-currency-for="account"' in formulario
-    assert 'data-currency-for="counterparty"' in formulario
+    assert '<span data-currency-for="account">US$</span>' in html
+    assert "(R$)" not in html
     # A moeda de cada conta viaja na própria opção: é de lá que o JS lê.
-    assert 'data-currency-symbol="{{ acc.currency|currency_symbol }}"' in formulario
+    assert 'data-currency-symbol="US$"' in html
 
 
 def test_o_valor_do_destino_nasce_desabilitado_no_formulario():
-    """Campo desabilitado não é enviado -- é o que garante que ele só chega ao
-    servidor quando o JS o habilita, nas moedas diferentes. O servidor recusa
-    de qualquer forma, mas a tela não deve depender disso para estar certa."""
-    from pathlib import Path
+    """Campo desabilitado não é enviado -- ele só chega ao servidor quando o JS
+    o habilita, nas moedas diferentes. O servidor recusa de qualquer forma, mas
+    a tela não deve depender disso para estar certa."""
+    import re
 
-    formulario = (
-        Path(__file__).resolve().parents[1] / "templates/transactions/_fields.html"
-    ).read_text(encoding="utf-8")
-    script = (
-        Path(__file__).resolve().parents[1] / "static/js/transactions.js"
-    ).read_text(encoding="utf-8")
+    html = _formulario_de_edicao(CURRENCY_BRL)
 
-    assert 'name="counterparty_amount"' in formulario
-    assert 'aria-label="Valor creditado no destino" disabled' in formulario
-    assert "input.disabled = !crossCurrency;" in script
+    campo = re.search(r'<input[^>]*name="counterparty_amount"[^>]*>', html)
+    assert campo and re.search(r"\sdisabled[\s>]", campo.group(0))
 
 
 def test_telas_por_conta_passam_a_moeda_da_conta():

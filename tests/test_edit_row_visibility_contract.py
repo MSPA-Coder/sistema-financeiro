@@ -1,19 +1,12 @@
 import re
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_edit_toggle_uses_the_css_visibility_state():
-    script = (ROOT / "static" / "js" / "core" / "application.js").read_text(encoding="utf-8")
-    stylesheet = (ROOT / "static" / "css" / "core" / "application.css").read_text(encoding="utf-8")
-
-    assert "!row.classList.contains('is-editing')" in script
-    assert "row.classList.toggle('is-editing', show);" in script
-    assert ".edit-row { display: none; }" in stylesheet
-    assert ".edit-row.is-editing { display: table-row; }" in stylesheet
-
-
+@pytest.mark.sentinela_front
 def test_painel_reconstroi_os_graficos_pelo_mesmo_caminho():
     """A primeira carga e a troca de filtro chamam o MESMO construtor.
 
@@ -29,6 +22,7 @@ def test_painel_reconstroi_os_graficos_pelo_mesmo_caminho():
     assert script.count("function construirGraficos") == 1
 
 
+@pytest.mark.sentinela_front
 def test_painel_destroi_os_graficos_da_troca_anterior():
     """Quem destrói tem de ser uma lista, não uma busca por `id` no documento.
 

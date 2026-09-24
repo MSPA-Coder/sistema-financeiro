@@ -44,6 +44,9 @@ dev = [
   # Auditoria de CVE das dependencias instaladas. Piso na minor atual, teto na
   # proxima major -- politica de faixa do mantenedor.
   "pip-audit>=2.10,<3",
+  # Os testes de configuração carregam o compose e conferem a propriedade, em
+  # vez de procurar um trecho do texto (docs/TESTES.md, T4).
+  "pyyaml>=6,<7",
 ]
 
 # Ao contrario dos irmaos Flask, que tem um unico pacote `app`, aqui a
@@ -136,3 +139,8 @@ addopts = "-q --tb=short"
 # Sem isto o pytest coloca `tests/` no sys.path em vez da raiz, e os apps
 # Django nao sao importaveis dentro do conteiner.
 pythonpath = ["."]
+markers = [
+  # Teste que lê JS ou CSS porque nenhum teste executa o navegador. Confere só
+  # o que define um mecanismo de dinheiro ou privacidade; ver docs/TESTES.md, T6.
+  "sentinela_front: guarda textual de um mecanismo de front-end crítico",
+]
