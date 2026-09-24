@@ -195,6 +195,23 @@ def test_tendencia_compara_os_tres_meses_ate_o_escolhido_com_os_tres_anteriores(
     assert (saude["positive_months"], saude["total_months"]) == (2, 2)
 
 
+def test_mes_que_empatou_nao_fechou_com_sobra(usuario, painel):
+    titular = AccountOwner.objects.create(name="Titular do empate")
+    banco = FinancialInstitution.objects.create(institution_name="Banco E", institution_type="Banco")
+    conta = FinancialAccount.objects.create(
+        owner=titular, institution=banco, account_name="Corrente",
+        initial_balance=Decimal("0.00"), initial_balance_date=date(2025, 12, 31),
+    )
+    _realizado(conta, ENTRY_TYPE_INCOME, _categoria("Salário"), "100.00", date(2026, 5, 10))
+    _realizado(conta, ENTRY_TYPE_EXPENSE, _categoria("Mercado"), "100.00", date(2026, 5, 20))
+    _realizado(conta, ENTRY_TYPE_INCOME, _categoria("Salário"), "300.00", date(2026, 6, 10))
+
+    saude = painel()["financial_health"]
+
+    # Maio teve movimento e geração zero: conta no total, não entre os positivos.
+    assert (saude["positive_months"], saude["total_months"]) == (1, 2)
+
+
 def test_lancamentos_em_real_nao_listam_nem_somam_a_conta_em_dolar(usuario):
     """Com o filtro em real (o padrão), a conta em dólar aparecia na lista e,
     sem bloco próprio, tinha a despesa somada no bloco do real."""
