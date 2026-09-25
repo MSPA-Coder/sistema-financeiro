@@ -136,6 +136,24 @@
     </div>
 </div>
 
+<div id="unrealizeModal" class="app-modal" role="dialog" aria-modal="true" aria-labelledby="unrealizeTitle">
+    <div class="modal-content">
+        <h3 id="unrealizeTitle">Desfazer realização</h3>
+        <p class="modal-message">O lançamento deixará de compor o saldo realizado e voltará para Vencidos.</p>
+        <form id="unrealizeForm" method="POST" action="{% url 'transactions:mark_unrealized' 0 %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}">
+            {% csrf_token %}
+            <div class="modal-actions">
+                <button type="button" data-transaction-action="close-unrealize" class="modal-btn modal-btn-cancel">Cancelar</button>
+                <button type="submit" class="modal-btn modal-btn-primary"
+                        data-sa-confirmar="Desfazer a realização deste lançamento?"
+                        data-sa-titulo="Confirmar reversão"
+                        data-sa-severidade="warning"
+                        data-sa-ok="Desfazer">Desfazer realização</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div id="confirmDeleteModal" class="app-modal" role="dialog" aria-modal="true" aria-labelledby="confirmDeleteTitle">
     <div class="modal-content">
         <h3 id="confirmDeleteTitle" data-ui="mb-05">Confirmar exclusão</h3>
