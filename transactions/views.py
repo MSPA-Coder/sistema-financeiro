@@ -38,6 +38,7 @@ from transactions.services import (
     realize_transaction,
     supports_operation_scope,
     transactions_query_params,
+    unrealize_transaction,
     update_category,
     update_transaction_operation,
 )
@@ -231,6 +232,37 @@ def mark_realized(request, tx_id):
     except ValueError as e:
         _log_failed_transaction_action(request, entry.id, "realize")
         messages.error(request, str(e))
+
+    if quer_fragmento(request):
+        response = HttpResponse(status=204)
+        response.headers["HX-Trigger"] = "tableRefresh"
+        return response
+    return _redirect_to_transactions(request)
+
+
+@login_required
+@permission_required("transactions.realize", fallback="transactions:transactions_view")
+@require_POST
+def mark_unrealized(request, tx_id):
+    """Desfaz a realização de um lançamento sem exigir data de realização."""
+    entry = CashFlowEntry.objects.filter(id=tx_id).select_related("account", "source_entry").first()
+    if entry is None:
+        _log_failed_transaction_action(request, tx_id, "unrealize")
+        messages.warning(request, "Lançamento não encontrado.")
+        return _redirect_to_transactions(request)
+    if not access.can_access_entry(request.user, entry, "update"):
+        _log_failed_transaction_action(request, entry.id, "unrealize")
+        messages.warning(request, "Acesso negado: usuário sem permissão para alterar este lançamento.")
+        return _redirect_to_transactions(request)
+
+    try:
+        unrealize_transaction(
+            entry, audit_context=audit_request_context(request), user=request.user,
+        )
+        messages.success(request, "Realização desfeita. Lançamento retornado para Vencidos.")
+    except ValueError as exc:
+        _log_failed_transaction_action(request, entry.id, "unrealize")
+        messages.error(request, str(exc))
 
     if quer_fragmento(request):
         response = HttpResponse(status=204)

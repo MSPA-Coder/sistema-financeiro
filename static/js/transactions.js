@@ -131,6 +131,19 @@ function closeRealizeModal() {
     if (m) m.classList.remove('is-open');
 }
 
+function openUnrealizeModal(txId) {
+    var form = document.getElementById('unrealizeForm');
+    var url = new URL(form.action, window.location.origin);
+    url.pathname = url.pathname.replace(/\/mark_unrealized\/\d+\/?$/, '/mark_unrealized/' + txId + '/');
+    form.action = url.pathname + url.search;
+    document.getElementById('unrealizeModal').classList.add('is-open');
+}
+
+function closeUnrealizeModal() {
+    var m = document.getElementById('unrealizeModal');
+    if (m) m.classList.remove('is-open');
+}
+
 function openDeleteModal(actionUrl, supportsScope, currentFutureToken) {
     var modal        = document.getElementById('confirmDeleteModal');
     var form         = document.getElementById('deleteForm');
@@ -170,6 +183,12 @@ function _initTransactionModals() {
         rm.addEventListener('click', function (e) { if (e.target === this) closeRealizeModal(); });
     }
 
+    var um = document.getElementById('unrealizeModal');
+    if (um && !um._modalBound) {
+        um._modalBound = true;
+        um.addEventListener('click', function (e) { if (e.target === this) closeUnrealizeModal(); });
+    }
+
     var dm = document.getElementById('confirmDeleteModal');
     if (dm && !dm._modalBound) {
         dm._modalBound = true;
@@ -194,6 +213,7 @@ function _initTransactionActions(root) {
             var action = button.dataset.transactionAction;
             if (action === 'toggle-entry-form') toggleEntryForm();
             if (action === 'close-realize') closeRealizeModal();
+            if (action === 'close-unrealize') closeUnrealizeModal();
             if (action === 'close-delete') closeDeleteModal();
             if (action === 'delete') {
                 openDeleteModal(
@@ -210,6 +230,7 @@ function _initTransactionActions(root) {
                     button.dataset.currencySymbol
                 );
             }
+            if (action === 'unrealize') openUnrealizeModal(button.dataset.transactionId);
         });
     });
 }

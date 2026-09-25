@@ -20,6 +20,7 @@ urlpatterns = [
     
     # Realizar lançamento
     path('mark_realized/<int:tx_id>/', views.mark_realized, name='mark_realized'),
+    path('mark_unrealized/<int:tx_id>/', views.mark_unrealized, name='mark_unrealized'),
 
     # Criar/editar/excluir lançamento (único, parcelado, recorrente ou
     # transferência interna, conforme a categoria escolhida)

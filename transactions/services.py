@@ -303,9 +303,8 @@ def realize_transaction(
 
 
 @db_transaction.atomic
-def unrealize_transaction(entry: CashFlowEntry, user=None) -> CashFlowEntry:
-    """Reverte a realização de um lançamento (usado por Bancos > Conciliação
-    ao desfazer uma conciliação).
+def unrealize_transaction(entry: CashFlowEntry, audit_context=None, user=None) -> CashFlowEntry:
+    """Reverte a realização de um lançamento.
 
     O lançamento volta sempre para STATUS_PENDING (vencidos), independente da
     data de vencimento: inferir o status a partir da data poderia devolvê-lo
@@ -351,6 +350,17 @@ def unrealize_transaction(entry: CashFlowEntry, user=None) -> CashFlowEntry:
             BankOperation.objects.filter(
                 id=entry.bank_operation_id, status=STATUS_REALIZED,
             ).update(status=STATUS_PENDING)
+
+    if audit_context is not None:
+        from core.services import log_audit_event
+        for unrealized_entry in (entry, counterpart) if revert_counterpart else (entry,):
+            log_audit_event(
+                "cash_flow_entry",
+                unrealized_entry.id,
+                "unrealize",
+                request_context=audit_context,
+                summary="Lançamento retornado para vencidos.",
+            )
 
     return entry
 
