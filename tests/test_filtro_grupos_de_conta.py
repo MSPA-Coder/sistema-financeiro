@@ -133,6 +133,37 @@ def test_contexto_das_telas_aplica_os_grupos(usuario, contas):
 
 
 @pytest.mark.django_db
+def test_seletor_de_contas_combina_titular_e_instituicao(usuario, contas):
+    """Conta exibida precisa ser compatível com todos os filtros de contexto."""
+    conta_do_banco = contas[GROUP_BANKS]
+    outro_titular = AccountOwner.objects.create(name="Outro titular")
+    conta_de_outro_titular = FinancialAccount.objects.create(
+        owner=outro_titular,
+        institution=conta_do_banco.institution,
+        account_name="Cofrinho de outro titular",
+        initial_balance=Decimal("0.00"),
+        initial_balance_date=date(2025, 12, 31),
+    )
+
+    ctx = reports_services.selected_context(
+        usuario,
+        {
+            "owner_id": str(conta_do_banco.owner_id),
+            "institution_id": str(conta_do_banco.institution_id),
+            "currency": "BRL",
+        },
+    )
+    options = reports_services.context_options(usuario, ctx)
+
+    assert {conta.id for conta in options.accounts} == {
+        contas[GROUP_BANKS].id,
+        contas[GROUP_CARDS].id,
+        contas[GROUP_INVESTMENTS].id,
+    }
+    assert conta_de_outro_titular.id not in {conta.id for conta in options.accounts}
+
+
+@pytest.mark.django_db
 def test_conta_escolhida_vence_o_filtro_de_grupos(usuario, contas):
     """Sem isso, a tela ficaria vazia sem dizer por quê."""
     corrente = contas[GROUP_BANKS]
