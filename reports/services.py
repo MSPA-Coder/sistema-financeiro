@@ -339,6 +339,10 @@ def context_options(user, ctx: FinancialContext) -> ContextOptions:
         owner_id__in=allowed_owner_ids
     )
 
+    # Titular e instituição delimitam tanto o extrato quanto as opções que
+    # podem ser escolhidas em seguida. Sem essa base comum, o seletor de conta
+    # oferecia contas de outro titular ou instituição; `selected_context` as
+    # descartava na requisição seguinte e a escolha parecia não surtir efeito.
     selected_qs = base_qs
     if ctx.owner_id:
         selected_qs = selected_qs.filter(owner_id=ctx.owner_id)
@@ -357,7 +361,7 @@ def context_options(user, ctx: FinancialContext) -> ContextOptions:
     in_filters = account_group_q(ctx.account_groups) & currency_q(ctx.currency)
     if ctx.account_id:
         in_filters |= Q(pk=ctx.account_id)
-    listed_qs = base_qs.filter(in_filters)
+    listed_qs = selected_qs.filter(in_filters)
     institution_filter = Q(id__in=listed_qs.values_list("institution_id", flat=True))
     if ctx.institution_id:
         institution_filter |= Q(id=ctx.institution_id, id__in=base_qs.values_list("institution_id", flat=True))
