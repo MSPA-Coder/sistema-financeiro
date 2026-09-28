@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class AuditLog(models.Model):
@@ -67,3 +68,41 @@ class AppSetting(models.Model):
 
     def __str__(self) -> str:
         return self.setting_key
+
+
+class PatrimonioV4ChangeCounter(models.Model):
+    """Relógio transacional único para a outbox pública do patrimônio."""
+
+    id = models.SmallIntegerField(primary_key=True)
+    value = models.BigIntegerField(default=0)
+
+    class Meta:
+        db_table = "patrimonio_v4_change_counter"
+        constraints = [
+            models.CheckConstraint(condition=models.Q(id=1), name="ck_patrimonio_v4_counter_singleton"),
+            models.CheckConstraint(condition=models.Q(value__gte=0), name="ck_patrimonio_v4_counter_non_negative"),
+        ]
+
+
+class PatrimonioV4Outbox(models.Model):
+    """Invalidação transacional; o consumidor volta ao snapshot v4."""
+
+    cursor = models.BigIntegerField(primary_key=True)
+    resource = models.CharField(max_length=32)
+    source_record_id = models.BigIntegerField()
+    operation = models.CharField(max_length=8)
+    changed_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "patrimonio_v4_outbox"
+        indexes = [models.Index(fields=["cursor"], name="ix_patrimonio_v4_outbox_cursor")]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(resource__in=["account", "category", "cash_entry", "transfer"]),
+                name="ck_patrimonio_v4_outbox_resource",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(operation__in=["upsert", "delete"]),
+                name="ck_patrimonio_v4_outbox_operation",
+            ),
+        ]
