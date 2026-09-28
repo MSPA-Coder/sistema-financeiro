@@ -15,7 +15,12 @@ LANGUAGE plpgsql AS $$
 DECLARE
     next_cursor bigint;
 BEGIN
-    INSERT INTO patrimonio_v4_change_counter (id, value)`n    VALUES (1, 0)`n    ON CONFLICT (id) DO NOTHING;`n`n    UPDATE patrimonio_v4_change_counter`n    SET value = value + 1
+INSERT INTO patrimonio_v4_change_counter (id, value)
+    VALUES (1, 0)
+    ON CONFLICT (id) DO NOTHING;
+
+    UPDATE patrimonio_v4_change_counter
+    SET value = value + 1
     WHERE id = 1
     RETURNING value INTO next_cursor;
 
