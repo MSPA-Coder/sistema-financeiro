@@ -1,0 +1,19 @@
+# Conecta somente a API web à rede de integração do patrimônio no mesmo host.
+# Uso no VPS, depois de criar a rede uma vez:
+#   docker network create --internal patrimonio-internal
+#   docker compose -f compose.yaml -f compose.patrimonio-internal.yaml up -d
+#
+# O serviço continua na rede default, necessária para alcançar o PostgreSQL.
+# Não conecte postgres, migrate, db-provision ou quality a esta rede.
+services:
+  web:
+    networks:
+      default: {}
+      patrimonio-internal:
+        aliases:
+          - cb-api
+
+networks:
+  patrimonio-internal:
+    name: patrimonio-internal
+    external: true
