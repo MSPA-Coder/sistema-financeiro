@@ -223,17 +223,19 @@ qualquer caminho de escrita.
 
 ### Snapshot de integração v4
 
-`GET /patrimonio/v4/metadata` e `GET /patrimonio/v4/snapshot` iniciam a
+`GET /patrimonio/v4/metadata`, `GET /patrimonio/v4/snapshot` e
+`GET /patrimonio/v4/changes` iniciam a
 integração com o Wealthfolio sem alterar os contratos v1-v3. Ambas usam o
 mesmo Bearer global e são somente leitura. O snapshot lê contas, categorias,
 lançamentos de caixa e agrupadores de transferência sob `REPEATABLE READ`,
 com valores decimais em texto e IDs opacos e estáveis derivados da identidade
 da fonte e da chave persistida.
 
-O v4 ainda não publica `/changes`: `high_watermark` é `null` e a capability
-`changes` é `false`. A cobertura informa explicitamente que falta um outbox
-transacional com cursor e tombstones; timestamps de atualização dos registros
-não substituem esse mecanismo, pois remoções e paginação concorrente poderiam
-perder alterações. Transferências sem operação bancária associada permanecem
-visíveis como lançamentos de caixa e são contadas como não vinculadas na
-cobertura, sem inventar uma contraparte.
+O v4 mantém uma outbox de invalidação transacional. Uma única linha de contador
+é travada e incrementada na transação que altera o registro de origem, para que
+os cursores respeitem a ordem de commit. Cada mudança pede um novo snapshot
+consistente; o feed não recria lançamentos financeiros no consumidor.
+Exclusões publicam tombstones, e os cursores são assinados com o segredo do
+contrato. Transferências sem operação bancária associada permanecem visíveis
+como lançamentos de caixa e são contadas como não vinculadas na cobertura, sem
+inventar uma contraparte.

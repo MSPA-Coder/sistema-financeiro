@@ -52,11 +52,13 @@ de todas as contas deste sistema. Guarde-o como se guarda uma senha de banco.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import logging
 import os
 import re
 import secrets
 import unicodedata
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import date, timedelta
 from decimal import Decimal
 from urllib.parse import urlencode
@@ -84,6 +86,7 @@ from core.domain.finance import (
     VIEW_ALL,
     VIEW_REALIZED,
 )
+from core.models import PatrimonioV4ChangeCounter, PatrimonioV4Outbox
 from reports.services import decimal_balances_before_by_account
 from transactions.models import BankOperation, CashFlowCategory, CashFlowEntry
 
@@ -104,6 +107,7 @@ MAX_FLUXO_DIAS = 3654
 MONEY_QUANT = Decimal("0.01")
 V3_PAGE_SIZE = 50
 V3_MAX_PAGE_SIZE = 100
+V4_MAX_CHANGE_LIMIT = 500
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +129,51 @@ def _source_id_v4(recurso: str, valor: int) -> str:
     material = f"{SISTEMA}:{recurso}:{valor}".encode()
     digest = hashlib.sha256(material).hexdigest()[:24]
     return f"{SISTEMA}:{recurso}:{digest}"
+
+
+def _watermark_v4() -> int:
+    return int(
+        PatrimonioV4ChangeCounter.objects.filter(id=1).values_list("value", flat=True).first() or 0
+    )
+
+
+def _cursor_v4(cursor: int) -> str:
+    material = f"v1:{SISTEMA}:{cursor}".encode()
+    secret = (_token_configurado() or "").encode()
+    signature = hmac.new(secret, b"patrimonio-v4-cursor:" + material, hashlib.sha256).digest()
+    return urlsafe_b64encode(material + b"." + signature).decode().rstrip("=")
+
+
+def _cursor_v4_ler(raw: str | None) -> int:
+    if not raw:
+        return 0
+    if len(raw) > 256:
+        raise ValueError("cursor inválido")
+    try:
+        decoded = urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
+        material, signature = decoded.rsplit(b".", 1)
+        expected = hmac.new(
+            (_token_configurado() or "").encode(),
+            b"patrimonio-v4-cursor:" + material,
+            hashlib.sha256,
+        ).digest()
+        version, source, position = material.decode().split(":")
+        cursor = int(position)
+    except (UnicodeDecodeError, ValueError, TypeError):
+        raise ValueError("cursor inválido") from None
+    if not hmac.compare_digest(signature, expected) or (version, source) != ("v1", SISTEMA) or cursor < 0:
+        raise ValueError("cursor inválido")
+    return cursor
+
+
+def _change_limit_v4(request) -> int:
+    try:
+        limit = int(request.GET.get("limit", "100"))
+    except (TypeError, ValueError):
+        raise ValueError("limit deve ser inteiro entre 1 e 500") from None
+    if not 1 <= limit <= V4_MAX_CHANGE_LIMIT:
+        raise ValueError("limit deve ser inteiro entre 1 e 500")
+    return limit
 
 
 def _autorizacao_v3(request, versao: str = "v3"):
@@ -811,7 +860,7 @@ def _lancamento_v4(entry: CashFlowEntry) -> dict:
     }
 
 
-def _metadata_v4(referencia: date) -> dict:
+def _metadata_v4(referencia: date, watermark: str) -> dict:
     contas = list(FinancialAccount.objects.select_related("owner", "institution").order_by("id"))
     categorias = list(CashFlowCategory.objects.order_by("id"))
     lancamentos = CashFlowEntry.objects.order_by("id")
@@ -830,10 +879,10 @@ def _metadata_v4(referencia: date) -> dict:
         "contrato": CONTRATO_V4,
         "sistema": SISTEMA,
         "generated_at": timezone.now().isoformat(),
-        "high_watermark": None,
+        "high_watermark": watermark,
         "capabilities": {
             "snapshot": True,
-            "changes": False,
+            "changes": True,
             "resources": {"account": True, "cash_entry": True, "category": True, "transfer": True},
             "decimal_strings": True,
             "read_only": True,
@@ -855,8 +904,10 @@ def _metadata_v4(referencia: date) -> dict:
                 "note": "Transferências são publicadas como agrupadores quando há operação bancária associada.",
             },
             "incremental_changes": {
-                "state": "unavailable",
-                "reason": "O CB ainda não mantém outbox transacional nem cursor de alterações/tombstones.",
+                "state": "available",
+                "endpoint": "/patrimonio/v4/changes",
+                "mode": "snapshot_invalidation",
+                "high_watermark": watermark,
             },
         },
         "snapshot_as_of": referencia.isoformat(),
@@ -865,14 +916,61 @@ def _metadata_v4(referencia: date) -> dict:
 
 @require_GET
 def metadata_v4_view(request):
-    """Capacidades e cobertura do snapshot v4; mudanças incrementais ainda não existem."""
+    """Capacidades, cobertura e cursor da outbox de invalidação v4."""
     erro = _autorizacao_v3(request, "v4")
     if erro:
         return erro
     with transaction.atomic():
         with connection.cursor() as cursor:
             cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
-        payload = _metadata_v4(timezone.localdate())
+        payload = _metadata_v4(timezone.localdate(), _cursor_v4(_watermark_v4()))
+    return _resposta_v3(payload)
+
+
+@require_GET
+def changes_v4_view(request):
+    """Invalidações ordenadas; o consumidor reconcilia pelo snapshot v4."""
+    erro = _autorizacao_v3(request, "v4")
+    if erro:
+        return erro
+    try:
+        after = _cursor_v4_ler(request.GET.get("after"))
+        limit = _change_limit_v4(request)
+    except ValueError as exc:
+        return JsonResponse({"erro": str(exc)}, status=400)
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        watermark = _watermark_v4()
+        rows = list(
+            PatrimonioV4Outbox.objects.filter(cursor__gt=after, cursor__lte=watermark)
+            .order_by("cursor")[: limit + 1]
+        )
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        next_position = rows[-1].cursor if rows else watermark
+        source_resource = {"cash_entry": "cash-entry"}
+        items = [
+            {
+                "cursor": _cursor_v4(item.cursor),
+                "resource": item.resource,
+                "source_id": _source_id_v4(source_resource.get(item.resource, item.resource), item.source_record_id),
+                "operation": item.operation,
+                "changed_at": item.changed_at.isoformat(),
+                "payload": {"mode": "snapshot_required"} if item.operation == "upsert" else None,
+            }
+            for item in rows
+        ]
+        payload = {
+            "contrato": CONTRATO_V4,
+            "recurso": "changes",
+            "sistema": SISTEMA,
+            "mode": "snapshot_invalidation",
+            "high_watermark": _cursor_v4(watermark),
+            "next_cursor": _cursor_v4(next_position),
+            "has_more": has_more,
+            "items": items,
+        }
     return _resposta_v3(payload)
 
 
@@ -886,7 +984,8 @@ def snapshot_v4_view(request):
     with transaction.atomic():
         with connection.cursor() as cursor:
             cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
-        metadata = _metadata_v4(referencia)
+        watermark = _cursor_v4(_watermark_v4())
+        metadata = _metadata_v4(referencia, watermark)
         contas = list(FinancialAccount.objects.select_related("owner", "institution").order_by("id"))
         contas_ativas = [conta.id for conta in contas if conta.initial_balance_date <= referencia]
         saldos = decimal_balances_before_by_account(
@@ -940,10 +1039,8 @@ def snapshot_v4_view(request):
             "contrato": CONTRATO_V4,
             "sistema": SISTEMA,
             "generated_at": metadata["generated_at"],
-            # Identifica esta leitura integral, sem prometer que seja um cursor
-            # retomável enquanto o CB não tiver outbox transacional.
             "snapshot_id": f"{SISTEMA}:snapshot:{metadata['generated_at']}",
-            "high_watermark": None,
+            "high_watermark": watermark,
             "capabilities": metadata["capabilities"],
             "coverage": metadata["coverage"],
             "snapshot_as_of": referencia.isoformat(),
