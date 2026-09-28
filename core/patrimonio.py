@@ -63,7 +63,7 @@ from urllib.parse import urlencode
 
 from django.core.paginator import Paginator
 from django.db import connection, transaction
-from django.db.models import Case, CharField, Count, DateField, F, Max, Min, Q, Sum, Value, When
+from django.db.models import Case, CharField, Count, DateField, F, Max, Min, Prefetch, Q, Sum, Value, When
 from django.http import JsonResponse
 from django.urls import reverse
 from django.utils import timezone
@@ -85,11 +85,12 @@ from core.domain.finance import (
     VIEW_REALIZED,
 )
 from reports.services import decimal_balances_before_by_account
-from transactions.models import CashFlowCategory, CashFlowEntry
+from transactions.models import BankOperation, CashFlowCategory, CashFlowEntry
 
 CONTRATO = "patrimonio/v1"
 CONTRATO_V2 = "patrimonio/v2"
 CONTRATO_V3 = "patrimonio/v3"
+CONTRATO_V4 = "patrimonio/v4"
 SISTEMA = "controle-bancario"
 
 #: O token não tem valor padrão e não é gerado: sem ele configurado, a rota não
@@ -119,7 +120,14 @@ def _id_v3(recurso: str, valor: int) -> str:
     return f"{SISTEMA}:{recurso}:{digest}"
 
 
-def _autorizacao_v3(request):
+def _source_id_v4(recurso: str, valor: int) -> str:
+    """Identificador estável e opaco para o contrato de integração v4."""
+    material = f"{SISTEMA}:{recurso}:{valor}".encode()
+    digest = hashlib.sha256(material).hexdigest()[:24]
+    return f"{SISTEMA}:{recurso}:{digest}"
+
+
+def _autorizacao_v3(request, versao: str = "v3"):
     """Retorna uma resposta de erro ou ``None`` quando o Bearer é válido."""
     esperado = _token_configurado()
     if not esperado:
@@ -129,7 +137,7 @@ def _autorizacao_v3(request):
         )
     recebido = _token_da_requisicao(request)
     if not recebido or not secrets.compare_digest(recebido, esperado):
-        logger.warning("Contrato patrimonial v3 recusado: token ausente ou inválido.")
+        logger.warning("Contrato patrimonial %s recusado: token ausente ou inválido.", versao)
         return JsonResponse({"erro": "não autorizado"}, status=401)
     return None
 
@@ -737,6 +745,211 @@ def metadata_v3_view(request):
         "contas": [_conta_v3(conta) for conta in contas],
         "categorias": [_categoria_v3(categoria) for categoria in categorias],
     })
+
+
+def _conta_v4(conta: FinancialAccount, referencia: date, saldos: dict[int, Decimal]) -> dict:
+    existe_na_data = conta.initial_balance_date <= referencia
+    return {
+        "source_id": _source_id_v4("account", conta.id),
+        "name": conta.account_name,
+        "account_type": conta.account_kind,
+        "currency": conta.currency,
+        "owner": identidade(conta.owner.name),
+        "owner_name": conta.owner.name,
+        "institution": identidade(conta.institution.institution_name),
+        "institution_name": conta.institution.institution_name,
+        "institution_type": conta.institution.institution_type,
+        "initial_balance": str(conta.initial_balance.quantize(MONEY_QUANT)),
+        "initial_balance_date": conta.initial_balance_date.isoformat(),
+        # Conta com início futuro não tem saldo disponível nesta fotografia;
+        # não publicar zero como se fosse um saldo real.
+        "balance": str(saldos.get(conta.id, Decimal("0.00")).quantize(MONEY_QUANT)) if existe_na_data else None,
+        "balance_as_of": referencia.isoformat() if existe_na_data else None,
+        "deep_link": endereco_da_conta(conta, referencia),
+    }
+
+
+def _categoria_v4(categoria: CashFlowCategory) -> dict:
+    return {
+        "source_id": _source_id_v4("category", categoria.id),
+        "name": categoria.category_name,
+        "kind": categoria.kind,
+        "created_at": categoria.created_at.isoformat() if categoria.created_at else None,
+        "updated_at": categoria.updated_at.isoformat() if categoria.updated_at else None,
+    }
+
+
+def _lancamento_v4(entry: CashFlowEntry) -> dict:
+    return {
+        "source_id": _source_id_v4("cash-entry", entry.id),
+        "account_id": _source_id_v4("account", entry.account_id),
+        "category_id": _source_id_v4("category", entry.category_id),
+        "transfer_id": (
+            _source_id_v4("transfer", entry.bank_operation_id)
+            if entry.operation_type == OPERATION_INTERNAL_TRANSFER and entry.bank_operation_id
+            else None
+        ),
+        "description": entry.description,
+        "entry_type": entry.entry_type,
+        "status": entry.status,
+        "category_kind": entry.category.kind,
+        "currency": entry.account.currency,
+        "planned_amount": str(entry.entry_amount.quantize(MONEY_QUANT)),
+        "realized_amount": (
+            str(entry.realized_amount.quantize(MONEY_QUANT))
+            if entry.realized_amount is not None
+            else None
+        ),
+        "due_date": entry.due_date.isoformat(),
+        "realized_date": entry.realized_date.isoformat() if entry.realized_date else None,
+        "operation_type": entry.operation_type,
+        "installment": entry.current_installment,
+        "installments": entry.installments,
+        "is_recurring": entry.is_recurring,
+        "created_at": entry.created_at.isoformat() if entry.created_at else None,
+        "updated_at": entry.updated_at.isoformat() if entry.updated_at else None,
+    }
+
+
+def _metadata_v4(referencia: date) -> dict:
+    contas = list(FinancialAccount.objects.select_related("owner", "institution").order_by("id"))
+    categorias = list(CashFlowCategory.objects.order_by("id"))
+    lancamentos = CashFlowEntry.objects.order_by("id")
+    periodo = lancamentos.aggregate(inicio=Min("due_date"), fim=Max("due_date"))
+    entradas_transferencia = lancamentos.filter(
+        Q(operation_type=OPERATION_INTERNAL_TRANSFER) | Q(category__kind=CATEGORY_KIND_TRANSFER)
+    )
+    sem_grupo = entradas_transferencia.filter(bank_operation_id__isnull=True).count()
+    grupos_incompletos = (
+        BankOperation.objects.filter(operation_type=OPERATION_INTERNAL_TRANSFER)
+        .annotate(quantidade_pernas=Count("entries"))
+        .filter(quantidade_pernas__lt=2)
+        .count()
+    )
+    return {
+        "contrato": CONTRATO_V4,
+        "sistema": SISTEMA,
+        "generated_at": timezone.now().isoformat(),
+        "high_watermark": None,
+        "capabilities": {
+            "snapshot": True,
+            "changes": False,
+            "resources": {"account": True, "cash_entry": True, "category": True, "transfer": True},
+            "decimal_strings": True,
+            "read_only": True,
+        },
+        "coverage": {
+            "account": {"state": "complete", "count": len(contas)},
+            "cash_entry": {
+                "state": "complete",
+                "count": lancamentos.count(),
+                "due_date_from": periodo["inicio"].isoformat() if periodo["inicio"] else None,
+                "due_date_through": periodo["fim"].isoformat() if periodo["fim"] else None,
+                "statuses": [STATUS_REALIZED, STATUS_PENDING, STATUS_PROJECTED],
+            },
+            "category": {"state": "complete", "count": len(categorias)},
+            "transfer": {
+                "state": "partial" if sem_grupo or grupos_incompletos else "complete",
+                "unlinked_cash_entries": sem_grupo,
+                "incomplete_groups": grupos_incompletos,
+                "note": "Transferências são publicadas como agrupadores quando há operação bancária associada.",
+            },
+            "incremental_changes": {
+                "state": "unavailable",
+                "reason": "O CB ainda não mantém outbox transacional nem cursor de alterações/tombstones.",
+            },
+        },
+        "snapshot_as_of": referencia.isoformat(),
+    }
+
+
+@require_GET
+def metadata_v4_view(request):
+    """Capacidades e cobertura do snapshot v4; mudanças incrementais ainda não existem."""
+    erro = _autorizacao_v3(request, "v4")
+    if erro:
+        return erro
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        payload = _metadata_v4(timezone.localdate())
+    return _resposta_v3(payload)
+
+
+@require_GET
+def snapshot_v4_view(request):
+    """Foto consistente dos recursos bancários já persistidos no CB."""
+    erro = _autorizacao_v3(request, "v4")
+    if erro:
+        return erro
+    referencia = timezone.localdate()
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        metadata = _metadata_v4(referencia)
+        contas = list(FinancialAccount.objects.select_related("owner", "institution").order_by("id"))
+        contas_ativas = [conta.id for conta in contas if conta.initial_balance_date <= referencia]
+        saldos = decimal_balances_before_by_account(
+            contas_ativas, referencia + timedelta(days=1), VIEW_REALIZED
+        )
+        categorias = list(CashFlowCategory.objects.order_by("id"))
+        lancamentos = list(
+            CashFlowEntry.objects.select_related("account", "category")
+            .order_by("id")
+        )
+        operacoes = list(
+            BankOperation.objects.filter(operation_type=OPERATION_INTERNAL_TRANSFER)
+            .prefetch_related(Prefetch("entries", queryset=CashFlowEntry.objects.select_related("account")))
+            .order_by("id")
+        )
+        items = [
+            {"resource": "account", "source_id": _source_id_v4("account", conta.id), "payload": _conta_v4(conta, referencia, saldos)}
+            for conta in contas
+        ]
+        items.extend(
+            {"resource": "category", "source_id": _source_id_v4("category", categoria.id), "payload": _categoria_v4(categoria)}
+            for categoria in categorias
+        )
+        items.extend(
+            {"resource": "cash_entry", "source_id": _source_id_v4("cash-entry", entry.id), "payload": _lancamento_v4(entry)}
+            for entry in lancamentos
+        )
+        for operacao in operacoes:
+            pernas = sorted(operacao.entries.all(), key=lambda entry: entry.id)
+            items.append({
+                "resource": "transfer",
+                "source_id": _source_id_v4("transfer", operacao.id),
+                "payload": {
+                    "source_id": _source_id_v4("transfer", operacao.id),
+                    "operation_type": operacao.operation_type,
+                    "status": operacao.status,
+                    "legs": [
+                        {
+                            "cash_entry_id": _source_id_v4("cash-entry", entry.id),
+                            "account_id": _source_id_v4("account", entry.account_id),
+                            "entry_type": entry.entry_type,
+                            "currency": entry.account.currency,
+                            "planned_amount": str(entry.entry_amount.quantize(MONEY_QUANT)),
+                            "realized_amount": str(entry.realized_amount.quantize(MONEY_QUANT)) if entry.realized_amount is not None else None,
+                        }
+                        for entry in pernas
+                    ],
+                },
+            })
+        payload = {
+            "contrato": CONTRATO_V4,
+            "sistema": SISTEMA,
+            "generated_at": metadata["generated_at"],
+            # Identifica esta leitura integral, sem prometer que seja um cursor
+            # retomável enquanto o CB não tiver outbox transacional.
+            "snapshot_id": f"{SISTEMA}:snapshot:{metadata['generated_at']}",
+            "high_watermark": None,
+            "capabilities": metadata["capabilities"],
+            "coverage": metadata["coverage"],
+            "snapshot_as_of": referencia.isoformat(),
+            "items": items,
+        }
+    return _resposta_v3(payload)
 
 
 # ---------------------------------------------------------------------------

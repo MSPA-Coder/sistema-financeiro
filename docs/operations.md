@@ -210,6 +210,23 @@ aparece longe da causa.
 
 ## Resumo publicado para o consolidador
 
+### Wealthfolio v4 (piloto)
+
+O bootstrap somente leitura está disponível em `GET /patrimonio/v4/metadata` e
+`GET /patrimonio/v4/snapshot`, com o mesmo `PATRIMONIO_TOKEN` global das rotas
+anteriores. O snapshot contém contas, categorias, lançamentos persistidos e
+grupos de transferência, lidos na mesma visão consistente do PostgreSQL.
+`high_watermark` é `null` e `capabilities.changes` é `false`: o CB ainda não
+tem outbox transacional nem tombstones, portanto o consumidor deve repetir o
+bootstrap para obter uma nova foto e não pode tratar timestamps como cursor.
+
+```bash
+printf 'Authorization: Bearer %s\n' "$(sudo cat .secrets/patrimonio_token)" \
+  | curl -s -H @- "https://bancario-mspa.duckdns.org/patrimonio/v4/metadata"
+printf 'Authorization: Bearer %s\n' "$(sudo cat .secrets/patrimonio_token)" \
+  | curl -s -H @- "https://bancario-mspa.duckdns.org/patrimonio/v4/snapshot"
+```
+
 `GET /patrimonio/v1/resumo` devolve, em JSON, o caixa que este sistema conhece:
 uma linha por conta, com moeda e saldo na data pedida, mais o total **por
 moeda** -- nunca somado entre moedas. É o que o consolidador de patrimônio lê;
