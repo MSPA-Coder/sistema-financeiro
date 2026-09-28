@@ -66,7 +66,7 @@ ROTAS_ABERTAS: dict[str, str] = {
         "integracao maquina a maquina: mesma autorizacao Bearer da v1/v2, "
         "somente leitura e sem sessao de usuario."
     ),
-    "patrimonio/v3/metadata": (
+    "patrimonio/v4/snapshot": "integracao maquina a maquina: leitura Bearer sem sessao de usuario.",`n    "patrimonio/v4/changes": "integracao maquina a maquina: leitura Bearer sem sessao de usuario.",`n    "patrimonio/v4/metadata": "integracao maquina a maquina: leitura Bearer sem sessao de usuario.",`n    "patrimonio/v3/metadata": (
         "integracao maquina a maquina: mesma autorizacao Bearer da v1/v2, "
         "somente leitura e sem sessao de usuario."
     ),
