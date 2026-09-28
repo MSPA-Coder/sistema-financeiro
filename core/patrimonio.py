@@ -65,7 +65,20 @@ from urllib.parse import urlencode
 
 from django.core.paginator import Paginator
 from django.db import connection, transaction
-from django.db.models import Case, CharField, Count, DateField, F, Max, Min, Prefetch, Q, Sum, Value, When
+from django.db.models import (
+    Case,
+    CharField,
+    Count,
+    DateField,
+    F,
+    Max,
+    Min,
+    Prefetch,
+    Q,
+    Sum,
+    Value,
+    When,
+)
 from django.http import JsonResponse
 from django.urls import reverse
 from django.utils import timezone
