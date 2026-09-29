@@ -241,7 +241,12 @@ def test_todo_servico_roda_sem_privilegios_extras():
 
 def test_segredos_chegam_por_arquivo_montado_e_nunca_pelo_ambiente():
     """O caminho suportado monta arquivos; segredo no ambiente vaza em `inspect`."""
-    diretos = {"POSTGRES_PASSWORD", "DJANGO_SECRET_KEY", "PATRIMONIO_TOKEN"}
+    diretos = {
+        "POSTGRES_PASSWORD",
+        "DJANGO_SECRET_KEY",
+        "PATRIMONIO_TOKEN",
+        "PATRIMONIO_INTEGRATION_TOKEN",
+    }
     problemas = []
     for nome, servico in _servicos().items():
         ambiente = servico.get("environment") or {}
@@ -274,6 +279,23 @@ def test_quality_nao_recebe_segredo_de_producao():
         segredos = servicos[nome].get("secrets") or []
         assert segredos
         assert all(segredo.startswith("quality_") for segredo in segredos), (nome, segredos)
+
+
+def test_token_v4_tem_segredo_independente_no_web_e_no_quality():
+    servicos = _servicos()
+    web = servicos["web"]
+    quality = servicos["quality"]
+
+    assert web["environment"]["PATRIMONIO_TOKEN_FILE"] == "/run/secrets/patrimonio_token"
+    assert web["environment"]["PATRIMONIO_INTEGRATION_TOKEN_FILE"] == (
+        "/run/secrets/patrimonio_integration_token"
+    )
+    assert "patrimonio_token" in web["secrets"]
+    assert "patrimonio_integration_token" in web["secrets"]
+    assert quality["environment"]["PATRIMONIO_INTEGRATION_TOKEN_FILE"] == (
+        "/run/secrets/quality_patrimonio_integration_token"
+    )
+    assert "quality_patrimonio_integration_token" in quality["secrets"]
 
 
 def test_bootstrap_de_migrations_antecipa_o_web():

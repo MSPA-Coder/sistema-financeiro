@@ -66,4 +66,5 @@ def test_provisionamento_valida_antes_de_escrever_e_preserva_existentes() -> Non
     assert '"QUALITY_DJANGO_SECRET_KEY"' in provision
     assert '"QUALITY_POSTGRES_PASSWORD"' in provision
     assert '"QUALITY_PATRIMONIO_TOKEN"' in provision
+    assert '"QUALITY_PATRIMONIO_INTEGRATION_TOKEN"' in provision
     assert "valor-placeholder" in provision
