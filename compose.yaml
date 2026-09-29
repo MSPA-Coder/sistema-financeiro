@@ -40,6 +40,7 @@ x-app-secrets: &app-secrets
     - django_secret_key
     - postgres_app_password
     - patrimonio_token
+    - patrimonio_integration_token
 
 # A suíte nunca precisa ler os arquivos usados pelos serviços operacionais.
 # Além de tornar o isolamento explícito, isso evita que uma execução local da
@@ -53,6 +54,7 @@ x-quality-environment: &quality-environment
   POSTGRES_DB: ${POSTGRES_DB:-controle_bancario}
   DJANGO_SECRET_KEY_FILE: /run/secrets/quality_django_secret_key
   PATRIMONIO_TOKEN_FILE: /run/secrets/quality_patrimonio_token
+  PATRIMONIO_INTEGRATION_TOKEN_FILE: /run/secrets/quality_patrimonio_integration_token
   REQUIRE_FILE_SECRETS: "true"
   TZ: America/Sao_Paulo
   PYTHONUNBUFFERED: "1"
@@ -62,6 +64,7 @@ x-quality-secrets: &quality-secrets
     - quality_django_secret_key
     - quality_postgres_password
     - quality_patrimonio_token
+    - quality_patrimonio_integration_token
 
 # O portão roda em um contêiner descartável, mas ainda deve ter a mesma
 # fronteira de privilégio do runtime. /tmp e logs são os únicos destinos que
@@ -223,6 +226,7 @@ services:
     logging: *service-logging
     environment:
       <<: *app-environment
+      PATRIMONIO_INTEGRATION_TOKEN_FILE: /run/secrets/patrimonio_integration_token
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
       CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
       DEBUG: ${DEBUG:-False}
@@ -344,9 +348,13 @@ secrets:
   # para quem usa a integração de patrimônio.
   patrimonio_token:
     file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/patrimonio_token
+  patrimonio_integration_token:
+    file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/patrimonio_integration_token
   quality_django_secret_key:
     file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/quality_django_secret_key
   quality_postgres_password:
     file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/quality_postgres_password
   quality_patrimonio_token:
     file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/quality_patrimonio_token
+  quality_patrimonio_integration_token:
+    file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/quality_patrimonio_integration_token

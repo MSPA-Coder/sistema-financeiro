@@ -41,6 +41,8 @@ from transactions.models import CashFlowCategory, CashFlowEntry
 pytestmark = pytest.mark.django_db
 
 TOKEN = "token-de-teste-com-mais-de-trinta-e-dois-caracteres"
+TOKEN_V4 = "token-de-integracao-v4-com-mais-de-trinta-e-dois-caracteres"
+TOKEN_V4_ROTACIONADO = "novo-token-de-integracao-v4-apos-rotacao-segura"
 ROTA = "/patrimonio/v1/resumo"
 ROTA_V2 = "/patrimonio/v2/resumo"
 ROTA_V3_ATIVIDADES = "/patrimonio/v3/activities"
@@ -111,6 +113,44 @@ def pedir_v3(rota, token: str | None = TOKEN, **parametros):
     return Client().get(rota, parametros, **cabecalhos)
 
 
+def configurar_token_v4(monkeypatch, tmp_path, token: str = TOKEN_V4):
+    arquivo = tmp_path / "patrimonio_integration_token"
+    arquivo.write_text(token, encoding="utf-8")
+    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO_V4, raising=False)
+    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", str(arquivo))
+    return token
+
+
+def test_cursor_v4_usa_token_exclusivo_e_invalida_assinaturas_antigas(
+    monkeypatch, tmp_path
+):
+    legado = tmp_path / "patrimonio_token"
+    exclusivo = tmp_path / "patrimonio_integration_token"
+    rotacionado = tmp_path / "patrimonio_integration_token_rotacionado"
+    legado.write_text(TOKEN, encoding="utf-8")
+    exclusivo.write_text(TOKEN_V4, encoding="utf-8")
+    rotacionado.write_text(TOKEN_V4_ROTACIONADO, encoding="utf-8")
+    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO, raising=False)
+    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO}_FILE", str(legado))
+    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO_V4, raising=False)
+    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", str(exclusivo))
+
+    cursor_v4 = patrimonio._cursor_v4(41)
+    assert patrimonio._cursor_v4_ler(cursor_v4) == 41
+
+    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", str(rotacionado))
+    with pytest.raises(ValueError, match="cursor inválido"):
+        patrimonio._cursor_v4_ler(cursor_v4)
+
+    # Simula um cursor emitido pela implementação anterior, assinada pelo
+    # token legado. A chave exclusiva atual não deve aceitá-lo.
+    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", str(legado))
+    cursor_legado = patrimonio._cursor_v4(42)
+    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", str(exclusivo))
+    with pytest.raises(ValueError, match="cursor inválido"):
+        patrimonio._cursor_v4_ler(cursor_legado)
+
+
 # --- A chave é a permissão -------------------------------------------------
 
 
@@ -168,6 +208,55 @@ def test_sob_o_compose_a_variavel_direta_nao_concede_o_token(contas, monkeypatch
     resposta = pedir()
 
     assert resposta.status_code == 503
+
+
+def test_v4_nao_usa_o_token_das_rotas_anteriores(contas, monkeypatch, tmp_path):
+    arquivo_legado = tmp_path / "patrimonio_token"
+    arquivo_legado.write_text(TOKEN, encoding="utf-8")
+    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO, raising=False)
+    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO}_FILE", str(arquivo_legado))
+    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO_V4, raising=False)
+    monkeypatch.delenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", raising=False)
+
+    resposta_v4 = Client().get(
+        "/patrimonio/v4/metadata", HTTP_AUTHORIZATION=f"Bearer {TOKEN}"
+    )
+    resposta_legada = pedir()
+
+    assert resposta_v4.status_code == 503
+    assert resposta_legada.status_code == 200
+
+
+def test_v4_recusa_o_token_das_rotas_anteriores(contas, monkeypatch, tmp_path):
+    arquivo_legado = tmp_path / "patrimonio_token"
+    arquivo_legado.write_text(TOKEN, encoding="utf-8")
+    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO, raising=False)
+    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO}_FILE", str(arquivo_legado))
+    configurar_token_v4(monkeypatch, tmp_path)
+
+    resposta = Client().get(
+        "/patrimonio/v4/metadata", HTTP_AUTHORIZATION=f"Bearer {TOKEN}"
+    )
+
+    assert resposta.status_code == 401
+
+
+@pytest.mark.django_db(transaction=True)
+def test_v4_aceita_token_de_integracao_sem_mudar_autenticacao_legada(
+    contas, monkeypatch, tmp_path
+):
+    arquivo_legado = tmp_path / "patrimonio_token"
+    arquivo_legado.write_text(TOKEN, encoding="utf-8")
+    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO, raising=False)
+    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO}_FILE", str(arquivo_legado))
+    token_v4 = configurar_token_v4(monkeypatch, tmp_path)
+
+    resposta_v4 = Client().get(
+        "/patrimonio/v4/snapshot", HTTP_AUTHORIZATION=f"Bearer {token_v4}"
+    )
+
+    assert resposta_v4.status_code == 200
+    assert resposta_v4.json()["contrato"] == "patrimonio/v4"
 
 
 def test_a_resposta_nao_pode_ser_guardada_por_intermediario(contas, com_token):

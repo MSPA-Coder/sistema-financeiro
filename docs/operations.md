@@ -202,6 +202,19 @@ sudo chown --reference=.secrets/django_secret_key .secrets/patrimonio_token
 sudo chmod --reference=.secrets/django_secret_key .secrets/patrimonio_token
 ```
 
+Para o contrato v4, crie também `.secrets/patrimonio_integration_token` antes
+de iniciar a versão que declara esse segredo no Compose. Este arquivo é uma
+credencial independente; não substitua nem regenere `.secrets/patrimonio_token`.
+O provisionador local cria ambos quando não existem, preservando arquivos já
+presentes. No servidor, gere o arquivo v4 e copie as permissões do segredo do
+Django:
+
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(48))" > .secrets/patrimonio_integration_token
+sudo chown --reference=.secrets/django_secret_key .secrets/patrimonio_integration_token
+sudo chmod --reference=.secrets/django_secret_key .secrets/patrimonio_integration_token
+```
+
 **Dono e modo copiados do `django_secret_key`, e não `ubuntu` com `600`.** O
 Compose sem Swarm monta o segredo com as permissões do arquivo no host, e o
 contêiner lê como o usuário `app`, que não é o `ubuntu`. Um token que só o
@@ -213,19 +226,21 @@ aparece longe da causa.
 ### Wealthfolio v4 (piloto)
 
 O bootstrap somente leitura está disponível em `GET /patrimonio/v4/metadata`,
-`GET /patrimonio/v4/snapshot` e `GET /patrimonio/v4/changes`, com o mesmo `PATRIMONIO_TOKEN` global das rotas
-anteriores. O snapshot contém contas, categorias, lançamentos persistidos e
+`GET /patrimonio/v4/snapshot` e `GET /patrimonio/v4/changes`, com o token
+exclusivo `PATRIMONIO_INTEGRATION_TOKEN`. O provisionador cria
+`.secrets/patrimonio_integration_token` sem alterar `patrimonio_token`; as rotas
+v1-v3 continuam usando `PATRIMONIO_TOKEN`. O snapshot contém contas, categorias, lançamentos persistidos e
 grupos de transferência, lidos na mesma visão consistente do PostgreSQL.
 O feed é uma outbox de invalidação: `high_watermark` e `next_cursor` são
 cursores assinados. Ao receber uma mudança, o consumidor busca um novo snapshot
 e só então persiste seu watermark. Não use timestamps como cursor.
 
 ```bash
-printf 'Authorization: Bearer %s\n' "$(sudo cat .secrets/patrimonio_token)" \
+printf 'Authorization: Bearer %s\n' "$(sudo cat .secrets/patrimonio_integration_token)" \
   | curl -s -H @- "https://bancario-mspa.duckdns.org/patrimonio/v4/metadata"
-printf 'Authorization: Bearer %s\n' "$(sudo cat .secrets/patrimonio_token)" \
+printf 'Authorization: Bearer %s\n' "$(sudo cat .secrets/patrimonio_integration_token)" \
   | curl -s -H @- "https://bancario-mspa.duckdns.org/patrimonio/v4/snapshot"
-printf 'Authorization: Bearer %s\n' "$(sudo cat .secrets/patrimonio_token)" \
+printf 'Authorization: Bearer %s\n' "$(sudo cat .secrets/patrimonio_integration_token)" \
   | curl -s -H @- "https://bancario-mspa.duckdns.org/patrimonio/v4/changes?limit=100"
 ```
 

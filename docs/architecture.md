@@ -225,8 +225,9 @@ qualquer caminho de escrita.
 
 `GET /patrimonio/v4/metadata`, `GET /patrimonio/v4/snapshot` e
 `GET /patrimonio/v4/changes` iniciam a
-integração com o Wealthfolio sem alterar os contratos v1-v3. Ambas usam o
-mesmo Bearer global e são somente leitura. O snapshot lê contas, categorias,
+integração com o Wealthfolio sem alterar os contratos v1-v3. Usam o Bearer
+exclusivo `PATRIMONIO_INTEGRATION_TOKEN`; v1-v3 continuam com
+`PATRIMONIO_TOKEN`. Todas são somente leitura. O snapshot lê contas, categorias,
 lançamentos de caixa e agrupadores de transferência sob `REPEATABLE READ`,
 com valores decimais em texto e IDs opacos e estáveis derivados da identidade
 da fonte e da chave persistida.
@@ -234,7 +235,9 @@ da fonte e da chave persistida.
 O v4 mantém uma outbox de invalidação transacional. Uma única linha de contador
 é travada e incrementada na transação que altera o registro de origem, para que
 os cursores respeitem a ordem de commit. Cada mudança pede um novo snapshot
-consistente; o feed não recria lançamentos financeiros no consumidor.
+consistente; o feed não recria lançamentos financeiros no consumidor. Os
+cursores são assinados pelo token v4, de modo que sua rotação também invalida
+cursores emitidos com o segredo anterior.
 Exclusões publicam tombstones, e os cursores são assinados com o segredo do
 contrato. Transferências sem operação bancária associada permanecem visíveis
 como lançamentos de caixa e são contadas como não vinculadas na cobertura, sem

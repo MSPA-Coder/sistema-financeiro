@@ -113,6 +113,7 @@ SISTEMA = "controle-bancario"
 #: atende. Um segredo gerado no arranque valeria até o próximo reinício e daria
 #: a impressão de que a integração está configurada quando não está.
 NOME_DO_SEGREDO = "PATRIMONIO_TOKEN"
+NOME_DO_SEGREDO_V4 = "PATRIMONIO_INTEGRATION_TOKEN"
 COMPRIMENTO_MINIMO_DO_TOKEN = 32
 # O Dashboard oferece recortes de até cinco anos e "Tudo". O teto de dez
 # anos impede uma consulta acidentalmente sem limite sem bloquear esses usos.
@@ -152,7 +153,7 @@ def _watermark_v4() -> int:
 
 def _cursor_v4(cursor: int) -> str:
     material = f"v1:{SISTEMA}:{cursor}".encode()
-    secret = (_token_configurado() or "").encode()
+    secret = (_token_configurado(NOME_DO_SEGREDO_V4) or "").encode()
     signature = hmac.new(secret, b"patrimonio-v4-cursor:" + material, hashlib.sha256).digest()
     return urlsafe_b64encode(material + b"." + signature).decode().rstrip("=")
 
@@ -166,7 +167,7 @@ def _cursor_v4_ler(raw: str | None) -> int:
         decoded = urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
         material, signature = decoded.rsplit(b".", 1)
         expected = hmac.new(
-            (_token_configurado() or "").encode(),
+            (_token_configurado(NOME_DO_SEGREDO_V4) or "").encode(),
             b"patrimonio-v4-cursor:" + material,
             hashlib.sha256,
         ).digest()
@@ -191,7 +192,7 @@ def _change_limit_v4(request) -> int:
 
 def _autorizacao_v3(request, versao: str = "v3"):
     """Retorna uma resposta de erro ou ``None`` quando o Bearer é válido."""
-    esperado = _token_configurado()
+    esperado = _token_configurado(NOME_DO_SEGREDO_V4 if versao == "v4" else NOME_DO_SEGREDO)
     if not esperado:
         return JsonResponse(
             {"erro": "integração de patrimônio não configurada neste servidor"},
@@ -263,7 +264,7 @@ def identidade(nome: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", sem_acento.lower()).strip("-")
 
 
-def _token_configurado() -> str | None:
+def _token_configurado(nome_do_segredo: str = NOME_DO_SEGREDO) -> str | None:
     """O token configurado, ou `None` quando não há um utilizável.
 
     Um token curto demais ou igual ao do `.env.example` é recusado como se não
@@ -278,14 +279,14 @@ def _token_configurado() -> str | None:
     exige_arquivo = os.environ.get("REQUIRE_FILE_SECRETS", "false").lower() == "true"
     try:
         return resolver_segredo(
-            NOME_DO_SEGREDO,
+            nome_do_segredo,
             aceitar_variavel=not exige_arquivo,
             obrigatorio=False,
             comprimento_minimo=COMPRIMENTO_MINIMO_DO_TOKEN,
             valores_recusados=frozenset({"troque-este-token", "changeme"}),
         )
     except SegredoInvalidoError as erro:
-        logger.error("%s configurado mas recusado: %s", NOME_DO_SEGREDO, erro)
+        logger.error("%s configurado mas recusado: %s", nome_do_segredo, erro)
         return None
 
 
@@ -929,7 +930,7 @@ def _metadata_v4(referencia: date, watermark: str) -> dict:
 
 @require_GET
 def metadata_v4_view(request):
-    """Capacidades, cobertura e cursor da outbox de invalidação v4."""
+    """Capacidades, cobertura e cursor da outbox v4, sob token exclusivo."""
     erro = _autorizacao_v3(request, "v4")
     if erro:
         return erro

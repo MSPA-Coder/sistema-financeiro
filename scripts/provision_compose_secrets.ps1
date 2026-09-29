@@ -93,6 +93,18 @@ if (($Force -or -not (Test-Path -LiteralPath $patrimonioPath)) -and
 }
 $secretSources["patrimonio_token"] = "PATRIMONIO_TOKEN"
 
+# O contrato v4 tem credencial separada para permitir rotação independente sem
+# alterar o Bearer das rotas anteriores. Gera-se uma quando ausente; o arquivo
+# existente permanece a fonte de verdade, salvo uso explícito de -Force.
+$integrationTokenPath = Join-Path $secretsPath "patrimonio_integration_token"
+if (($Force -or -not (Test-Path -LiteralPath $integrationTokenPath)) -and
+    (-not $settings.ContainsKey("PATRIMONIO_INTEGRATION_TOKEN") -or [string]::IsNullOrWhiteSpace($settings["PATRIMONIO_INTEGRATION_TOKEN"]))) {
+    $settings["PATRIMONIO_INTEGRATION_TOKEN"] = New-UrlSafeSecret
+} elseif ($Force -or -not (Test-Path -LiteralPath $integrationTokenPath)) {
+    Assert-SecretValue -Name "PATRIMONIO_INTEGRATION_TOKEN" -Value $settings["PATRIMONIO_INTEGRATION_TOKEN"]
+}
+$secretSources["patrimonio_integration_token"] = "PATRIMONIO_INTEGRATION_TOKEN"
+
 # A senha do papel restrito da aplicação também não é escolhida por ninguém:
 # o `db-provision` a aplica ao papel a cada subida. Gerada quando ausente, ou
 # lida de POSTGRES_APP_PASSWORD se o arquivo de ambiente a fixar.
@@ -111,19 +123,16 @@ $secretSources["postgres_app_password"] = "POSTGRES_APP_PASSWORD"
 $settings["QUALITY_DJANGO_SECRET_KEY"] = New-UrlSafeSecret
 $settings["QUALITY_POSTGRES_PASSWORD"] = New-UrlSafeSecret
 $settings["QUALITY_PATRIMONIO_TOKEN"] = New-UrlSafeSecret
+$settings["QUALITY_PATRIMONIO_INTEGRATION_TOKEN"] = New-UrlSafeSecret
 $secretSources["quality_django_secret_key"] = "QUALITY_DJANGO_SECRET_KEY"
 $secretSources["quality_postgres_password"] = "QUALITY_POSTGRES_PASSWORD"
 $secretSources["quality_patrimonio_token"] = "QUALITY_PATRIMONIO_TOKEN"
+$secretSources["quality_patrimonio_integration_token"] = "QUALITY_PATRIMONIO_INTEGRATION_TOKEN"
 
 # Faça toda a validação de destino antes da primeira escrita. Sem este
 # preflight, um arquivo já existente no fim da enumeração poderia deixar a
 # provisão pela metade, misturando uma rotação nova com credenciais antigas.
 $destinations = @($secretSources.Keys | ForEach-Object { Join-Path $secretsPath $_ })
-$destinations += @(
-    (Join-Path $secretsPath "quality_django_secret_key"),
-    (Join-Path $secretsPath "quality_postgres_password"),
-    (Join-Path $secretsPath "quality_patrimonio_token")
-)
 $invalidDestinations = @($destinations | Where-Object { Test-Path -LiteralPath $_ -PathType Container })
 if ($invalidDestinations.Count -gt 0) {
     $names = $invalidDestinations | ForEach-Object { Split-Path -Leaf $_ }
