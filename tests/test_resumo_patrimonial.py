@@ -42,6 +42,7 @@ pytestmark = pytest.mark.django_db
 
 TOKEN = "token-de-teste-com-mais-de-trinta-e-dois-caracteres"
 TOKEN_V4 = "token-de-integracao-v4-com-mais-de-trinta-e-dois-caracteres"
+TOKEN_V4_ROTACIONADO = "novo-token-de-integracao-v4-apos-rotacao-segura"
 ROTA = "/patrimonio/v1/resumo"
 ROTA_V2 = "/patrimonio/v2/resumo"
 ROTA_V3_ATIVIDADES = "/patrimonio/v3/activities"
@@ -118,6 +119,36 @@ def configurar_token_v4(monkeypatch, tmp_path, token: str = TOKEN_V4):
     monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO_V4, raising=False)
     monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", str(arquivo))
     return token
+
+
+def test_cursor_v4_usa_token_exclusivo_e_invalida_assinaturas_antigas(
+    monkeypatch, tmp_path
+):
+    legado = tmp_path / "patrimonio_token"
+    exclusivo = tmp_path / "patrimonio_integration_token"
+    rotacionado = tmp_path / "patrimonio_integration_token_rotacionado"
+    legado.write_text(TOKEN, encoding="utf-8")
+    exclusivo.write_text(TOKEN_V4, encoding="utf-8")
+    rotacionado.write_text(TOKEN_V4_ROTACIONADO, encoding="utf-8")
+    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO, raising=False)
+    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO}_FILE", str(legado))
+    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO_V4, raising=False)
+    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", str(exclusivo))
+
+    cursor_v4 = patrimonio._cursor_v4(41)
+    assert patrimonio._cursor_v4_ler(cursor_v4) == 41
+
+    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", str(rotacionado))
+    with pytest.raises(ValueError, match="cursor inválido"):
+        patrimonio._cursor_v4_ler(cursor_v4)
+
+    # Simula um cursor emitido pela implementação anterior, assinada pelo
+    # token legado. A chave exclusiva atual não deve aceitá-lo.
+    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", str(legado))
+    cursor_legado = patrimonio._cursor_v4(42)
+    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", str(exclusivo))
+    with pytest.raises(ValueError, match="cursor inválido"):
+        patrimonio._cursor_v4_ler(cursor_legado)
 
 
 # --- A chave é a permissão -------------------------------------------------
