@@ -136,6 +136,12 @@ def test_cursor_v4_usa_token_exclusivo_e_invalida_assinaturas_antigas(
     monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO_V4, raising=False)
     monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", str(exclusivo))
 
+    # O HMAC binário pode conter o ponto usado como separador. O parser deve
+    # usar o tamanho fixo da assinatura, não procurar o último ponto.
+    for position in range(200):
+        cursor = patrimonio._cursor_v4(position)
+        assert patrimonio._cursor_v4_ler(cursor) == position
+
     cursor_v4 = patrimonio._cursor_v4(41)
     assert patrimonio._cursor_v4_ler(cursor_v4) == 41
 

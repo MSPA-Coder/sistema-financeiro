@@ -165,7 +165,9 @@ def _cursor_v4_ler(raw: str | None) -> int:
         raise ValueError("cursor inválido")
     try:
         decoded = urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
-        material, signature = decoded.rsplit(b".", 1)
+        if len(decoded) < 34 or decoded[-33:-32] != b".":
+            raise ValueError("cursor inválido")
+        material, signature = decoded[:-33], decoded[-32:]
         expected = hmac.new(
             (_token_configurado(NOME_DO_SEGREDO_V4) or "").encode(),
             b"patrimonio-v4-cursor:" + material,
