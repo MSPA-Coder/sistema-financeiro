@@ -21,6 +21,7 @@ from decimal import Decimal
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.test import Client
 
 from accounts.models import AccountOwner
@@ -36,7 +37,7 @@ from core.domain.finance import (
     STATUS_REALIZED,
 )
 from core.domain.identity import USER_TYPE_ADMINISTRATOR
-from transactions.models import CashFlowCategory, CashFlowEntry
+from transactions.models import BankOperation, CashFlowCategory, CashFlowEntry
 
 pytestmark = pytest.mark.django_db
 
@@ -504,8 +505,8 @@ def test_v2_publica_saldo_inicial_do_periodo_como_ajuste_de_base(contas, com_tok
 @pytest.mark.django_db(transaction=True)
 def test_v2_agrega_no_banco_sem_misturar_moedas_ou_valor_previsto(contas, com_token):
     categoria = CashFlowCategory.objects.create(category_name="Gerencial USD v2")
-    transferencia_legada = CashFlowCategory.objects.create(
-        category_name="Transferência por operação v2"
+    transferencia = CashFlowCategory.objects.create(
+        category_name="Transferência por operação v2", kind=CATEGORY_KIND_TRANSFER
     )
     for valor in (Decimal("11.11"), Decimal("1.11")):
         CashFlowEntry.objects.create(
@@ -515,20 +516,42 @@ def test_v2_agrega_no_banco_sem_misturar_moedas_ou_valor_previsto(contas, com_to
             realized_date=date(2026, 2, 20), realized_amount=valor,
             status=STATUS_REALIZED,
         )
-    CashFlowEntry.objects.create(
-        account=contas["em_reais"], category=transferencia_legada,
-        entry_type=ENTRY_TYPE_EXPENSE, description="Transferência antiga",
-        entry_amount=Decimal("25.00"), due_date=date(2026, 2, 20),
-        realized_date=date(2026, 2, 20), realized_amount=Decimal("20.00"),
-        status=STATUS_REALIZED, operation_type=OPERATION_INTERNAL_TRANSFER,
+    destino = FinancialAccount.objects.create(
+        owner=contas["em_reais"].owner, institution=contas["em_reais"].institution,
+        account_name="Destino da transferência v2", initial_balance=Decimal("0.00"),
+        initial_balance_date=date(2025, 12, 31),
     )
+    operation = BankOperation.objects.create(
+        operation_key="transferencia-por-operacao-v2",
+        operation_type=OPERATION_INTERNAL_TRANSFER,
+    )
+    with transaction.atomic():
+        origem = CashFlowEntry.objects.create(
+            account=contas["em_reais"], category=transferencia,
+            entry_type=ENTRY_TYPE_EXPENSE, description="Transferência antiga",
+            entry_amount=Decimal("25.00"), due_date=date(2026, 2, 20),
+            realized_date=date(2026, 2, 20), realized_amount=Decimal("20.00"),
+            status=STATUS_REALIZED, operation_type=OPERATION_INTERNAL_TRANSFER,
+            bank_operation=operation,
+        )
+        CashFlowEntry.objects.create(
+            account=destino, category=transferencia, entry_type=ENTRY_TYPE_INCOME,
+            description="Contraparte da transferência", entry_amount=Decimal("25.00"),
+            due_date=date(2026, 2, 20), realized_date=date(2026, 2, 20),
+            realized_amount=Decimal("20.00"), status=STATUS_REALIZED,
+            operation_type=OPERATION_INTERNAL_TRANSFER, bank_operation=operation,
+            source_entry=origem,
+        )
 
     corpo = pedir_v2(data="2026-02-20", inicio="2026-02-20").json()
     fluxos = {(item["moeda"], item["natureza"]): item for item in corpo["fluxos"]}
 
     assert fluxos[("USD", "gerencial")]["entradas"] == "12.22"
     assert fluxos[("USD", "gerencial")]["linhas"] == 2
+    assert fluxos[("BRL", "transferencia")]["entradas"] == "20.00"
     assert fluxos[("BRL", "transferencia")]["saidas"] == "20.00"
+    assert fluxos[("BRL", "transferencia")]["liquido"] == "0.00"
+    assert fluxos[("BRL", "transferencia")]["linhas"] == 2
     assert len(fluxos) == 2
 
 

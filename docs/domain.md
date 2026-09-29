@@ -92,6 +92,12 @@ duas pontas de transferências preservam o agrupamento durante criação, ediç�
 realização, exclusão e conciliação. Operações compostas são atômicas: uma falha
 reverte o conjunto.
 
+Uma transferência interna tem exatamente uma origem e uma contraparte por
+ocorrência. Além do service, o PostgreSQL confere isso no commit por um gatilho
+de restrição postergado: a gravação transitória da origem antes do destino é
+permitida dentro da transação, mas nenhum par incompleto ou cruzado entre
+operações é persistido.
+
 Realizar é um fato de uma ocorrência, não do grupo. Criar um parcelado ou um
 recorrente como realizado realiza só a primeira ocorrência, com a data
 informada; as demais seguem o vencimento, como a projeção mensal já fazia. Na

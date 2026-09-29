@@ -39,6 +39,7 @@ from core.domain.finance import (
     CURRENCY_BRL,
     CURRENCY_USD,
     ENTRY_TYPE_EXPENSE,
+    OPERATION_INTERNAL_TRANSFER,
     OPERATION_SINGLE,
     STATUS_PENDING,
     STATUS_PROJECTED,
@@ -46,7 +47,7 @@ from core.domain.finance import (
 )
 from core.domain.identity import USER_TYPE_ADMINISTRATOR
 from transactions import services
-from transactions.models import AccountMonthClose, CashFlowCategory, CashFlowEntry
+from transactions.models import AccountMonthClose, BankOperation, CashFlowCategory, CashFlowEntry
 
 pytestmark = pytest.mark.django_db
 
@@ -332,6 +333,32 @@ def test_banco_recusa_valor_acima_da_precisao_da_coluna(conta, categoria):
     """`max_digits=12, decimal_places=2` é contrato, não sugestão."""
     with pytest.raises((DataError, IntegrityError)), transaction.atomic():
         _lancamento(conta, categoria, entry_amount=Decimal("12345678901.00"))
+
+
+@pytest.mark.django_db(transaction=True)
+def test_banco_recusa_transferencia_sem_contraparte_no_commit(conta, categoria):
+    """Uma transferência isolada não pode sobreviver fora do service.
+
+    O service sempre cria o par, mas importações e manutenção podem escrever
+    direto no ORM. O trigger é postergado para permitir gravar origem e destino
+    numa mesma transação; esta transação termina sem o destino e prova que o
+    banco rejeita o par incompleto no commit.
+    """
+    operation = BankOperation.objects.create(
+        operation_key="transferencia-sem-contraparte",
+        operation_type=OPERATION_INTERNAL_TRANSFER,
+    )
+
+    with pytest.raises(IntegrityError) as erro, transaction.atomic():
+        _lancamento(
+            conta,
+            categoria,
+            operation_type=OPERATION_INTERNAL_TRANSFER,
+            bank_operation=operation,
+        )
+
+    assert erro.value.__cause__.diag.constraint_name == "ck_internal_transfer_has_counterparty"
+    assert CashFlowEntry.objects.count() == 0
 
 
 # ---------------------------------------------------------------------------
