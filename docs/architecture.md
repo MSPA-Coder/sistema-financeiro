@@ -13,13 +13,16 @@ tratados separadamente. A adoção futura de fila, cache ou outro adaptador é
 permitida quando preservar as invariantes de domínio e tiver decisão
 arquitetural registrada.
 
-O `compose.yaml` define quatro serviços:
+O `compose.yaml` define estes serviços (a lista completa sai de
+`docker compose --profile quality config --services`):
 
 | Serviço | Responsabilidade |
 |---|---|
 | `postgres` | persistência relacional e health check |
-| `migrate` | migrations e `collectstatic`, antes da aplicação |
-| `web` | aplicação Gunicorn, com filesystem raiz somente leitura |
+| `db-provision` | cria ou atualiza o papel restrito da aplicação (só DML), a cada subida e antes do `migrate` |
+| `migrate` | migrations e `collectstatic`, antes da aplicação; o único serviço de aplicação com a credencial administrativa do banco |
+| `web` | aplicação Gunicorn, com filesystem raiz somente leitura, conectada com o papel restrito |
+| `postgres-teste` | banco efêmero (em `tmpfs`) da suíte, no perfil `quality`: nunca é o `postgres` com dados reais |
 | `quality` | Ruff, pytest e ferramentas de auditoria, no perfil `quality` |
 
 `compose.dev.yaml` altera somente o desenvolvimento: monta o repositório no
