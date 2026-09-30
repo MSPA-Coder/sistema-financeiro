@@ -34,3 +34,14 @@ updates:
         applies-to: version-updates
         patterns: ["*"]
         update-types: [minor, patch]
+  - package-ecosystem: docker-compose
+    directory: "/"
+    schedule:
+      interval: weekly
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 3
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [minor, patch]
