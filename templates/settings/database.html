@@ -32,6 +32,7 @@
     </div>
 </div>
 
+{% if pode_inspecionar %}
 <div class="section-card">
     <h3>Inspeção de Dados</h3>
     <form method="get" class="btn-group form-spaced" hx-get="{{ request.path }}" hx-trigger="change" {% nav_filtro %}>
@@ -57,4 +58,5 @@
     <p class="text-muted">Tabela vazia.</p>
     {% endif %}
 </div>
+{% endif %}
 {% endblock %}

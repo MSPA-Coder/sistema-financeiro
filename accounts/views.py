@@ -30,8 +30,8 @@ from core.permissions import permission_required
 from core.services import request_client_ip
 
 
-def _owners_context():
-    return {"owners": list_owners()}
+def _owners_context(user):
+    return {"owners": list_owners(user)}
 
 
 @login_required
@@ -39,7 +39,7 @@ def _owners_context():
 @permission_required('tables.owners.manage', fallback='accounts:owners_view')
 def owners_view(request):
     """Lista e cadastro de titulares, com suporte a HTMX."""
-    context = _owners_context()
+    context = _owners_context(request.user)
     if quer_fragmento(request):
         return render(request, 'tables/_owners_table.html', context)
     return render(request, 'tables/owners.html', context)
@@ -65,7 +65,7 @@ def create_owner_view(request):
 def update_owner_view(request, owner_id):
     owner = get_object_or_404(AccountOwner, id=owner_id)
     try:
-        update_owner(owner, request.POST.get('name', ''))
+        update_owner(request.user, owner, request.POST.get('name', ''))
         messages.success(request, "Titular atualizado com sucesso.")
     except ValueError as exc:
         messages.error(request, str(exc))
@@ -79,7 +79,7 @@ def update_owner_view(request, owner_id):
 def delete_owner_view(request, owner_id):
     owner = get_object_or_404(AccountOwner, id=owner_id)
     try:
-        delete_owner(owner)
+        delete_owner(request.user, owner)
         messages.success(request, "Titular excluído com sucesso.")
     except ValueError as exc:
         messages.error(request, str(exc))

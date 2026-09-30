@@ -593,8 +593,10 @@ def can_access_owner(user, owner_id, action: str = "view") -> bool:
 _MAX_OWNER_NAME_LENGTH = 100
 
 
-def list_owners():
-    return AccountOwner.objects.all()
+def list_owners(user):
+    """Titulares que `user` enxerga: todos para administrador e super usuário, e só
+    os concedidos para os demais. A lista de nomes também é dado de outro titular."""
+    return AccountOwner.objects.filter(id__in=accessible_owner_ids(user, "view"))
 
 
 def _clean_owner_name(name: str) -> str:
@@ -616,7 +618,11 @@ def create_owner(name: str) -> AccountOwner:
         raise ValueError("Já existe um titular com esse nome.") from exc
 
 
-def update_owner(owner: AccountOwner, name: str) -> AccountOwner:
+def update_owner(user, owner: AccountOwner, name: str) -> AccountOwner:
+    # `tables.owners.manage` diz que a pessoa gerencia titulares, não QUAIS: o
+    # escopo por titular vale aqui como vale para as contas do titular.
+    if not can_access_owner(user, owner.id, "update"):
+        raise ValueError("Acesso negado: você não pode alterar este titular.")
     clean_name = _clean_owner_name(name)
     if AccountOwner.objects.filter(name__iexact=clean_name).exclude(id=owner.id).exists():
         raise ValueError("Já existe um titular com esse nome.")
@@ -628,7 +634,9 @@ def update_owner(owner: AccountOwner, name: str) -> AccountOwner:
     return owner
 
 
-def delete_owner(owner: AccountOwner) -> None:
+def delete_owner(user, owner: AccountOwner) -> None:
+    if not can_access_owner(user, owner.id, "delete"):
+        raise ValueError("Acesso negado: você não pode excluir este titular.")
     try:
         owner.delete()
     except ProtectedError as exc:

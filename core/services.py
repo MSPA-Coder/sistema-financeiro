@@ -506,13 +506,29 @@ def available_inspection_tables() -> tuple[str, ...]:
     return tuple(sorted(_HEALTH_CHECK_TABLES))
 
 
+#: Colunas cujo valor nunca sai desta inspeção, nem para administrador: o hash de
+#: senha não ajuda a ninguém a conferir o banco e, na tela, só amplia o estrago
+#: de uma sessão sequestrada.
+_COLUNAS_OCULTAS: frozenset[str] = frozenset({"password"})
+_VALOR_OCULTO = "•••"
+
+
 def inspect_table(table_name: str | None) -> tuple[list[str], list[tuple]]:
     """Colunas e até 50 linhas de `table_name`, validado contra a whitelist fixa
-    de tabelas do app (nunca interpola nome de tabela vindo direto do usuário)."""
+    de tabelas do app (nunca interpola nome de tabela vindo direto do usuário).
+
+    Devolve dado BRUTO, de todos os titulares: quem chama decide quem pode ver
+    (`settings_database_view` restringe a administradores)."""
     if not table_name or table_name not in _HEALTH_CHECK_TABLES:
         return [], []
     with connection.cursor() as cursor:
         cursor.execute(f"SELECT * FROM {table_name} LIMIT 50")  # noqa: S608 - table_name validado contra whitelist acima
         columns = [col.name for col in cursor.description]
         rows = cursor.fetchall()
+    ocultas = [i for i, nome in enumerate(columns) if nome in _COLUNAS_OCULTAS]
+    if ocultas:
+        rows = [
+            tuple(_VALOR_OCULTO if i in ocultas else valor for i, valor in enumerate(linha))
+            for linha in rows
+        ]
     return columns, rows
