@@ -644,11 +644,17 @@ def settings_reopen_month_view(request):
 @login_required
 @permission_required('settings.view')
 def settings_database_view(request):
-    selected_table = request.GET.get('table_name') or ''
+    # A inspeção devolve linhas brutas de todos os titulares, sem o escopo que
+    # as demais telas aplicam. `settings.view` é permissão de LEITURA da tela de
+    # Configurações e não autoriza isso: só administrador inspeciona. Sem essa
+    # trava, um usuário restrito a um titular lia `app_user` e as tabelas dos outros.
+    pode_inspecionar = request.user.user_type == USER_TYPE_ADMINISTRATOR
+    selected_table = (request.GET.get('table_name') or '') if pode_inspecionar else ''
     table_columns, table_rows = inspect_table(selected_table)
     return render(request, "settings/database.html", {
         "last_optimize_info": format_last_optimize_info(get_app_setting(APP_SETTING_LAST_OPTIMIZE_INFO)),
-        "available_tables": available_inspection_tables(),
+        "pode_inspecionar": pode_inspecionar,
+        "available_tables": available_inspection_tables() if pode_inspecionar else (),
         "selected_table": selected_table,
         "table_columns": table_columns,
         "table_rows": table_rows,

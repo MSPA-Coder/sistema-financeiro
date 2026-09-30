@@ -40,6 +40,12 @@ updates:
       interval: weekly
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 3
+    # Postgres de versao maior (17 -> 18) exige pg_upgrade ou dump/restore: o formato
+    # do diretorio de dados muda e o contêiner nao sobe sobre o volume antigo. Vira
+    # decisao e procedimento de um mantenedor, nunca um PR automatico.
+    ignore:
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
     groups:
       minor-and-patch:
         applies-to: version-updates
