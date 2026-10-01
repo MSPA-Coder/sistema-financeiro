@@ -13,7 +13,7 @@ from core.htmx import quer_fragmento
 from core.permissions import permission_required
 from core.services import audit_request_context
 
-from . import fatura, fatura_projetada, reclassificacao, reconciliation
+from . import fatura, fatura_projetada, pending_imports, reclassificacao, reconciliation
 from .attachments import (
     attachment_download_path,
     attachment_for_download,
@@ -23,7 +23,6 @@ from .attachments import (
 )
 from .services import (
     accounts_for_import_form,
-    import_statement_file,
     statement_import_status,
     statement_imports_for_user,
 )
@@ -44,28 +43,75 @@ def imports_view(request):
 @login_required
 @permission_required('banking.import', fallback='bank_statements:imports_view')
 @require_POST
-def create_import_view(request):
-    """Processa o upload de um extrato (CSV ou OFX/OFC/QFX)."""
-    try:
-        batch, inserted, skipped = import_statement_file(
-            request.user,
-            account_id=request.POST.get('account_id', ''),
-            uploaded_file=request.FILES.get('statement_file'),
-        )
-        messages.success(
-            request,
-            f"Extrato importado. Linhas novas: {inserted}. Duplicadas ignoradas: {skipped}.",
-        )
-        if batch.account.is_credit_card and inserted:
-            # A fatura não para nas linhas: segue para a prévia do processamento.
-            destino = reverse('bank_statements:fatura', args=[batch.id])
-            if quer_fragmento(request):
-                resposta = HttpResponse(status=204)
-                resposta['HX-Redirect'] = destino
-                return resposta
-            return redirect(destino)
-    except ValueError as exc:
-        messages.error(request, str(exc))
+def stage_imports_view(request):
+    """Recebe um ou mais arquivos de extrato e tenta detectar a conta de cada um.
+
+    Nada vira `BankStatementLine` aqui - só depois que o usuário confirmar (ou
+    corrigir) a conta de cada arquivo em `confirm_imports_view`.
+    """
+    files = request.FILES.getlist('statement_files')
+    if not files:
+        messages.warning(request, "Selecione ao menos um arquivo para importar.")
+        if quer_fragmento(request):
+            context = {"imports": statement_imports_for_user(request.user)}
+            return render(request, 'banking/_import_table.html', context)
+        return redirect('bank_statements:imports_view')
+
+    pending_imports.stage_uploaded_files(request.user, files)
+    destino = reverse('bank_statements:confirm_imports')
+    if quer_fragmento(request):
+        resposta = HttpResponse(status=204)
+        resposta['HX-Redirect'] = destino
+        return resposta
+    return redirect(destino)
+
+
+@login_required
+@permission_required('banking.view')
+@permission_required('banking.import', fallback='bank_statements:imports_view')
+def confirm_imports_view(request):
+    """Prévia dos arquivos enviados: confirma ou corrige a conta de cada um antes de gravar."""
+    uploads = list(pending_imports.pending_uploads_for_user(request.user))
+    if not uploads:
+        messages.info(request, "Nenhuma importação pendente de confirmação.")
+        return redirect('bank_statements:imports_view')
+    context = {
+        "uploads": uploads,
+        "import_accounts": accounts_for_import_form(request.user),
+    }
+    return render(request, 'banking/pending_imports_confirm.html', context)
+
+
+@login_required
+@permission_required('banking.import', fallback='bank_statements:imports_view')
+@require_POST
+def process_imports_view(request):
+    """Importa, de uma vez, cada arquivo pendente com a conta que o usuário confirmou."""
+    uploads = pending_imports.pending_uploads_for_user(request.user)
+    choices = {upload.id: request.POST.get(f'account_{upload.id}', '') for upload in uploads}
+    resultados, erros, lotes = pending_imports.resolve_pending_uploads(request.user, choices)
+
+    for nome, inserted, skipped in resultados:
+        messages.success(request, f"{nome}: linhas novas {inserted}, duplicadas ignoradas {skipped}.")
+    for nome, erro in erros:
+        messages.error(request, f"{nome}: {erro}")
+    if not resultados and not erros:
+        messages.warning(request, "Nenhum arquivo foi confirmado para importação.")
+
+    # A fatura não para nas linhas: segue para a prévia do processamento. Mais
+    # de um cartão no mesmo lote não tem como abrir duas prévias de uma vez -
+    # vai para a primeira e nomeia as demais, em vez de escolher uma delas.
+    faturas = [lote for lote in lotes if lote.account.is_credit_card]
+    if faturas:
+        if len(faturas) > 1:
+            outras = ", ".join(lote.source_filename for lote in faturas[1:])
+            messages.info(request, f"Outras faturas aguardando processamento: {outras}.")
+        destino = reverse('bank_statements:fatura', args=[faturas[0].id])
+        if quer_fragmento(request):
+            resposta = HttpResponse(status=204)
+            resposta['HX-Redirect'] = destino
+            return resposta
+        return redirect(destino)
 
     if quer_fragmento(request):
         context = {"imports": statement_imports_for_user(request.user)}

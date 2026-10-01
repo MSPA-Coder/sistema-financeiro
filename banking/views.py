@@ -258,6 +258,7 @@ def create_account_view(request):
             initial_balance=request.POST.get('initial_balance', ''),
             currency=request.POST.get('currency', ''),
             initial_balance_date=request.POST.get('initial_balance_date', ''),
+            statement_identifier=request.POST.get('statement_identifier', ''),
             **_card_fields_from_post(request),
         )
         messages.success(request, "Conta cadastrada com sucesso.")
@@ -282,6 +283,7 @@ def update_account_view(request, account_id):
             initial_balance=request.POST.get('initial_balance', ''),
             currency=request.POST.get('currency', ''),
             initial_balance_date=request.POST.get('initial_balance_date', ''),
+            statement_identifier=request.POST.get('statement_identifier', ''),
             **_card_fields_from_post(request),
         )
         # Dias, conta de pagamento e gasto fixado mudam a fatura projetada; e

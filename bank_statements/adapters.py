@@ -247,11 +247,6 @@ def _parse_ofx_amount(raw: str) -> Decimal:
     return amount
 
 
-def _make_ofx_hash(account_id: int, stmt_date: date, amount: Decimal, description: str, fitid: str) -> str:
-    key = f"ofx:{account_id}:{stmt_date.isoformat()}:{amount}:{description}:{fitid}"
-    return hashlib.sha256(key.encode()).hexdigest()
-
-
 def _extract_transactions_sgml(content: str) -> list[dict[str, str]]:
     """Extrai transações de OFX 1.x (SGML sem tags de fechamento)."""
     txs: list[dict[str, str]] = []
@@ -293,8 +288,36 @@ def _extract_transactions_xml(content: str) -> list[dict[str, str]]:
     return txs
 
 
+def extract_ofx_account_hint(content: str) -> str | None:
+    """Número de conta (`ACCTID`) do cabeçalho OFX, se houver.
+
+    O cabeçalho (`<BANKACCTFROM>`/`<CCACCTFROM>`) vem antes do primeiro
+    `<STMTTRN>` e nunca é lido por `_extract_transactions_sgml`/`_xml` (que só
+    olham dentro de cada bloco de transação) - usado só para sugerir a conta
+    na importação em lote, não na leitura das linhas.
+    """
+    match = re.search(r"<STMTTRN>", content, re.IGNORECASE)
+    header = content[: match.start()] if match else content
+    for tag_match in _RE_TAG.finditer(header):
+        if tag_match.group(1).upper() == "ACCTID":
+            value = tag_match.group(2).strip()
+            return value or None
+    return None
+
+
 class OfxStatementAdapter:
-    """Adapter para arquivos OFX/OFC/QFX (Open Financial Exchange)."""
+    """Adapter para arquivos OFX/OFC/QFX (Open Financial Exchange).
+
+    O hash de deduplicação usa só (conta, data, descrição, valor) - sem o
+    FITID que o próprio OFX fornece - pelo mesmo motivo do CSV e dos PDFs
+    (ver `numerar_repeticoes`): bancos como o C6 geram um FITID novo a cada
+    exportação, mesmo para a transação idêntica, então um hash que dependesse
+    dele nunca reconheceria a reimportação de um período já coberto como
+    duplicata. Reimportar período sobreposto é rotina aqui (o período de cada
+    exportação é escolhido à mão, então vai se sobrepor de vez em quando) -
+    por isso todo adapter precisa reconhecer e descartar a duplicata sozinho,
+    em vez de depender de um identificador que o banco não garante estável.
+    """
 
     def parse(self, file: UploadedFile, account_id: int) -> list[ParsedStatementLine]:
         raw = read_statement_upload(file, label="OFX")
@@ -320,7 +343,6 @@ class OfxStatementAdapter:
             dtposted = tags.get("DTPOSTED") or tags.get("DTUSER", "")
             memo = tags.get("MEMO") or tags.get("NAME") or tags.get("TRNTYPE", "Sem descrição")
             trnamt = tags.get("TRNAMT", "")
-            fitid = tags.get("FITID", "")
 
             if not dtposted or not trnamt:
                 continue  # ignora linhas sem data ou valor
@@ -331,19 +353,20 @@ class OfxStatementAdapter:
             except ValueError:
                 continue  # ignora linhas malformadas individualmente
 
+            description = memo[:255]
             lines.append(
                 ParsedStatementLine(
                     statement_date=stmt_date,
-                    description=memo[:255],
+                    description=description,
                     amount=amount,
-                    line_hash=_make_ofx_hash(account_id, stmt_date, amount, memo, fitid),
+                    line_hash=line_hash(account_id, stmt_date, description, amount),
                 )
             )
 
         if not lines:
             raise ValueError("Arquivo OFX não contém transações válidas.")
 
-        return lines
+        return numerar_repeticoes(lines, account_id)
 
 
 _OFX_EXTENSIONS = (".ofx", ".ofc", ".qfx")
@@ -357,6 +380,51 @@ _OFX_MIMETYPES = ("application/x-ofx", "application/ofx", "text/x-ofx")
 # não olha só a extensão do arquivo, mas também a instituição da conta - só
 # corretoras marcadas como `homologada` (banking.FinancialInstitution) têm um
 # adapter de PDF registrado, e o adapter é escolhido pelo nome da instituição.
+
+
+def extract_pdf_text(raw: bytes) -> str:
+    """Texto de todas as páginas do PDF, uma string só separada por `\\n`.
+
+    Compartilhado pelos dois adapters de PDF (e pela detecção de conta da
+    importação em lote, que precisa do texto antes de saber a instituição).
+    """
+    try:
+        import pdfplumber
+    except ImportError as exc:
+        raise ValueError(
+            "Suporte a extrato em PDF indisponível no momento (dependência não instalada)."
+        ) from exc
+
+    try:
+        with pdfplumber.open(io.BytesIO(raw)) as pdf:
+            return "\n".join(page.extract_text() or "" for page in pdf.pages)
+    except Exception as exc:
+        raise ValueError("Não foi possível ler o PDF do extrato.") from exc
+
+
+_RE_CONTA_LABEL = re.compile(r"Conta:\s*([\d.\-/]+)")
+
+
+def extract_conta_label(text: str) -> str | None:
+    """Número de conta do rótulo "Conta: ..." do cabeçalho/rodapé do PDF.
+
+    Mesmo rótulo nos dois layouts conhecidos (Genial: "Conta: 1234567-8";
+    Mercado Pago: "Conta: 11111111111") - usado só para sugerir a conta na
+    importação em lote, nunca na leitura das linhas de cada parser.
+    """
+    match = _RE_CONTA_LABEL.search(text)
+    return match.group(1).strip() if match else None
+
+
+def sniff_pdf_format(text: str) -> str | None:
+    """Chave de `_PDF_ADAPTERS` cujo nome de instituição aparece no texto do
+    PDF, se exatamente uma bater - usado para decidir o adapter antes de
+    saber a conta (e portanto a instituição) na importação em lote.
+    """
+    lowered = text.lower()
+    found = [key for key in _PDF_ADAPTERS if key in lowered]
+    return found[0] if len(found) == 1 else None
+
 
 _MONTHS_PT = {
     "jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
@@ -453,24 +521,109 @@ class GenialPdfStatementAdapter:
 
     def parse(self, file: UploadedFile, account_id: int) -> list[ParsedStatementLine]:
         raw = read_statement_upload(file, label="PDF")
-        try:
-            import pdfplumber
-        except ImportError as exc:
-            raise ValueError(
-                "Suporte a extrato em PDF indisponível no momento (dependência não instalada)."
-            ) from exc
-
-        try:
-            with pdfplumber.open(io.BytesIO(raw)) as pdf:
-                text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-        except Exception as exc:
-            raise ValueError("Não foi possível ler o PDF do extrato.") from exc
-
+        text = extract_pdf_text(raw)
         return _parse_genial_lines(text, account_id)
+
+
+# --- PDF do Mercado Pago ---
+#
+# Layout bem mais simples que o da Genial: cada linha da tabela já sai numa
+# única linha de texto extraído, "<data> <descrição> <id da operação> R$
+# <valor> R$ <saldo>". A coluna Valor nunca mostra sinal no único extrato
+# disponível para desenhar este parser (só tinha crédito nele) - então o
+# sinal vem da variação do saldo corrente em vez do texto de Valor, e o
+# valor lido só serve de conferência: se divergir, o layout mudou e é
+# melhor falhar alto do que arriscar importar um débito como crédito.
+
+_RE_MP_SALDO_INICIAL = re.compile(r"Saldo inicial:\s*R\$\s*([\d.,]+)", re.IGNORECASE)
+_RE_MP_SALDO_FINAL = re.compile(r"Saldo final:\s*R\$\s*([\d.,]+)", re.IGNORECASE)
+_RE_MP_ROW = re.compile(
+    r"^(\d{2})-(\d{2})-(\d{4})\s+(.+)\s+\d+\s+R\$\s*([\d.,]+)\s+R\$\s*([\d.,]+)\s*$"
+)
+
+
+def _parse_mp_decimal(raw: str) -> Decimal:
+    return _to_decimal(raw.strip().replace(".", "").replace(",", "."))
+
+
+def _parse_mercadopago_lines(text: str, account_id: int) -> list[ParsedStatementLine]:
+    """Interpreta o texto extraído (via pdfplumber) do extrato de conta da
+    Mercado Pago.
+
+    Cada linha de movimento já sai inteira do pdfplumber: data, descrição, id
+    da operação e os dois valores em R$ (Valor da linha e Saldo após ela). O
+    saldo inicial do cabeçalho ("Saldo inicial: R$ X") é o ponto de partida
+    da cadeia de saldos; cada linha seguinte confere `saldo atual - saldo
+    anterior` contra o `Valor` lido, e o saldo final do cabeçalho confere a
+    cadeia inteira no fim - conferência barata, essencial num formato novo
+    validado com um único extrato real.
+    """
+    saldo_inicial_match = _RE_MP_SALDO_INICIAL.search(text)
+    saldo_final_match = _RE_MP_SALDO_FINAL.search(text)
+    if not saldo_inicial_match or not saldo_final_match:
+        raise ValueError("Não encontrei o saldo inicial/final no extrato Mercado Pago.")
+
+    saldo_anterior = _parse_mp_decimal(saldo_inicial_match.group(1))
+    saldo_final_esperado = _parse_mp_decimal(saldo_final_match.group(1))
+
+    parsed: list[ParsedStatementLine] = []
+    for raw_line in text.splitlines():
+        stripped_line = raw_line.strip()
+        if not stripped_line:
+            continue
+        if stripped_line.startswith("Data de geração:"):
+            break  # rodapé: fim da tabela de movimentos
+        match = _RE_MP_ROW.match(stripped_line)
+        if not match:
+            continue  # cabeçalho, título de tabela repetido na página 2, rodapé
+        day, month, year, description, valor_raw, saldo_raw = match.groups()
+        statement_date = date(int(year), int(month), int(day))
+        saldo_atual = _parse_mp_decimal(saldo_raw)
+        valor = _parse_mp_decimal(valor_raw)
+        amount = saldo_atual - saldo_anterior
+        if abs(abs(amount) - valor) > Decimal("0.01"):
+            raise ValueError(
+                f"Inconsistência no extrato Mercado Pago em {statement_date:%d/%m/%Y}: "
+                f"variação de saldo ({amount}) não bate com o valor lido ({valor_raw})."
+            )
+        if amount == 0:
+            raise ValueError("Valor zerado no extrato não é aceito.")
+        description = description.strip()[:255]
+        parsed.append(
+            ParsedStatementLine(
+                statement_date=statement_date,
+                description=description,
+                amount=amount,
+                line_hash=line_hash(account_id, statement_date, description, amount),
+            )
+        )
+        saldo_anterior = saldo_atual
+
+    if not parsed:
+        raise ValueError("Nenhum lançamento encontrado no extrato Mercado Pago (PDF).")
+    if abs(saldo_anterior - saldo_final_esperado) > Decimal("0.01"):
+        raise ValueError(
+            "Inconsistência no extrato Mercado Pago: soma dos lançamentos não fecha "
+            f"com o saldo final informado ({saldo_final_esperado})."
+        )
+    max_rows = max_statement_rows()
+    if len(parsed) > max_rows:
+        raise ValueError(f"Extrato Mercado Pago excede o limite de {max_rows} linha(s).")
+    return numerar_repeticoes(parsed, account_id)
+
+
+class MercadoPagoPdfStatementAdapter:
+    """Adapter para o extrato de conta em PDF da Mercado Pago."""
+
+    def parse(self, file: UploadedFile, account_id: int) -> list[ParsedStatementLine]:
+        raw = read_statement_upload(file, label="PDF")
+        text = extract_pdf_text(raw)
+        return _parse_mercadopago_lines(text, account_id)
 
 
 _PDF_ADAPTERS = {
     "genial": GenialPdfStatementAdapter,
+    "mercado pago": MercadoPagoPdfStatementAdapter,
 }
 
 
@@ -516,11 +669,16 @@ def get_statement_adapter(file: UploadedFile | None, *, institution=None) -> Sta
 __all__ = [
     "CsvStatementAdapter",
     "GenialPdfStatementAdapter",
+    "MercadoPagoPdfStatementAdapter",
     "OfxStatementAdapter",
     "ParsedStatementLine",
     "StatementAdapter",
+    "extract_conta_label",
+    "extract_ofx_account_hint",
+    "extract_pdf_text",
     "get_statement_adapter",
     "max_statement_rows",
     "max_statement_size_bytes",
     "read_statement_upload",
+    "sniff_pdf_format",
 ]

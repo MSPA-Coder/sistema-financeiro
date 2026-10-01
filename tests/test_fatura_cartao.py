@@ -27,7 +27,7 @@ from accounts.models import AccountOwner, AppUser, UserOwnerAccess
 from accounts.services import save_transfer_destination_accesses
 from bank_statements import fatura
 from bank_statements.fatura_csv import FORMATO_C6, FORMATO_XP, formato_da_fatura, ler_fatura
-from bank_statements.models import BankStatementLine
+from bank_statements.models import BankStatementLine, PendingStatementUpload
 from bank_statements.services import import_statement_file
 from banking.models import FinancialAccount, FinancialInstitution
 from core.domain.finance import (
@@ -200,7 +200,11 @@ def test_so_credito_com_descricao_de_pagamento_e_pagamento(descricao, valor, esp
 
 
 @pytest.fixture
-def cenario():
+def cenario(settings, tmp_path):
+    # `test_tela_mostra_a_previa_e_grava_a_categoria_escolhida` passa pelo
+    # upload em lote, que grava em `MEDIA_ROOT` - não gravável em `quality`
+    # (AGENTS.md). Mesmo padrão de `tests/test_audit_io_repairs.py`.
+    settings.MEDIA_ROOT = tmp_path
     usuario = AppUser.objects.create_user(
         username="fatura", password="troca-esta-senha-no-primeiro-acesso", user_type=USER_TYPE_ADMINISTRATOR
     )
@@ -412,9 +416,11 @@ def test_processar_e_tudo_ou_nada(cenario):
 def test_tela_mostra_a_previa_e_grava_a_categoria_escolhida(cenario):
     client = Client()
     client.force_login(cenario["usuario"])
+    client.post("/banking/imports/stage/", {"statement_files": _arquivo(FATURA_MARCO)})
+    pendente = PendingStatementUpload.objects.get(uploaded_by=cenario["usuario"])
+
     resposta = client.post(
-        "/banking/import/",
-        {"account_id": cenario["cartao"].id, "statement_file": _arquivo(FATURA_MARCO)},
+        "/banking/imports/confirm/process/", {f"account_{pendente.id}": cenario["cartao"].id}
     )
     lote = cenario["cartao"].statement_imports.get()
     assert resposta.status_code == 302

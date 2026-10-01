@@ -109,6 +109,17 @@ class FinancialAccount(models.Model):
     # Gasto novo por fatura fixado à mão. Vazio, a fatura projetada usa a
     # mediana das últimas faturas importadas (`bank_statements/fatura_projetada.py`).
     card_estimated_spend = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    statement_identifier = models.CharField(
+        max_length=40,
+        blank=True,
+        default='',
+        help_text=(
+            'Número da conta como aparece no extrato do banco (com ou sem '
+            'pontuação). Usado para reconhecer automaticamente a conta ao '
+            'importar vários extratos de uma vez; a comparação ignora tudo '
+            'que não for dígito.'
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     

@@ -366,6 +366,7 @@ def create_account(
     card_due_day: str = "",
     card_payment_account_id: str = "",
     card_estimated_spend: str = "",
+    statement_identifier: str = "",
 ) -> FinancialAccount:
     clean_owner_id, clean_institution_id, clean_name, balance = _clean_account_fields(
         owner_id, institution_id, account_name, initial_balance
@@ -393,6 +394,7 @@ def create_account(
         initial_balance=balance,
         currency=clean_currency,
         initial_balance_date=clean_balance_date,
+        statement_identifier=(statement_identifier or "").strip()[:40],
         **card,
     )
 
@@ -412,6 +414,7 @@ def update_account(
     card_due_day: str = "",
     card_payment_account_id: str = "",
     card_estimated_spend: str = "",
+    statement_identifier: str = "",
 ) -> FinancialAccount:
     clean_owner_id, clean_institution_id, clean_name, balance = _clean_account_fields(
         owner_id, institution_id, account_name, initial_balance
@@ -459,11 +462,12 @@ def update_account(
     account.initial_balance = balance
     account.currency = clean_currency
     account.initial_balance_date = clean_balance_date
+    account.statement_identifier = (statement_identifier or "").strip()[:40]
     for field, value in card.items():
         setattr(account, field, value)
     account.save(update_fields=[
         "owner", "institution", "account_name", "initial_balance",
-        "currency", "initial_balance_date", *card, "updated_at",
+        "currency", "initial_balance_date", "statement_identifier", *card, "updated_at",
     ])
     return account
 

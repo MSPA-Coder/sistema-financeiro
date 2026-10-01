@@ -66,6 +66,7 @@ enviado pelo navegador.
                         <option value="{{ payment.id }}" {% if payment.id == account.card_payment_account_id %}selected{% endif %}>{{ payment.owner.name }} · {{ payment.institution.institution_name }} · {{ payment.account_name }}</option>
                     {% endif %}{% endfor %}
                 </select>
+                <input type="text" name="statement_identifier" value="{{ account.statement_identifier }}" aria-label="Identificador no extrato" placeholder="Nº da conta no extrato (opcional)" maxlength="40" title="Número da conta como aparece no extrato do banco. Usado para reconhecer a conta ao importar vários extratos de uma vez." data-ui="w-120">
                 <button type="submit" class="btn btn-primary btn-sm"
                         data-sa-confirmar="Salvar as alterações desta conta?"
                         data-sa-titulo="Confirmar alteração"
