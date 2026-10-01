@@ -30,37 +30,25 @@
     <p class="empty-state">Nenhuma conta disponível para você. Cadastre ou solicite acesso a uma conta antes de importar extratos.</p>
     {% endif %}
 
-    <form method="post" action="{% url 'bank_statements:create_import' %}" enctype="multipart/form-data" class="top-filter-row"
-          hx-post="{% url 'bank_statements:create_import' %}"
+    <form method="post" action="{% url 'bank_statements:stage_imports' %}" enctype="multipart/form-data" class="top-filter-row"
+          hx-post="{% url 'bank_statements:stage_imports' %}"
           hx-encoding="multipart/form-data"
           hx-target="#import-results"
           hx-swap="innerHTML"
           hx-indicator=".htmx-indicator">
         {% csrf_token %}
-        <label class="top-filter-field">
-            Conta
-            <select name="account_id" required>
-                <option value="">Selecione…</option>
-                {% for account in import_accounts %}
-                <option value="{{ account.id }}">{{ account.owner.name }} / {{ account.institution.institution_name }} / {{ account.account_name }}</option>
-                {% endfor %}
-            </select>
-        </label>
         <label class="top-filter-field" data-ui="min-w-18">
-            Arquivo CSV, OFX, OFC, QFX ou PDF (corretora homologada)
-            <input type="file" name="statement_file" accept=".csv,.ofx,.ofc,.qfx,.pdf,text/csv,application/x-ofx,application/ofx,text/x-ofx,application/pdf" required>
+            Arquivo(s) CSV, OFX, OFC, QFX ou PDF (corretora homologada)
+            <input type="file" name="statement_files" multiple accept=".csv,.ofx,.ofc,.qfx,.pdf,text/csv,application/x-ofx,application/ofx,text/x-ofx,application/pdf" required>
         </label>
         <div class="top-filter-actions">
-            <button type="submit" class="btn btn-primary"
-                    data-sa-confirmar="Importar este extrato e gravar suas linhas no banco?"
-                    data-sa-titulo="Confirmar importação"
-                    data-sa-severidade="warning"
-                    data-sa-ok="Importar">
-                {% icon 'upload' %}<span>Importar</span>
+            <button type="submit" class="btn btn-primary">
+                {% icon 'upload' %}<span>Enviar</span>
             </button>
-            <span class="htmx-indicator">{% icon 'loading' %}<span>Importando...</span></span>
+            <span class="htmx-indicator">{% icon 'loading' %}<span>Enviando...</span></span>
         </div>
     </form>
+    <p class="help-text">Selecione quantos arquivos quiser de uma vez - a conta de cada um é sugerida pelo conteúdo quando possível, mas a próxima tela sempre pede confirmação antes de gravar qualquer linha.</p>
 </div>
 
 <div id="import-results">

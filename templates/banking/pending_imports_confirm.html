@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% load static %}
+{% load icons %}
+
+{% block title %}Banking • Confirmar importação{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/bank-imports.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>🏦 Confirmar importação</h1>
+        <p>Nada foi gravado ainda. Confira a conta sugerida para cada arquivo (ou escolha outra) antes de importar.</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="table-container u-mb-1">
+    <form method="post" action="{% url 'bank_statements:process_imports' %}">
+        {% csrf_token %}
+        <div class="u-d-flex u-items-center u-gap-05 u-mb-075">
+            <h3 class="u-mb-0">{{ uploads|length }} arquivo(s) enviado(s)</h3>
+            <button type="submit" class="btn-sm btn-primary"
+                    data-sa-confirmar="Importar os arquivos com a conta indicada em cada linha? Arquivos sem conta escolhida são descartados, sem gravar nada."
+                    data-sa-titulo="Confirmar importação"
+                    data-sa-severidade="warning"
+                    data-sa-ok="Confirmar">
+                {% icon 'check' %}<span>Confirmar importações</span>
+            </button>
+        </div>
+        <table class="tx-table">
+            <thead>
+                <tr>
+                    <th>Arquivo</th>
+                    <th>Detectado</th>
+                    <th>Conta</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for upload in uploads %}
+                <tr>
+                    <td>{{ upload.original_filename }}</td>
+                    <td>
+                        {% if upload.detection_error %}
+                        <small style="color: var(--danger)">{{ upload.detection_error }}</small>
+                        {% elif upload.detected_label %}
+                        {{ upload.detected_label }}
+                        {% else %}
+                        <small class="text-muted">Não identificado</small>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if upload.detection_error %}
+                        <small class="text-muted">Será descartado</small>
+                        {% else %}
+                        <select name="account_{{ upload.id }}" aria-label="Conta para {{ upload.original_filename }}">
+                            <option value="">Não importar</option>
+                            {% for account in import_accounts %}
+                            <option value="{{ account.id }}" {% if upload.detected_account_id == account.id %}selected{% endif %}>{{ account.owner.name }} / {{ account.institution.institution_name }} / {{ account.account_name }}</option>
+                            {% endfor %}
+                        </select>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </form>
+    <p><a href="{% url 'bank_statements:imports_view' %}">Voltar para Importações</a></p>
+</div>
+{% endblock %}

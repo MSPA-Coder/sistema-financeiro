@@ -57,6 +57,7 @@
                 <option value="{{ payment.id }}">{{ payment.owner.name }} · {{ payment.institution.institution_name }} · {{ payment.account_name }}</option>
             {% endfor %}
         </select>
+        <input type="text" name="statement_identifier" aria-label="Identificador no extrato" placeholder="Nº da conta no extrato (opcional)" maxlength="40" title="Número da conta como aparece no extrato do banco. Usado para reconhecer a conta ao importar vários extratos de uma vez." data-ui="w-120">
         <button type="submit" class="btn btn-primary btn-sm"
                 data-sa-confirmar="Cadastrar esta conta financeira?"
                 data-sa-titulo="Confirmar cadastro"

@@ -9,6 +9,7 @@ vez de apagar o histórico junto e em silêncio.
 """
 from __future__ import annotations
 
+from django.conf import settings
 from django.db import models
 from django.db.models import Q, UniqueConstraint
 from django.utils import timezone
@@ -109,6 +110,55 @@ class EntryAttachment(models.Model):
         if self.pk:
             self.updated_at = timezone.now()
         super().save(*args, **kwargs)
+
+
+class PendingStatementUpload(models.Model):
+    """Arquivo enviado na importação em lote, aguardando confirmação da conta.
+
+    Nada aqui vira `BankStatementLine`: é só o estágio entre o upload (que
+    ainda não sabe a conta) e a confirmação (que chama `import_statement_file`
+    como o formulário de um arquivo só sempre chamou). Por isso não é um
+    `BankStatementImport` com `account` nulo -- aquele FK é `PROTECT` e
+    obrigatório de propósito, e um lote confirmado deve continuar garantindo
+    que pertence a uma conta real.
+    """
+
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="pending_statement_uploads",
+    )
+    original_filename = models.CharField(max_length=255)
+    stored_filename = models.CharField(max_length=255)
+    stored_path = models.CharField(max_length=500)
+    mime_type = models.CharField(max_length=120, blank=True, null=True)
+    file_size = models.IntegerField(default=0)
+    detected_account = models.ForeignKey(
+        "banking.FinancialAccount",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="pending_statement_uploads",
+    )
+    detected_label = models.CharField(max_length=255, blank=True)
+    detection_error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "pending_statement_upload"
+        ordering = ["created_at", "id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(original_filename__regex=r"^\s*.+\s*$"),
+                name="ck_pending_statement_upload_filename_not_blank",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["uploaded_by"]),
+        ]
+
+    def __str__(self):
+        return self.original_filename
 
 
 class BankStatementLine(models.Model):

@@ -12,7 +12,7 @@ from decimal import Decimal
 
 import pytest
 
-from bank_statements.adapters import _parse_genial_lines
+from bank_statements.adapters import _parse_genial_lines, extract_conta_label, sniff_pdf_format
 
 SAMPLE_TEXT = """
 Extrato de conta corrente
@@ -83,3 +83,19 @@ def test_parse_genial_lines_distinct_hashes_for_same_day_different_amounts():
     lines = _parse_genial_lines(SAMPLE_TEXT, account_id=1)
     hashes = {line.line_hash for line in lines}
     assert len(hashes) == len(lines)
+
+
+def test_extract_conta_label_reads_account_number_from_footer():
+    assert extract_conta_label(SAMPLE_TEXT) == "1234567-8"
+
+
+def test_extract_conta_label_is_none_without_the_label():
+    assert extract_conta_label("Extrato de conta corrente\nNome: FULANO") is None
+
+
+def test_sniff_pdf_format_recognizes_genial_by_name_in_text():
+    assert sniff_pdf_format(SAMPLE_TEXT) == "genial"
+
+
+def test_sniff_pdf_format_is_none_without_a_known_institution_name():
+    assert sniff_pdf_format("Extrato de conta corrente\nNome: FULANO") is None
