@@ -12,6 +12,7 @@ urlpatterns = [
     path('banking/imports/confirm/', views.confirm_imports_view, name='confirm_imports'),
     path('banking/imports/confirm/process/', views.process_imports_view, name='process_imports'),
     path('banking/import/status/<int:batch_id>/', views.import_status_view, name='import_status'),
+    path('banking/import/<int:batch_id>/undo/', views.undo_import_view, name='undo_import'),
     path('banking/import/<int:batch_id>/fatura/', views.fatura_view, name='fatura'),
     path('banking/import/<int:batch_id>/fatura/processar/', views.processar_fatura_view, name='processar_fatura'),
 

@@ -58,8 +58,13 @@
                         {% else %}
                         <select name="account_{{ upload.id }}" aria-label="Conta para {{ upload.original_filename }}">
                             <option value="">Não importar</option>
-                            {% for account in import_accounts %}
-                            <option value="{{ account.id }}" {% if upload.detected_account_id == account.id %}selected{% endif %}>{{ account.owner.name }} / {{ account.institution.institution_name }} / {{ account.account_name }}</option>
+                            {% regroup import_accounts by owner.name as titular_groups %}
+                            {% for titular in titular_groups %}
+                            <optgroup label="{{ titular.grouper }}">
+                                {% for account in titular.list %}
+                                <option value="{{ account.id }}" {% if upload.detected_account_id == account.id %}selected{% endif %}>{{ account.institution.institution_name }} / {{ account.account_name }}</option>
+                                {% endfor %}
+                            </optgroup>
                             {% endfor %}
                         </select>
                         {% endif %}
