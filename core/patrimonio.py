@@ -818,6 +818,9 @@ def _conta_v4(conta: FinancialAccount, referencia: date, saldos: dict[int, Decim
         "source_id": _source_id_v4("account", conta.id),
         "name": conta.account_name,
         "account_type": conta.account_kind,
+        # Acréscimo opcional (02/10/2026): "pessoal" ou "administrada". Quem não
+        # o conhece ignora, e o contrato continua v4.
+        "purpose": conta.purpose,
         "currency": conta.currency,
         "owner": identidade(conta.owner.name),
         "owner_name": conta.owner.name,

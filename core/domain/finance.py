@@ -158,5 +158,18 @@ ACCOUNT_KIND_OPTIONS: Final = (
 VALID_ACCOUNT_KINDS: Final = (ACCOUNT_KIND_REGULAR, ACCOUNT_KIND_CREDIT_CARD, ACCOUNT_KIND_INVESTMENT)
 # Os tipos sem dado de cartão: tudo que não é cartão.
 NON_CARD_ACCOUNT_KINDS: Final = (ACCOUNT_KIND_REGULAR, ACCOUNT_KIND_INVESTMENT)
+# Finalidade da conta. "Administrada" é a conta que só recebe, gere e distribui
+# dinheiro de outras pessoas (os aluguéis do Jardim Iva): fica fora do fluxo
+# pessoal por padrão, em vez de entrar nele como se fosse do titular. A finalidade
+# vence o tipo da conta no filtro global de grupos (`core/account_group_filter.py`),
+# para cada conta continuar em exatamente um grupo. Dinheiro que cruza a fronteira
+# entre administrada e pessoal não é transferência: é repasse e renda.
+ACCOUNT_PURPOSE_PERSONAL: Final = "pessoal"
+ACCOUNT_PURPOSE_ADMINISTERED: Final = "administrada"
+ACCOUNT_PURPOSE_OPTIONS: Final = (
+    (ACCOUNT_PURPOSE_PERSONAL, "Pessoal"),
+    (ACCOUNT_PURPOSE_ADMINISTERED, "Administrada (de terceiros)"),
+)
+VALID_ACCOUNT_PURPOSES: Final = (ACCOUNT_PURPOSE_PERSONAL, ACCOUNT_PURPOSE_ADMINISTERED)
 CARD_DAY_MIN: Final = 1
 CARD_DAY_MAX: Final = 31

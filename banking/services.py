@@ -12,11 +12,13 @@ from accounts.services import accessible_owner_ids, can_access_owner
 from core.domain.finance import (
     ACCOUNT_KIND_CREDIT_CARD,
     ACCOUNT_KIND_REGULAR,
+    ACCOUNT_PURPOSE_PERSONAL,
     BASE_CURRENCY,
     CARD_DAY_MAX,
     CARD_DAY_MIN,
     NON_CARD_ACCOUNT_KINDS,
     VALID_ACCOUNT_KINDS,
+    VALID_ACCOUNT_PURPOSES,
     VALID_CURRENCIES,
     MixedCurrencyError,
 )
@@ -352,6 +354,13 @@ def _clean_card_fields(
     }
 
 
+def _clean_purpose(raw: str | None) -> str:
+    purpose = (raw or ACCOUNT_PURPOSE_PERSONAL).strip()
+    if purpose not in VALID_ACCOUNT_PURPOSES:
+        raise ValueError("Finalidade da conta inválida.")
+    return purpose
+
+
 def create_account(
     user,
     *,
@@ -361,6 +370,7 @@ def create_account(
     initial_balance: str,
     currency: str,
     initial_balance_date: str = "",
+    purpose: str = ACCOUNT_PURPOSE_PERSONAL,
     account_kind: str = ACCOUNT_KIND_REGULAR,
     card_closing_day: str = "",
     card_due_day: str = "",
@@ -395,6 +405,7 @@ def create_account(
         currency=clean_currency,
         initial_balance_date=clean_balance_date,
         statement_identifier=(statement_identifier or "").strip()[:40],
+        purpose=_clean_purpose(purpose),
         **card,
     )
 
@@ -409,6 +420,7 @@ def update_account(
     initial_balance: str,
     currency: str,
     initial_balance_date: str = "",
+    purpose: str = ACCOUNT_PURPOSE_PERSONAL,
     account_kind: str = ACCOUNT_KIND_REGULAR,
     card_closing_day: str = "",
     card_due_day: str = "",
@@ -463,11 +475,12 @@ def update_account(
     account.currency = clean_currency
     account.initial_balance_date = clean_balance_date
     account.statement_identifier = (statement_identifier or "").strip()[:40]
+    account.purpose = _clean_purpose(purpose)
     for field, value in card.items():
         setattr(account, field, value)
     account.save(update_fields=[
         "owner", "institution", "account_name", "initial_balance",
-        "currency", "initial_balance_date", "statement_identifier", *card, "updated_at",
+        "currency", "initial_balance_date", "statement_identifier", "purpose", *card, "updated_at",
     ])
     return account
 

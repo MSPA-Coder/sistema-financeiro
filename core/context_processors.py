@@ -261,10 +261,10 @@ def _account_group_counts(user) -> dict[str, int]:
     counts = dict.fromkeys(ALL_ACCOUNT_GROUPS, 0)
     if user is None:
         return counts
-    for kind, institution_type in FinancialAccount.objects.filter(
+    for kind, institution_type, purpose in FinancialAccount.objects.filter(
         owner_id__in=accessible_owner_ids(user, "view")
-    ).values_list("account_kind", "institution__institution_type"):
-        counts[account_group(kind, institution_type)] += 1
+    ).values_list("account_kind", "institution__institution_type", "purpose"):
+        counts[account_group(kind, institution_type, purpose)] += 1
     return counts
 
 

@@ -13,6 +13,7 @@ from django.views.decorators.http import require_POST
 from accounts.services import accessible_owner_ids
 from core.domain.finance import (
     ACCOUNT_KIND_OPTIONS,
+    ACCOUNT_PURPOSE_OPTIONS,
     CURRENCY_OPTIONS,
     VIEW_PROJECTED,
     VIEW_REALIZED,
@@ -212,6 +213,7 @@ def accounts_view(request):
         "institutions": list_institutions(),
         "currencies": CURRENCY_OPTIONS,
         "account_kinds": ACCOUNT_KIND_OPTIONS,
+        "account_purposes": ACCOUNT_PURPOSE_OPTIONS,
         # Candidatas a conta de pagamento padrão de um cartão: o que não é
         # cartão e o usuário enxerga -- a mesma regra do service, que tem a
         # validação final.
@@ -230,6 +232,7 @@ def accounts_view(request):
 
 def _card_fields_from_post(request) -> dict[str, str]:
     return {
+        "purpose": request.POST.get("purpose", ""),
         "account_kind": request.POST.get("account_kind", ""),
         "card_closing_day": request.POST.get("card_closing_day", ""),
         "card_due_day": request.POST.get("card_due_day", ""),

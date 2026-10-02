@@ -7,12 +7,15 @@ from core.domain.finance import (
     ACCOUNT_KIND_CREDIT_CARD,
     ACCOUNT_KIND_OPTIONS,
     ACCOUNT_KIND_REGULAR,
+    ACCOUNT_PURPOSE_OPTIONS,
+    ACCOUNT_PURPOSE_PERSONAL,
     CARD_DAY_MAX,
     CARD_DAY_MIN,
     CURRENCY_BRL,
     CURRENCY_OPTIONS,
     NON_CARD_ACCOUNT_KINDS,
     VALID_ACCOUNT_KINDS,
+    VALID_ACCOUNT_PURPOSES,
     VALID_CURRENCIES,
 )
 
@@ -97,6 +100,12 @@ class FinancialAccount(models.Model):
         choices=ACCOUNT_KIND_OPTIONS,
         default=ACCOUNT_KIND_REGULAR,
     )
+    purpose = models.CharField(
+        max_length=20,
+        choices=ACCOUNT_PURPOSE_OPTIONS,
+        default=ACCOUNT_PURPOSE_PERSONAL,
+        help_text='Pessoal ou administrada (dinheiro de terceiros que o titular só gere).',
+    )
     card_closing_day = models.PositiveSmallIntegerField(null=True, blank=True)
     card_due_day = models.PositiveSmallIntegerField(null=True, blank=True)
     card_payment_account = models.ForeignKey(
@@ -138,6 +147,10 @@ class FinancialAccount(models.Model):
             models.CheckConstraint(
                 condition=models.Q(account_kind__in=VALID_ACCOUNT_KINDS),
                 name='ck_financial_account_kind_valid',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(purpose__in=VALID_ACCOUNT_PURPOSES),
+                name='ck_financial_account_purpose_valid',
             ),
             # Cartão tem os dois dias; conta comum e aplicação não têm nenhum
             # dado de cartão.
