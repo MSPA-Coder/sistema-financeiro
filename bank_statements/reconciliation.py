@@ -311,6 +311,35 @@ def _locked_entry_for_update(entry_id) -> CashFlowEntry:
     raise ValueError("Movimento não encontrado.")
 
 
+def rendimentos_agrupados(lines) -> list[dict]:
+    """Rendimentos pendentes agrupados por conta e mês, para aplicar de uma vez.
+
+    O extrato do Mercado Pago lista o rendimento de cada dia (R$ 0,02 por dia);
+    a linha continua sendo importada uma a uma, para a conferência de saldo
+    bater, mas não faz sentido pedir uma decisão por linha. Entram as linhas
+    cujo plano é criar lançamento na categoria "Rendimentos"."""
+    from . import extrato
+
+    grupos: dict[tuple[int, int, int], dict] = {}
+    for line in lines:
+        plano = getattr(line, "plano", None)
+        if plano is None or plano.acao != extrato.CRIA or plano.sugestao is None:
+            continue
+        categoria = plano.sugestao.categoria
+        if categoria is None or categoria.category_name.strip().lower() != "rendimentos":
+            continue
+        chave = (line.account_id, line.statement_date.year, line.statement_date.month)
+        grupo = grupos.setdefault(
+            chave,
+            {"conta": line.account, "mes": line.statement_date.replace(day=1), "quantidade": 0,
+             "total": Decimal("0.00"), "line_ids": []},
+        )
+        grupo["quantidade"] += 1
+        grupo["total"] += line.amount
+        grupo["line_ids"].append(line.id)
+    return sorted(grupos.values(), key=lambda g: (g["mes"], g["conta"].id), reverse=True)
+
+
 def reconciliation_view_data(user, target_line_id: int | None = None) -> dict:
     """Dados para a tela de conciliação: linhas pendentes, candidatos por
     linha e conciliações recentes agrupadas por lote de importação, com
@@ -366,6 +395,7 @@ def reconciliation_view_data(user, target_line_id: int | None = None) -> dict:
 
     return {
         "lines": lines,
+        "rendimentos_agrupados": rendimentos_agrupados(lines),
         "reconciled_batches": reconciled_batches,
         "target_line_id": target_line.id if target_line else None,
         "target_batch_id": target_batch_id,

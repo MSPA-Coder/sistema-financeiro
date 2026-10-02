@@ -1,6 +1,29 @@
 {% load static %}
 {% load icons %}
 {% load money_filters %}
+{% if rendimentos_agrupados %}
+<div class="table-container u-mb-1">
+    <h3 class="u-mb-075">Rendimentos pendentes, por conta e mês</h3>
+    <p class="help-text">Cada linha do extrato continua existindo (é o que faz o saldo do arquivo bater), mas não precisa de uma decisão por linha: aplique o grupo de uma vez.</p>
+    {% for grupo in rendimentos_agrupados %}
+    <form method="post" action="{% url 'bank_statements:bulk_action_lines' %}"
+          hx-post="{% url 'bank_statements:bulk_action_lines' %}"
+          hx-target="#reconciliation-results"
+          hx-swap="innerHTML" class="u-d-flex u-gap-05 u-items-center u-mb-075">
+        {% csrf_token %}
+        <input type="hidden" name="bulk_action" value="apply_plan">
+        {% for line_id in grupo.line_ids %}<input type="hidden" name="line_ids" value="{{ line_id }}">{% endfor %}
+        <span>{{ grupo.mes|date:"m/Y" }} · {{ grupo.conta.owner.name }} / {{ grupo.conta.institution.institution_name }} / {{ grupo.conta.account_name }}
+            · {{ grupo.quantidade }} linha{{ grupo.quantidade|pluralize }} · <strong class="amount amount-positive">{{ grupo.total|money:grupo.conta.currency }}</strong></span>
+        <button type="submit" class="btn-sm btn-primary"
+                data-sa-confirmar="Criar os {{ grupo.quantidade }} lançamentos de rendimento deste mês?"
+                data-sa-titulo="Aplicar rendimentos do mês"
+                data-sa-severidade="info"
+                data-sa-ok="Aplicar">Aplicar o mês</button>
+    </form>
+    {% endfor %}
+</div>
+{% endif %}
 <div class="table-container u-mb-1">
     <form id="bulkPendingLinesForm" method="post" action="{% url 'bank_statements:bulk_action_lines' %}"
           hx-post="{% url 'bank_statements:bulk_action_lines' %}"
