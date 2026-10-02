@@ -50,15 +50,15 @@ class Regras:
 
 
 def conta_de_destino(regra: StatementRule, conta: FinancialAccount) -> FinancialAccount | None:
-    """A conta de destino da regra de transferência: mesmo titular, mesma
-    instituição, nome informado. `None` quando a regra não é de transferência
-    ou a conta ainda não existe."""
+    """A conta de destino da regra de transferência: mesmo titular, a instituição
+    da regra (ou a da linha, se a regra não diz) e o nome informado. `None`
+    quando a regra não é de transferência ou a conta ainda não existe."""
     if regra.action != RULE_ACTION_TRANSFER:
         return None
     return (
         FinancialAccount.objects.filter(
             owner_id=conta.owner_id,
-            institution_id=conta.institution_id,
+            institution_id=regra.destination_institution_id or conta.institution_id,
             account_name__iexact=regra.destination_account_name.strip(),
         )
         .exclude(id=conta.id)

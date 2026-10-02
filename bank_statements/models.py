@@ -225,6 +225,16 @@ class StatementRule(models.Model):
         related_name="statement_rules",
     )
     destination_account_name = models.CharField(max_length=100, blank=True, default="")
+    # Instituição da conta de destino, quando não é a da linha (a compra de
+    # Tesouro Direto sai da corretora e cai na conta de aplicação "Tesouro Direto"
+    # da instituição XP). Vazio, vale a instituição da própria linha.
+    destination_institution = models.ForeignKey(
+        "banking.FinancialInstitution",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="statement_rules_as_destination",
+    )
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

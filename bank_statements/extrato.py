@@ -32,6 +32,7 @@ import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import timedelta
+from uuid import uuid4
 
 from django.db import transaction as db_transaction
 
@@ -39,15 +40,25 @@ from accounts.models import AccountOwner
 from accounts.services import can_use_transfer_destination
 from banking.services import accessible_account_ids, can_access_account
 from core.domain.finance import (
+    CATEGORY_KIND_MANAGERIAL,
     CATEGORY_KIND_TRANSFER,
     ENTRY_TYPE_EXPENSE,
+    ENTRY_TYPE_INCOME,
+    OPERATION_INTERNAL_TRANSFER,
+    OPERATION_SINGLE,
     STATUS_REALIZED,
 )
-from transactions.models import CashFlowCategory, CashFlowEntry
-from transactions.services import TransactionRequest, create_transaction_batch
+from transactions.models import BankOperation, CashFlowCategory, CashFlowEntry
+from transactions.services import (
+    TransactionRequest,
+    _account_label,
+    create_transaction_batch,
+    is_month_closed,
+)
 
 from . import reconciliation
 from .classificacao import Sugestao, sugerir_categoria
+from .meses import meses_reabertos
 from .models import (
     LINE_STATUS_NEW,
     LINE_STATUS_RECONCILED,
@@ -63,13 +74,17 @@ CONCILIA_APROXIMADA = "concilia_aproximada"
 CRIA = "cria"
 TRANSFERENCIA_PAR = "transferencia_par"
 TRANSFERENCIA_REGRA = "transferencia_regra"
+TRANSFERENCIA_COM_LANCAMENTO = "transferencia_com_lancamento"
 TRANSFERENCIA_SEM_PAR = "transferencia_sem_par"
 IGNORA = "ignora"
 AMBIGUA = "ambigua"
 MANUAL = "manual"
 
 # Ações que `aplicar` executa sozinha; as demais esperam o usuário.
-EXECUTAVEIS = (CONCILIA, CONCILIA_APROXIMADA, CRIA, TRANSFERENCIA_PAR, TRANSFERENCIA_REGRA, IGNORA)
+EXECUTAVEIS = (
+    CONCILIA, CONCILIA_APROXIMADA, CRIA, TRANSFERENCIA_PAR, TRANSFERENCIA_REGRA,
+    TRANSFERENCIA_COM_LANCAMENTO, IGNORA,
+)
 
 ROTULOS = {
     CONCILIA: "Concilia com o lançamento existente",
@@ -77,6 +92,7 @@ ROTULOS = {
     CRIA: "Cria lançamento",
     TRANSFERENCIA_PAR: "Transferência entre contas suas (pareia as duas linhas)",
     TRANSFERENCIA_REGRA: "Transferência para a conta",
+    TRANSFERENCIA_COM_LANCAMENTO: "Transferência entre contas suas: aproveita o lançamento já gravado na outra conta",
     TRANSFERENCIA_SEM_PAR: "Parece transferência sua; falta importar a outra ponta",
     IGNORA: "Ignora (regra)",
     AMBIGUA: "Mais de um lançamento candidato: escolha",
@@ -89,6 +105,7 @@ ROTULOS_CURTOS = {
     CRIA: "lançamento(s) criado(s)",
     TRANSFERENCIA_PAR: "transferência(s) pareada(s)",
     TRANSFERENCIA_REGRA: "transferência(s) por regra",
+    TRANSFERENCIA_COM_LANCAMENTO: "transferência(s) com lançamento já gravado",
     IGNORA: "ignorada(s)",
 }
 
@@ -96,6 +113,7 @@ _SEM_DESTINO = "Você não tem permissão de destino de transferência para {con
 _JANELA_DO_PAR = timedelta(days=2)
 _LIMITE_DO_POOL = 3000
 # Palavras que dão cara de transferência a uma linha de extrato.
+_PALAVRAS_FORTES = re.compile(r"\b(TED|DOC|TRANSFERENCIA|TRANSF|EMISSAO DE CDB|RESGATE DE CDB)\b")
 _PALAVRAS_DE_TRANSFERENCIA = re.compile(
     r"\b(PIX|TED|DOC|TRANSFERENCIA|TRANSF|EMISSAO DE CDB|RESGATE DE CDB|RESGATE|APLICACAO)\b"
 )
@@ -130,6 +148,11 @@ class Plano:
             )
         if self.acao == TRANSFERENCIA_PAR and self.par is not None:
             return f"{texto}: {_rotulo_da_conta(self.par.account)}"
+        if self.acao == TRANSFERENCIA_COM_LANCAMENTO and self.lancamento is not None:
+            return (
+                f"{texto} (#{self.lancamento.id}, {self.lancamento.account.account_name}, "
+                f"{self.lancamento.realized_date:%d/%m/%Y})"
+            )
         if self.acao == TRANSFERENCIA_REGRA and self.conta_destino is not None:
             return f"{texto} {self.conta_destino.account_name}"
         if self.motivo:
@@ -160,6 +183,11 @@ def texto_cita_titular(descricao: str, padroes) -> bool:
 
 def texto_tem_cara_de_transferencia(descricao: str) -> bool:
     return bool(_PALAVRAS_DE_TRANSFERENCIA.search(normalizar(descricao)))
+
+
+def texto_tem_transferencia_forte(descricao: str) -> bool:
+    """Cara de transferência sem contar o "Pix", que também paga terceiros."""
+    return bool(_PALAVRAS_FORTES.search(normalizar(descricao)))
 
 
 nomes_dos_titulares = _nomes_dos_titulares
@@ -228,6 +256,64 @@ def _pares(alvos: list[BankStatementLine], pool: list[BankStatementLine], padroe
     return resultado
 
 
+def _lancamentos_para_par(user, linhas, padroes) -> dict[int, CashFlowEntry]:
+    """Para cada linha sem outra linha como par, o lançamento já gravado, em outra
+    conta do usuário, que é a outra ponta da transferência.
+
+    É o caso da corretora cujo extrato chega depois: o dinheiro que ela mandou
+    para a conta digital já está lá, gravado como receita ("TED recebida",
+    "Cashbak"). Vale quando o lançamento é realizado, avulso, gerencial, de sinal
+    oposto, de mesmo valor, até dois dias de distância, na mesma moeda, e há
+    indício (um titular citado em qualquer um dos textos, ou cara de
+    transferência na linha). O par tem de ser único dos dois lados."""
+    contas = accessible_account_ids(user, "update")
+    if not contas or not linhas:
+        return {}
+    valores = {abs(linha.amount) for linha in linhas}
+    pool = list(
+        CashFlowEntry.objects.filter(
+            account_id__in=contas,
+            status=STATUS_REALIZED,
+            operation_type=OPERATION_SINGLE,
+            is_recurring=False,
+            source_entry__isnull=True,
+            category__kind=CATEGORY_KIND_MANAGERIAL,
+            realized_amount__in=valores,
+        )
+        .exclude(account__account_kind="cartao_credito")
+        .select_related("account__owner", "account__institution", "category")
+    )
+    candidatos: dict[int, list[CashFlowEntry]] = {}
+    for linha in linhas:
+        if linha.account.is_credit_card:
+            continue
+        tipo = ENTRY_TYPE_INCOME if linha.amount < 0 else ENTRY_TYPE_EXPENSE
+        achados = []
+        for entrada in pool:
+            if entrada.account_id == linha.account_id or entrada.entry_type != tipo:
+                continue
+            if entrada.realized_amount != abs(linha.amount) or entrada.account.currency != linha.account.currency:
+                continue
+            if abs(entrada.realized_date - linha.statement_date) > _JANELA_DO_PAR:
+                continue
+            indicio = (
+                _cita_titular(linha, padroes)
+                or texto_cita_titular(entrada.description, padroes)
+                or texto_tem_transferencia_forte(linha.description)
+            )
+            if indicio:
+                achados.append(entrada)
+        candidatos[linha.id] = achados
+    reivindicacoes = Counter(
+        entrada.id for achados in candidatos.values() for entrada in achados
+    )
+    return {
+        linha_id: achados[0]
+        for linha_id, achados in candidatos.items()
+        if len(achados) == 1 and reivindicacoes[achados[0].id] == 1
+    }
+
+
 def planejar(user, linhas) -> list[Plano]:
     """Decide o destino de cada linha nova, sem gravar nada."""
     linhas = [linha for linha in linhas if linha.status == LINE_STATUS_NEW]
@@ -236,6 +322,9 @@ def planejar(user, linhas) -> list[Plano]:
     regras = Regras()
     padroes = _nomes_dos_titulares()
     pares = _pares(linhas, _pool_de_pareamento(user), padroes)
+    com_lancamento = _lancamentos_para_par(
+        user, [linha for linha in linhas if linha.id not in pares], padroes
+    )
     candidatos = reconciliation.candidate_entries_for_lines(linhas, limit=2)
 
     planos: list[Plano] = []
@@ -279,6 +368,15 @@ def planejar(user, linhas) -> list[Plano]:
                     conta=_rotulo_da_conta(quem_recebe))))
                 continue
             planos.append(Plano(linha, TRANSFERENCIA_REGRA, conta_destino=destino, regra=regra))
+            continue
+        existente = com_lancamento.get(linha.id)
+        if existente is not None:
+            quem_recebe = linha.account if linha.amount > 0 else existente.account
+            if not can_use_transfer_destination(user, quem_recebe.id):
+                planos.append(Plano(linha, MANUAL, lancamento=existente, regra=regra, motivo=_SEM_DESTINO.format(
+                    conta=_rotulo_da_conta(quem_recebe))))
+            else:
+                planos.append(Plano(linha, TRANSFERENCIA_COM_LANCAMENTO, lancamento=existente, regra=regra))
             continue
         aproximados = reconciliation.candidatos_aproximados(linha, limit=2)
         if len(aproximados) == 1:
@@ -395,9 +493,107 @@ def _aplicar_regra_de_transferencia(user, plano: Plano, audit_context) -> None:
     _vincular(linha, lancamento_origem if saida else lancamento_destino)
 
 
-def aplicar(user, linhas, audit_context=None) -> tuple[Counter, list[tuple[str, str]]]:
+MOTIVO_DA_REABERTURA = "Transferência com lançamento já gravado, a partir do extrato"
+
+
+def _aplicar_com_lancamento(user, plano: Plano, audit_context, autorizar_meses: bool) -> None:
+    """Cria a ponta que falta e transforma o lançamento já gravado na outra.
+
+    O lançamento existente só muda de natureza (categoria, operação interna e
+    vínculo): valor, data, conta e conciliação ficam, e por isso o saldo do mês
+    dele não muda -- é o que permite reabrir o mês fechado dele, com o saldo de
+    fechamento conferido. A ponta nova nasce no mês da linha, que não pode estar
+    fechado (criá-la mudaria o saldo daquele mês)."""
+    from core.services import log_audit_event
+
+    linha = _linha_travada(user, plano.linha.id)
+    existente = (
+        CashFlowEntry.objects.select_for_update()
+        .select_related("account__owner", "account__institution", "category")
+        .get(id=plano.lancamento.id)
+    )
+    if (
+        existente.status != STATUS_REALIZED
+        or existente.operation_type != OPERATION_SINGLE
+        or existente.source_entry_id is not None
+        or existente.category.kind != CATEGORY_KIND_MANAGERIAL
+        or existente.realized_amount != abs(linha.amount)
+    ):
+        raise ValueError("O lançamento da outra conta mudou desde a prévia.")
+    if existente.account.currency != linha.account.currency:
+        raise ValueError("Transferência entre moedas diferentes é lançada à mão.")
+    if is_month_closed(linha.account, linha.statement_date.year, linha.statement_date.month):
+        raise ValueError(
+            f"Não é possível lançar a ponta nova: mês {linha.statement_date.month:02d}/"
+            f"{linha.statement_date.year} fechado para a conta {linha.account}."
+        )
+    categoria = _categoria_de_transferencia()
+    saida_da_linha = linha.amount < 0
+    valor = abs(linha.amount)
+    meses = {(existente.account_id, existente.realized_date.year, existente.realized_date.month)}
+    antes = (existente.category.category_name, existente.description)
+    with meses_reabertos(
+        user, meses, autorizar=autorizar_meses, motivo=MOTIVO_DA_REABERTURA, audit_context=audit_context
+    ):
+        operacao = BankOperation.objects.create(
+            operation_key=f"{OPERATION_INTERNAL_TRANSFER}-{uuid4().hex}",
+            operation_type=OPERATION_INTERNAL_TRANSFER,
+            description="",
+            status=STATUS_REALIZED,
+            installment_total=1,
+            responsible_user=user,
+        )
+
+        def nova_ponta(*, tipo, descricao, origem=None):
+            return CashFlowEntry.objects.create(
+                account=linha.account, category=categoria, entry_type=tipo, description=descricao,
+                entry_amount=valor, installments=1, current_installment=1,
+                due_date=linha.statement_date, realized_date=linha.statement_date, realized_amount=valor,
+                status=STATUS_REALIZED, operation_type=OPERATION_INTERNAL_TRANSFER,
+                bank_operation=operacao, source_entry=origem,
+            )
+
+        if saida_da_linha:
+            # A linha é a origem; o lançamento existente (receita) vira a contraparte.
+            nova = nova_ponta(tipo=ENTRY_TYPE_EXPENSE, descricao=f"Conta Destino: {_account_label(existente.account)}")
+            existente.source_entry = nova
+            existente.description = f"Conta Origem: {_account_label(linha.account)}"
+        else:
+            # O lançamento existente (despesa) vira a origem; a linha é a contraparte.
+            existente.description = f"Conta Destino: {_account_label(linha.account)}"
+        existente.category = categoria
+        existente.operation_type = OPERATION_INTERNAL_TRANSFER
+        existente.bank_operation = operacao
+        existente.save(
+            update_fields=["category", "operation_type", "bank_operation", "source_entry", "description", "updated_at"]
+        )
+        if not saida_da_linha:
+            nova = nova_ponta(
+                tipo=ENTRY_TYPE_INCOME, descricao=f"Conta Origem: {_account_label(existente.account)}",
+                origem=existente,
+            )
+        _vincular(linha, nova)
+        log_audit_event(
+            "cash_flow_entry", existente.id, "update",
+            old_values={"category": antes[0], "description": antes[1]},
+            new_values={"category": categoria.category_name, "description": existente.description},
+            user=user, request_context=audit_context,
+            summary="Lançamento transformado em ponta de transferência a partir do extrato.",
+        )
+        log_audit_event(
+            "cash_flow_entry", nova.id, "create", request_context=audit_context,
+            summary="Ponta de transferência criada a partir do extrato.",
+        )
+
+
+def aplicar(
+    user, linhas, audit_context=None, *, autorizar_meses: bool = False
+) -> tuple[Counter, list[tuple[str, str]]]:
     """Executa o plano das linhas dadas. Cada item é uma transação própria: uma
     falha isolada (mês fechado, acesso negado) não desfaz as demais.
+
+    `autorizar_meses` só vale para transferir com lançamento já gravado: permite
+    reabrir o mês fechado do lançamento existente (ver `meses`).
 
     Devolve a contagem por ação e a lista `(descrição, erro)`."""
     feitas: Counter = Counter()
@@ -429,6 +625,8 @@ def aplicar(user, linhas, audit_context=None) -> tuple[Counter, list[tuple[str, 
                     resolvidas.add(plano.par.id)
                 elif plano.acao == TRANSFERENCIA_REGRA:
                     _aplicar_regra_de_transferencia(user, plano, audit_context)
+                elif plano.acao == TRANSFERENCIA_COM_LANCAMENTO:
+                    _aplicar_com_lancamento(user, plano, audit_context, autorizar_meses)
             feitas[plano.acao] += 1
         except (ValueError, BankStatementLine.DoesNotExist) as exc:
             erros.append((linha.description, str(exc) or "Linha não encontrada."))

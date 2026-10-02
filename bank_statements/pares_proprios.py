@@ -24,7 +24,7 @@ from uuid import uuid4
 
 from django.db import transaction as db_transaction
 
-from accounts.services import can_use_transfer_destination, has_function_permission
+from accounts.services import can_use_transfer_destination
 from banking.services import accessible_account_ids
 from core.domain.finance import (
     CATEGORY_KIND_MANAGERIAL,
@@ -34,18 +34,16 @@ from core.domain.finance import (
     OPERATION_INTERNAL_TRANSFER,
     OPERATION_SINGLE,
     STATUS_REALIZED,
-    VIEW_REALIZED,
 )
-from reports.services import decimal_balance_before
 from transactions.models import (
-    AccountMonthClose,
     BankOperation,
     CashFlowCategory,
     CashFlowEntry,
 )
-from transactions.services import _account_label, close_month, reopen_month
+from transactions.services import _account_label
 
 from .extrato import nomes_dos_titulares, texto_cita_titular, texto_tem_cara_de_transferencia
+from .meses import meses_reabertos
 
 MOTIVO_DA_REABERTURA = "Conversão de pares próprios em transferência"
 _JANELA = timedelta(days=2)
@@ -185,36 +183,10 @@ def aplicar(user, pares: list[Par], *, autorizar_meses: bool = False, audit_cont
     categoria = CashFlowCategory.objects.filter(kind=CATEGORY_KIND_TRANSFER).order_by("id").first()
     if categoria is None:
         raise ValueError("Não há categoria de transferência cadastrada.")
-    with db_transaction.atomic():
-        meses = sorted({mes for par in pares for mes in par.meses})
-        fechados = {
-            (f.account_id, f.year, f.month): f.account
-            for f in AccountMonthClose.objects.filter(
-                active=True, account_id__in={m[0] for m in meses}
-            ).select_related("account")
-            if (f.account_id, f.year, f.month) in set(meses)
-        }
-        if fechados:
-            if not autorizar_meses:
-                raise ValueError(
-                    "Há meses fechados entre os pares: autorize a reabertura e o novo fechamento."
-                )
-            if not has_function_permission(user, "settings.monthly_close.manage"):
-                raise ValueError("Reabrir mês fechado exige a permissão de fechamento mensal.")
-        saldos = {}
-        for (conta_id, ano, mes), conta in fechados.items():
-            fechamento = AccountMonthClose.objects.get(account=conta, year=ano, month=mes, active=True)
-            saldos[(conta_id, ano, mes)] = (conta, fechamento.closing_balance)
-            reopen_month(conta, ano, mes, MOTIVO_DA_REABERTURA, user, audit_context=audit_context)
+    meses = sorted({mes for par in pares for mes in par.meses})
+    with db_transaction.atomic(), meses_reabertos(
+        user, meses, autorizar=autorizar_meses, motivo=MOTIVO_DA_REABERTURA, audit_context=audit_context
+    ):
         for par in pares:
             _converter(user, par, categoria, audit_context)
-        for (conta_id, ano, mes), (conta, anterior) in saldos.items():
-            fim = date(ano + (mes == 12), mes % 12 + 1, 1)
-            novo = decimal_balance_before([conta_id], fim, VIEW_REALIZED)
-            if novo != anterior:
-                raise ValueError(
-                    f"O saldo de fechamento de {mes:02d}/{ano} ({conta}) mudaria de {anterior} para {novo}; "
-                    "nada foi gravado."
-                )
-            close_month(conta, ano, mes, novo, user, audit_context=audit_context)
     return len(pares)

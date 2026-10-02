@@ -56,7 +56,7 @@ from core.domain.finance import (
     STATUS_REALIZED,
 )
 from transactions import services
-from transactions.models import CashFlowCategory, CashFlowEntry
+from transactions.models import AccountMonthClose, CashFlowCategory, CashFlowEntry
 
 pytestmark = pytest.mark.django_db
 
@@ -453,3 +453,111 @@ def test_realizar_em_mes_fechado_continua_bloqueado(mundo):
     linha = _linha(conta, "FOT6511-SHOPPING", "-28.00", date(2026, 7, 10))
     with pytest.raises(ValueError, match="fechad"):
         reconcile_line_with_entry(user, line_id=linha.id, entry_id=aberto.id)
+
+
+# --- transferência com lançamento já gravado na outra conta -------------------------
+
+
+def test_retirada_da_corretora_aproveita_a_receita_ja_gravada_na_conta_digital(mundo):
+    user, contas, cat = mundo
+    # A conta digital já tem a receita ("Cashbak"), gravada quando o extrato da corretora não existia.
+    receita = _lancar(user, contas["c6"], cat["outros"], "Cashbak", "72.88", date(2026, 3, 12), tipo=ENTRY_TYPE_INCOME)
+    linha = _linha(contas["genial"], "TED BCO 348 AGE 1 CTA 323220 - RETIRADA EM C/C", "-72.88", date(2026, 3, 12))
+
+    (plano,) = extrato.planejar(user, [linha])
+    assert plano.acao == extrato.TRANSFERENCIA_COM_LANCAMENTO and plano.lancamento.id == receita.id
+    assert f"#{receita.id}" in plano.rotulo
+
+    feitas, erros = extrato.aplicar(user, [linha])
+    assert erros == [] and feitas[extrato.TRANSFERENCIA_COM_LANCAMENTO] == 1
+    linha.refresh_from_db()
+    receita.refresh_from_db()
+    origem = linha.matched_entry
+    assert origem.account_id == contas["genial"].id and origem.entry_type == ENTRY_TYPE_EXPENSE
+    assert origem.category == cat["transferencia"] and origem.operation_type == "internal_transfer"
+    assert receita.source_entry_id == origem.id and receita.category == cat["transferencia"]
+    assert receita.bank_operation_id == origem.bank_operation_id
+    assert receita.realized_amount == Decimal("72.88") and receita.realized_date == date(2026, 3, 12)
+    assert receita.description.startswith("Conta Origem:") and origem.description.startswith("Conta Destino:")
+    # Nenhuma receita nem despesa gerencial sobrou.
+    assert not CashFlowEntry.objects.filter(category__kind="gerencial").exists()
+
+
+def test_entrada_na_corretora_aproveita_a_despesa_ja_gravada_na_conta_digital(mundo):
+    user, contas, cat = mundo
+    despesa = _lancar(
+        user, contas["c6"], cat["outros"], "Transferência enviada para a conta investimento", "10.00",
+        date(2026, 6, 22), tipo=ENTRY_TYPE_EXPENSE,
+    )
+    linha = _linha(contas["genial"], "Transferência recebida da conta digital", "10.00", date(2026, 6, 22))
+    feitas, erros = extrato.aplicar(user, [linha])
+    assert erros == [] and feitas[extrato.TRANSFERENCIA_COM_LANCAMENTO] == 1
+    linha.refresh_from_db()
+    despesa.refresh_from_db()
+    contraparte = linha.matched_entry
+    assert contraparte.entry_type == ENTRY_TYPE_INCOME and contraparte.source_entry_id == despesa.id
+    assert despesa.source_entry_id is None and despesa.category == cat["transferencia"]
+
+
+def test_sem_indicio_o_lancamento_existente_nao_vira_ponta(mundo):
+    user, contas, cat = mundo
+    _lancar(user, contas["c6"], cat["outros"], "Mercado", "28.00", date(2026, 3, 12), tipo=ENTRY_TYPE_INCOME)
+    linha = _linha(contas["genial"], "Pix - Para Laura", "-28.00", date(2026, 3, 12))
+    (plano,) = extrato.planejar(user, [linha])
+    assert plano.acao == extrato.CRIA
+
+
+def test_duas_linhas_disputando_o_mesmo_lancamento_nao_sao_pareadas(mundo):
+    user, contas, cat = mundo
+    _lancar(user, contas["c6"], cat["outros"], "Cashbak", "50.00", date(2026, 3, 12), tipo=ENTRY_TYPE_INCOME)
+    a = _linha(contas["genial"], "TED - RETIRADA EM C/C", "-50.00", date(2026, 3, 12))
+    b = _linha(contas["bb"], "TED - RETIRADA EM C/C", "-50.00", date(2026, 3, 12))
+    acoes = {plano.acao for plano in extrato.planejar(user, [a, b])}
+    assert extrato.TRANSFERENCIA_COM_LANCAMENTO not in acoes
+
+
+def test_mes_fechado_do_lancamento_exige_autorizacao_e_mantem_o_saldo_de_fechamento(mundo):
+    user, contas, cat = mundo
+    receita = _lancar(user, contas["c6"], cat["outros"], "Cashbak", "72.88", date(2026, 3, 12), tipo=ENTRY_TYPE_INCOME)
+    services.close_month(contas["c6"], 2026, 3, None, user)
+    fechamento = AccountMonthClose.objects.get(account=contas["c6"], year=2026, month=3, active=True).closing_balance
+    linha = _linha(contas["genial"], "TED - RETIRADA EM C/C", "-72.88", date(2026, 3, 12))
+
+    feitas, erros = extrato.aplicar(user, [linha])
+    assert not feitas and "meses fechados" in erros[0][1]
+    receita.refresh_from_db()
+    assert receita.category == cat["outros"]
+
+    feitas, erros = extrato.aplicar(user, [linha], autorizar_meses=True)
+    assert erros == [] and feitas[extrato.TRANSFERENCIA_COM_LANCAMENTO] == 1
+    assert AccountMonthClose.objects.get(
+        account=contas["c6"], year=2026, month=3, active=True
+    ).closing_balance == fechamento
+
+
+def test_mes_fechado_da_conta_da_linha_recusa_a_ponta_nova(mundo):
+    user, contas, cat = mundo
+    _lancar(user, contas["c6"], cat["outros"], "Cashbak", "72.88", date(2026, 3, 12), tipo=ENTRY_TYPE_INCOME)
+    services.close_month(contas["genial"], 2026, 3, None, user)
+    linha = _linha(contas["genial"], "TED - RETIRADA EM C/C", "-72.88", date(2026, 3, 12))
+    feitas, erros = extrato.aplicar(user, [linha], autorizar_meses=True)
+    assert not feitas and "fechado" in erros[0][1]
+
+
+def test_regra_de_transferencia_pode_apontar_a_conta_de_outra_instituicao(mundo):
+    user, contas, cat = mundo
+    tesouro = FinancialAccount.objects.create(
+        owner=contas["genial"].owner, institution=contas["c6"].institution, account_name="Tesouro Direto",
+        account_kind="aplicacao",
+    )
+    save_transfer_destination_accesses(user, {conta.id for conta in FinancialAccount.objects.all()})
+    StatementRule.objects.create(
+        name="Tesouro", pattern="TESOURO DIRETO", institution=contas["genial"].institution,
+        action=RULE_ACTION_TRANSFER, destination_account_name="Tesouro Direto",
+        destination_institution=contas["c6"].institution,
+    )
+    linha = _linha(contas["genial"], "COMPRA TESOURO DIRETO CLIENTES", "-3197.19", date(2026, 6, 24))
+    feitas, erros = extrato.aplicar(user, [linha])
+    assert erros == [] and feitas[extrato.TRANSFERENCIA_REGRA] == 1
+    linha.refresh_from_db()
+    assert CashFlowEntry.objects.get(source_entry=linha.matched_entry).account_id == tesouro.id
