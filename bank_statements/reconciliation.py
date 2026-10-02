@@ -115,6 +115,10 @@ def candidate_entries_for_line(line: BankStatementLine, limit: int = _CANDIDATE_
     antes do vencimento (ex. aluguel que cai dia 11 com vencimento dia 12) é
     comum e não deve ficar sem candidato só porque a data do extrato é
     anterior à do lançamento.
+
+    Lançamento que já tem outra linha de extrato conciliada não é candidato:
+    `reconcile_line_with_entry` recusa (um lançamento, uma linha ativa), então
+    oferecê-lo só levaria a um erro no clique.
     """
     from reports.services import add_months
 
@@ -122,13 +126,17 @@ def candidate_entries_for_line(line: BankStatementLine, limit: int = _CANDIDATE_
     entry_type = ENTRY_TYPE_INCOME if line.amount > 0 else ENTRY_TYPE_EXPENSE
     month_start = line.statement_date.replace(day=1)
     month_end_exclusive = add_months(month_start, 1)
-    return CashFlowEntry.objects.filter(
-        account_id=line.account_id,
-        entry_type=entry_type,
-        entry_amount=value,
-        due_date__gte=month_start,
-        due_date__lt=month_end_exclusive,
-    ).order_by("-due_date", "-id")[:limit]
+    return (
+        CashFlowEntry.objects.filter(
+            account_id=line.account_id,
+            entry_type=entry_type,
+            entry_amount=value,
+            due_date__gte=month_start,
+            due_date__lt=month_end_exclusive,
+        )
+        .exclude(statement_matches__status=LINE_STATUS_RECONCILED)
+        .order_by("-due_date", "-id")[:limit]
+    )
 
 
 def candidate_entries_for_lines(
@@ -169,7 +177,9 @@ def candidate_entries_for_lines(
                 entry_amount=value,
                 due_date__gte=earliest_month_start,
                 due_date__lt=latest_month_end_exclusive,
-            ).order_by("-due_date", "-id")
+            )
+            .exclude(statement_matches__status=LINE_STATUS_RECONCILED)
+            .order_by("-due_date", "-id")
         )
         for gl in group_lines:
             month_start = gl.statement_date.replace(day=1)

@@ -116,3 +116,22 @@ def test_versao_em_lote_concorda_com_a_versao_de_uma_linha(cenario):
     candidatos_por_linha = candidate_entries_for_lines([linha])
 
     assert lancamento.id in {entry.id for entry in candidatos_por_linha[linha.id]}
+
+
+def test_lancamento_ja_conciliado_com_outra_linha_nao_e_candidato(cenario):
+    """Um lançamento só tem uma linha ativa: oferecê-lo levaria ao erro
+    "Movimento já está conciliado com outra linha de extrato"."""
+    from bank_statements.reconciliation import reconcile_line_with_entry
+
+    user, conta, receita = cenario
+    lancamento = _criar_receita(user, conta, receita, vencimento=date(2026, 9, 11))
+    primeira = _linha_extrato(conta, data=date(2026, 9, 11), valor=Decimal("990.00"))
+    reconcile_line_with_entry(user, line_id=primeira.id, entry_id=lancamento.id)
+    lote = BankStatementImport.objects.create(account=conta, source_filename="outro.ofx", row_count=1)
+    segunda = BankStatementLine.objects.create(
+        import_batch=lote, account=conta, statement_date=date(2026, 9, 11),
+        description="Pix recebido * Prov *", amount=Decimal("990.00"), line_hash="hash-prov",
+    )
+
+    assert list(candidate_entries_for_line(segunda)) == []
+    assert candidate_entries_for_lines([segunda])[segunda.id] == []
