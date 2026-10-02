@@ -38,6 +38,7 @@ from .models import (
     LINE_STATUS_IGNORED,
     LINE_STATUS_NEW,
     LINE_STATUS_RECONCILED,
+    BankStatementImport,
     BankStatementLine,
 )
 
@@ -353,6 +354,50 @@ def undo_reconciliation(user, *, line_id) -> BankStatementLine:
     line.status = LINE_STATUS_NEW
     line.save(update_fields=["matched_entry", "status", "updated_at"])
     return line
+
+
+@db_transaction.atomic
+def undo_statement_import(user, *, batch_id) -> tuple[int, int]:
+    """Desfaz um lote de importação inteiro: lançamento, não extrato.
+
+    Cada linha conciliada é desconciliada primeiro, pela mesma
+    `undo_reconciliation` usada linha a linha -- o lançamento vinculado volta
+    para "vencidos", nunca é apagado. Só depois o lote e as linhas (agora
+    todas "novo" ou "ignorado") são removidos.
+
+    Um lançamento criado a partir de uma linha (`create_entry_from_line`)
+    permanece no sistema, só desvinculado: excluí-lo é decisão do usuário na
+    tela de Transações, não uma consequência automática de desfazer a
+    importação.
+
+    Fatura de cartão de crédito fica de fora de propósito: lá uma linha
+    conciliada aponta só para a primeira parcela de uma série
+    (`fatura.processar`), e desconciliar essa única ponta não alcançaria as
+    parcelas futuras já geradas em outras contas/meses. Desfazer uma fatura
+    processada é feito pela tela de Fatura, não por aqui.
+    """
+    try:
+        batch = BankStatementImport.objects.select_related("account").get(id=batch_id)
+    except BankStatementImport.DoesNotExist as exc:
+        raise ValueError("Lote de importação não encontrado.") from exc
+    if not can_access_account(user, batch.account_id, "update"):
+        raise ValueError("Acesso negado para este lote de importação.")
+    if batch.account.is_credit_card:
+        raise ValueError(
+            "Fatura de cartão de crédito não pode ser desfeita por aqui -- "
+            "use a tela de Fatura para reverter linha a linha."
+        )
+
+    lines = list(BankStatementLine.objects.select_for_update().filter(import_batch_id=batch.id))
+    reconciled_count = 0
+    for line in lines:
+        if line.status == LINE_STATUS_RECONCILED and line.matched_entry_id:
+            undo_reconciliation(user, line_id=line.id)
+            reconciled_count += 1
+
+    line_count = len(lines)
+    batch.delete()
+    return line_count, reconciled_count
 
 
 @db_transaction.atomic

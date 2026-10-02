@@ -175,10 +175,17 @@ def statement_import_status(user, batch_id: int) -> dict[str, object] | None:
 
 
 def accounts_for_import_form(user) -> Iterable[FinancialAccount]:
-    """Contas que `user` pode escolher como destino de uma importação."""
+    """Contas que `user` pode escolher como destino de uma importação.
+
+    Ordenada por titular: é a lista usada no `<select>` de confirmação, que
+    agrupa por titular (`{% regroup %}` exige a sequência já ordenada pela
+    chave do grupo) para reduzir o risco de escolher a conta do titular
+    errado quando dois titulares têm contas de mesmo nome na mesma
+    instituição.
+    """
     account_ids = accessible_account_ids(user, "create")
     if not account_ids:
         return FinancialAccount.objects.none()
     return FinancialAccount.objects.select_related("owner", "institution").filter(
         id__in=account_ids
-    )
+    ).order_by("owner__name", "institution__institution_name", "account_name")

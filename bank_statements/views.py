@@ -28,13 +28,20 @@ from .services import (
 )
 
 
+def _import_table_context(request):
+    return {
+        "imports": statement_imports_for_user(request.user),
+        "pode_desfazer_importacao": has_function_permission(request.user, 'banking.reconcile'),
+    }
+
+
 @login_required
 @permission_required('banking.view')
 @permission_required('banking.import', fallback='dashboard:dashboard')
 def imports_view(request):
     """Lista de importações recentes e formulário de novo envio."""
     context = {
-        "imports": statement_imports_for_user(request.user),
+        **_import_table_context(request),
         "import_accounts": accounts_for_import_form(request.user),
     }
     return render(request, 'banking/imports.html', context)
@@ -53,8 +60,7 @@ def stage_imports_view(request):
     if not files:
         messages.warning(request, "Selecione ao menos um arquivo para importar.")
         if quer_fragmento(request):
-            context = {"imports": statement_imports_for_user(request.user)}
-            return render(request, 'banking/_import_table.html', context)
+            return render(request, 'banking/_import_table.html', _import_table_context(request))
         return redirect('bank_statements:imports_view')
 
     pending_imports.stage_uploaded_files(request.user, files)
@@ -114,8 +120,32 @@ def process_imports_view(request):
         return redirect(destino)
 
     if quer_fragmento(request):
-        context = {"imports": statement_imports_for_user(request.user)}
-        return render(request, 'banking/_import_table.html', context)
+        return render(request, 'banking/_import_table.html', _import_table_context(request))
+    return redirect('bank_statements:imports_view')
+
+
+@login_required
+@permission_required('banking.import', fallback='bank_statements:imports_view')
+@permission_required('banking.reconcile', fallback='bank_statements:imports_view')
+@require_POST
+def undo_import_view(request, batch_id):
+    """Desfaz um lote de importação inteiro (lançamento, não fatura de cartão)."""
+    try:
+        line_count, reconciled_count = reconciliation.undo_statement_import(request.user, batch_id=batch_id)
+        texto = f"Importação desfeita: {line_count} linha(s) de extrato removida(s)"
+        if reconciled_count:
+            texto += (
+                f", {reconciled_count} conciliação(ões) revertida(s) -- os lançamentos "
+                "voltaram para Vencidos, sem serem apagados."
+            )
+        else:
+            texto += "."
+        messages.success(request, texto)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+
+    if quer_fragmento(request):
+        return render(request, 'banking/_import_table.html', _import_table_context(request))
     return redirect('bank_statements:imports_view')
 
 
