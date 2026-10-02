@@ -354,6 +354,70 @@ def test_linha_com_um_candidato_concilia_e_sem_candidato_cria_com_a_categoria_ap
     assert erros == [] and feitas[extrato.CONCILIA] == 1 and feitas[extrato.CRIA] == 1
 
 
+def _recorrencia(user, conta, categoria, descricao, valor, vencimento):
+    entradas = services.create_transaction_batch(
+        services.TransactionRequest(
+            account_id=conta.id, category_id=categoria.id, entry_type=ENTRY_TYPE_EXPENSE,
+            description=descricao, entry_amount=Decimal(valor), installments=1,
+            due_date=vencimento, is_recurring=True,
+        ),
+        user=user,
+    )
+    return next(entrada for entrada in entradas if entrada.due_date == vencimento)
+
+
+def test_recorrencia_com_valor_diferente_concilia_e_realiza_pelo_valor_do_extrato(mundo):
+    user, contas, cat = mundo
+    previsto = _recorrencia(user, contas["bb"], cat["outros"], "ENEL", "243.22", date(2026, 9, 11))
+    linha = _linha(contas["bb"], "Pagto Energia Elétrica ELETROPAULO", "-213.90", date(2026, 9, 11))
+    (plano,) = extrato.planejar(user, [linha])
+    assert plano.acao == extrato.CONCILIA_APROXIMADA and plano.lancamento.id == previsto.id
+    assert "previsto 243.22" in plano.rotulo
+
+    feitas, erros = extrato.aplicar(user, [linha])
+    assert erros == [] and feitas[extrato.CONCILIA_APROXIMADA] == 1
+    previsto.refresh_from_db()
+    assert previsto.status == STATUS_REALIZED
+    assert previsto.realized_amount == Decimal("213.90")
+    assert previsto.entry_amount == Decimal("243.22")
+
+
+def test_valor_fora_da_tolerancia_ou_lancamento_avulso_nao_e_candidato_aproximado(mundo):
+    user, contas, cat = mundo
+    _recorrencia(user, contas["bb"], cat["outros"], "ENEL", "243.22", date(2026, 9, 11))
+    longe = _linha(contas["bb"], "Energia", "-100.00", date(2026, 9, 11))
+    (plano,) = extrato.planejar(user, [longe])
+    assert plano.acao == extrato.CRIA
+
+    avulso = services.create_transaction_batch(
+        services.TransactionRequest(
+            account_id=contas["c6"].id, category_id=cat["outros"].id, entry_type=ENTRY_TYPE_EXPENSE,
+            description="Compra", entry_amount=Decimal("100.00"), installments=1, due_date=date(2026, 9, 11),
+        ),
+        user=user,
+    )[0]
+    outra = _linha(contas["c6"], "Compra parecida", "-90.00", date(2026, 9, 11))
+    (plano,) = extrato.planejar(user, [outra])
+    assert plano.acao == extrato.CRIA and avulso.is_recurring is False
+
+
+def test_duas_recorrencias_proximas_pedem_escolha(mundo):
+    user, contas, cat = mundo
+    _recorrencia(user, contas["bb"], cat["outros"], "ENEL", "243.22", date(2026, 9, 11))
+    _recorrencia(user, contas["bb"], cat["outros"], "Gás", "230.00", date(2026, 9, 12))
+    linha = _linha(contas["bb"], "Conta", "-235.00", date(2026, 9, 11))
+    (plano,) = extrato.planejar(user, [linha])
+    assert plano.acao == extrato.AMBIGUA
+
+
+def test_valor_diferente_so_com_a_permissao_explicita(mundo):
+    user, contas, cat = mundo
+    previsto = _recorrencia(user, contas["bb"], cat["outros"], "ENEL", "243.22", date(2026, 9, 11))
+    linha = _linha(contas["bb"], "Energia", "-213.90", date(2026, 9, 11))
+    with pytest.raises(ValueError, match="incompatível"):
+        reconcile_line_with_entry(user, line_id=linha.id, entry_id=previsto.id)
+
+
 def test_varios_candidatos_pedem_escolha(mundo):
     user, contas, cat = mundo
     _lancar(user, contas["c6"], cat["outros"], "A", "28.00", date(2026, 9, 3))

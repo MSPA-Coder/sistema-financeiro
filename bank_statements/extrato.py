@@ -9,6 +9,10 @@ O que uma linha vira, na ordem em que é decidido:
 - **ignorar**: uma regra explícita manda ignorar;
 - **concilia**: há um (e só um) lançamento candidato, da mesma conta, sinal e
   valor. Vários candidatos pedem escolha manual;
+- **concilia com valor diferente**: não há candidato de valor exato, mas há uma
+  (e só uma) recorrência aberta da conta, do mesmo sinal, com valor até 25% acima
+  ou abaixo do previsto e vencimento a até 5 dias (energia, condomínio). O
+  lançamento é realizado pelo valor do extrato e o previsto fica como estava;
 - **transferência pareada**: a linha tem, em outra conta, a linha de sinal
   oposto, mesmo valor e até dois dias de distância, e há indício de que as duas
   são a mesma transferência (o nome de um titular no texto, ou as duas com
@@ -55,6 +59,7 @@ from .models import (
 from .regras import Regras, conta_de_destino, normalizar
 
 CONCILIA = "concilia"
+CONCILIA_APROXIMADA = "concilia_aproximada"
 CRIA = "cria"
 TRANSFERENCIA_PAR = "transferencia_par"
 TRANSFERENCIA_REGRA = "transferencia_regra"
@@ -64,10 +69,11 @@ AMBIGUA = "ambigua"
 MANUAL = "manual"
 
 # Ações que `aplicar` executa sozinha; as demais esperam o usuário.
-EXECUTAVEIS = (CONCILIA, CRIA, TRANSFERENCIA_PAR, TRANSFERENCIA_REGRA, IGNORA)
+EXECUTAVEIS = (CONCILIA, CONCILIA_APROXIMADA, CRIA, TRANSFERENCIA_PAR, TRANSFERENCIA_REGRA, IGNORA)
 
 ROTULOS = {
     CONCILIA: "Concilia com o lançamento existente",
+    CONCILIA_APROXIMADA: "Concilia com a recorrência prevista (valor diferente)",
     CRIA: "Cria lançamento",
     TRANSFERENCIA_PAR: "Transferência entre contas suas (pareia as duas linhas)",
     TRANSFERENCIA_REGRA: "Transferência para a conta",
@@ -79,6 +85,7 @@ ROTULOS = {
 
 ROTULOS_CURTOS = {
     CONCILIA: "conciliada(s)",
+    CONCILIA_APROXIMADA: "recorrência(s) conciliada(s) com valor diferente",
     CRIA: "lançamento(s) criado(s)",
     TRANSFERENCIA_PAR: "transferência(s) pareada(s)",
     TRANSFERENCIA_REGRA: "transferência(s) por regra",
@@ -116,6 +123,11 @@ class Plano:
             return f"{texto}: {self.sugestao.categoria.category_name} ({self.sugestao.rotulo})"
         if self.acao == CONCILIA and self.lancamento is not None:
             return f"{texto} #{self.lancamento.id}"
+        if self.acao == CONCILIA_APROXIMADA and self.lancamento is not None:
+            return (
+                f"{texto} #{self.lancamento.id}: previsto {self.lancamento.entry_amount}, "
+                f"no extrato {abs(self.linha.amount)}"
+            )
         if self.acao == TRANSFERENCIA_PAR and self.par is not None:
             return f"{texto}: {_rotulo_da_conta(self.par.account)}"
         if self.acao == TRANSFERENCIA_REGRA and self.conta_destino is not None:
@@ -256,6 +268,13 @@ def planejar(user, linhas) -> list[Plano]:
                 continue
             planos.append(Plano(linha, TRANSFERENCIA_REGRA, conta_destino=destino, regra=regra))
             continue
+        aproximados = reconciliation.candidatos_aproximados(linha, limit=2)
+        if len(aproximados) == 1:
+            planos.append(Plano(linha, CONCILIA_APROXIMADA, lancamento=aproximados[0], regra=regra))
+            continue
+        if len(aproximados) > 1:
+            planos.append(Plano(linha, AMBIGUA, regra=regra))
+            continue
         if _cita_titular(linha, padroes):
             planos.append(Plano(linha, TRANSFERENCIA_SEM_PAR, regra=regra))
             continue
@@ -381,9 +400,10 @@ def aplicar(user, linhas, audit_context=None) -> tuple[Counter, list[tuple[str, 
             continue
         try:
             with db_transaction.atomic():
-                if plano.acao == CONCILIA:
+                if plano.acao in (CONCILIA, CONCILIA_APROXIMADA):
                     reconciliation.reconcile_line_with_entry(
-                        user, line_id=linha.id, entry_id=plano.lancamento.id, audit_context=audit_context
+                        user, line_id=linha.id, entry_id=plano.lancamento.id, audit_context=audit_context,
+                        aceitar_valor_diferente=plano.acao == CONCILIA_APROXIMADA,
                     )
                 elif plano.acao == CRIA:
                     reconciliation.create_entry_from_line(

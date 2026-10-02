@@ -23,6 +23,8 @@ conciliada -- o extrato continua existindo, só sem lançamento vinculado.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import timedelta
+from decimal import Decimal
 
 from django.db import transaction as db_transaction
 
@@ -192,6 +194,43 @@ def candidate_entries_for_lines(
     return candidates_by_line
 
 
+# Recorrência cujo valor varia (energia, condomínio, cartão): o lançamento
+# projetado serve de candidato se o valor do extrato estiver até esta fração
+# acima ou abaixo do previsto e a data a poucos dias do vencimento. Só vale para
+# recorrência ainda não realizada: um lançamento avulso com valor diferente é
+# outro lançamento, não o mesmo com valor variável.
+TOLERANCIA_DO_VALOR = Decimal("0.25")
+JANELA_DA_RECORRENCIA = timedelta(days=5)
+
+
+def candidatos_aproximados(line: BankStatementLine, limit: int = 3) -> list[CashFlowEntry]:
+    """Recorrências abertas da conta, de mesmo sinal, com valor e data próximos.
+
+    Não inclui as de valor exato: essas são os candidatos normais
+    (`candidate_entries_for_line`). Ordena pela data mais próxima e, em empate,
+    pelo valor mais próximo."""
+    valor = abs(line.amount)
+    tipo = ENTRY_TYPE_INCOME if line.amount > 0 else ENTRY_TYPE_EXPENSE
+    candidatos = (
+        CashFlowEntry.objects.filter(
+            account_id=line.account_id,
+            entry_type=tipo,
+            is_recurring=True,
+            due_date__gte=line.statement_date - JANELA_DA_RECORRENCIA,
+            due_date__lte=line.statement_date + JANELA_DA_RECORRENCIA,
+            entry_amount__gte=valor * (1 - TOLERANCIA_DO_VALOR),
+            entry_amount__lte=valor * (1 + TOLERANCIA_DO_VALOR),
+        )
+        .exclude(status=STATUS_REALIZED)
+        .exclude(entry_amount=valor)
+        .exclude(statement_matches__status=LINE_STATUS_RECONCILED)
+    )
+    return sorted(
+        candidatos,
+        key=lambda c: (abs((c.due_date - line.statement_date).days), abs(c.entry_amount - valor), c.id),
+    )[:limit]
+
+
 _FALLBACK_CATEGORY_NAME = "Outros"
 
 
@@ -335,13 +374,19 @@ def reconciliation_view_data(user, target_line_id: int | None = None) -> dict:
 
 
 @db_transaction.atomic
-def reconcile_line_with_entry(user, *, line_id, entry_id, audit_context=None) -> BankStatementLine:
+def reconcile_line_with_entry(
+    user, *, line_id, entry_id, audit_context=None, aceitar_valor_diferente: bool = False
+) -> BankStatementLine:
     """Concilia uma linha de extrato com um lançamento existente.
 
     Realiza o lançamento com a data e o valor da linha (a menos que já
     esteja realizado com a mesma data/valor — ver nota de módulo). Ver
     `transactions.services.realize_transaction` para o tratamento de
     transferências internas (contraparte realizada junto).
+
+    `aceitar_valor_diferente` vale só para recorrência ainda aberta (ver
+    `candidatos_aproximados`): o lançamento é realizado pelo valor do extrato e
+    o valor previsto fica como estava, para comparar previsto e realizado.
     """
     line = _get_line_in_scope(user, line_id, "update", for_update=True)
     if not entry_id:
@@ -382,7 +427,9 @@ def reconcile_line_with_entry(user, *, line_id, entry_id, audit_context=None) ->
 
     line_value = abs(line.amount)
     if entry.entry_amount != line_value:
-        raise ValueError("Valor do movimento incompatível com a linha de extrato.")
+        variavel = aceitar_valor_diferente and entry.is_recurring and entry.status != STATUS_REALIZED
+        if not variavel:
+            raise ValueError("Valor do movimento incompatível com a linha de extrato.")
 
     already_realized_matching = False
     if entry.status == STATUS_REALIZED:

@@ -79,6 +79,13 @@ def _build_menu_items() -> list[MenuItem]:
                             required_permission="banking.reconcile",
                         ),
                         MenuItem(
+                            "Atualizar saldo",
+                            "/banking/balance/",
+                            "\U0001F4B0",
+                            "/banking/balance/",
+                            required_permission="banking.reconcile",
+                        ),
+                        MenuItem(
                             "Reclassificação",
                             "/banking/reclassification/",
                             "\U0001F3F7",

@@ -1,6 +1,8 @@
 """Views de importação, conciliação e anexos bancários (Bancos)."""
 from __future__ import annotations
 
+from datetime import date
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import FileResponse, HttpResponse, JsonResponse, QueryDict
@@ -14,7 +16,15 @@ from core.htmx import quer_fragmento
 from core.permissions import permission_required
 from core.services import audit_request_context
 
-from . import extrato, fatura, fatura_projetada, pending_imports, reclassificacao, reconciliation
+from . import (
+    extrato,
+    fatura,
+    fatura_projetada,
+    pending_imports,
+    reclassificacao,
+    reconciliation,
+    saldo,
+)
 from .attachments import (
     attachment_download_path,
     attachment_for_download,
@@ -269,6 +279,57 @@ def reclassificacao_view(request):
         "pode_reabrir": has_function_permission(request.user, 'settings.monthly_close.manage'),
     }
     return render(request, 'banking/reclassificacao.html', context)
+
+
+@login_required
+@permission_required('banking.view')
+@permission_required('banking.reconcile', fallback='dashboard:dashboard')
+@require_http_methods(["GET", "POST"])
+def atualizar_saldo_view(request):
+    """Informa o saldo real de uma conta e lança a diferença com destino explícito."""
+    previa = None
+    dados = request.POST if request.method == 'POST' else request.GET
+    data_informada = dados.get('data', '')
+    try:
+        data = date.fromisoformat(data_informada) if data_informada else date.today()
+    except ValueError:
+        data = date.today()
+        messages.error(request, "Data inválida.")
+    if request.method == 'POST':
+        try:
+            if request.POST.get('acao') == 'aplicar':
+                lancamento = saldo.aplicar(
+                    request.user,
+                    account_id=request.POST.get('conta'),
+                    data=data,
+                    saldo_informado=request.POST.get('saldo'),
+                    diferenca_esperada=request.POST.get('diferenca'),
+                    destino=request.POST.get('destino'),
+                    motivo=request.POST.get('motivo', ''),
+                    audit_context=audit_request_context(request),
+                )
+                messages.success(
+                    request, f"Diferença lançada: {lancamento.description} ({lancamento.entry_amount})."
+                )
+                return redirect('bank_statements:atualizar_saldo')
+            previa = saldo.previa(
+                request.user, account_id=request.POST.get('conta'), data=data,
+                saldo_informado=request.POST.get('saldo'),
+            )
+        except ValueError as exc:
+            messages.error(request, str(exc))
+    contas = [
+        conta for conta in accounts_for_import_form(request.user)
+        if not conta.is_credit_card
+    ]
+    return render(request, 'banking/atualizar_saldo.html', {
+        "contas": contas,
+        "data": data,
+        "previa": previa,
+        "escolhas": request.POST if request.method == 'POST' else {},
+        "assuncoes": saldo.assuncoes(request.user),
+        "destinos": saldo.DESTINOS,
+    })
 
 
 def _reconciliation_context(request, *, target_line_id=None):
