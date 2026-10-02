@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
-{% load icons %}
+{% load icons contas %}
 {% load money_filters %}
 
 {% block title %}Banking • Reclassificação{% endblock %}
@@ -100,8 +100,12 @@
         <label class="top-filter-field">Conta
             <select name="conta">
                 <option value="">Todas</option>
-                {% for conta in contas %}
-                <option value="{{ conta.id }}" {% if filtros.conta_id == conta.id %}selected{% endif %}>{{ conta.owner.name }} / {{ conta.institution.institution_name }} / {{ conta.account_name }}</option>
+                {% for titular, contas_do_titular in contas|por_titular %}
+                <optgroup label="{{ titular }}">
+                    {% for conta in contas_do_titular %}
+                    <option value="{{ conta.id }}" {% if filtros.conta_id == conta.id %}selected{% endif %}>{{ conta.institution.institution_name }} / {{ conta.account_name }}</option>
+                    {% endfor %}
+                </optgroup>
                 {% endfor %}
             </select>
         </label>

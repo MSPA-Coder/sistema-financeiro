@@ -513,7 +513,7 @@ def _authorized_planning_accounts(
         return [], []
 
     requested_account_ids = _planning_id_filter(account_ids)
-    queryset = FinancialAccount.objects.select_related("owner").filter(
+    queryset = FinancialAccount.objects.select_related("owner", "institution").filter(
         owner_id__in=selected_owner_ids,
     )
     if requested_account_ids is not None:

@@ -1,4 +1,4 @@
-{% load icons %}
+{% load icons contas %}
 {% load money_filters %}
 <tbody id="accountsTableBody">
 {% for account in accounts %}
@@ -67,9 +67,13 @@ enviado pelo navegador.
                 <input type="text" name="card_estimated_spend" inputmode="decimal" value="{{ account.card_estimated_spend|default_if_none:'' }}" aria-label="Gasto mensal estimado do cartão" placeholder="Gasto/mês (auto)" title="Só para cartão de crédito: gasto novo por fatura. Vazio, o sistema usa a mediana das últimas 6 faturas importadas." data-ui="w-120">
                 <select name="card_payment_account_id" aria-label="Conta de pagamento padrão do cartão" title="Só para cartão de crédito: de onde sai a fatura projetada. O pagamento real pode ser dividido entre contas." data-ui="flex-1">
                     <option value="">Conta de pagamento (opcional)</option>
-                    {% for payment in payment_accounts %}{% if payment.id != account.id %}
-                        <option value="{{ payment.id }}" {% if payment.id == account.card_payment_account_id %}selected{% endif %}>{{ payment.owner.name }} · {{ payment.institution.institution_name }} · {{ payment.account_name }}</option>
-                    {% endif %}{% endfor %}
+                    {% for titular, contas in payment_accounts|por_titular %}
+                    <optgroup label="{{ titular }}">
+                        {% for payment in contas %}{% if payment.id != account.id %}
+                        <option value="{{ payment.id }}" {% if payment.id == account.card_payment_account_id %}selected{% endif %}>{{ payment.institution.institution_name }} / {{ payment.account_name }}</option>
+                        {% endif %}{% endfor %}
+                    </optgroup>
+                    {% endfor %}
                 </select>
                 <input type="text" name="statement_identifier" value="{{ account.statement_identifier }}" aria-label="Identificador no extrato" placeholder="Nº da conta no extrato (opcional)" maxlength="40" title="Número da conta como aparece no extrato do banco. Usado para reconhecer a conta ao importar vários extratos de uma vez." data-ui="w-120">
                 <button type="submit" class="btn btn-primary btn-sm"

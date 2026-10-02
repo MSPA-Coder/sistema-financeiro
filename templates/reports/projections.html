@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static navegacao %}
 {% load money_filters %}
-{% load icons %}
+{% load icons contas %}
 {% block title %}Projeções{% endblock %}
 
 {% block styles %}
@@ -49,8 +49,12 @@
             Conta
             <select name="account_id">
                 <option value="">Todas as Contas</option>
-                {% for account in accounts %}
-                <option value="{{ account.id }}" {% if account.id == current_account_id %}selected{% endif %}>{{ account.account_name }}</option>
+                {% for titular, contas in accounts|por_titular %}
+                <optgroup label="{{ titular }}">
+                    {% for account in contas %}
+                    <option value="{{ account.id }}" {% if account.id == current_account_id %}selected{% endif %}>{{ account.institution.institution_name }} / {{ account.account_name }}</option>
+                    {% endfor %}
+                </optgroup>
                 {% endfor %}
             </select>
         </label>
