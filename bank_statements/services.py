@@ -10,6 +10,9 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
+from datetime import date, timedelta
+from decimal import Decimal
 
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
@@ -17,7 +20,7 @@ from django.db import transaction
 from banking.models import FinancialAccount
 from banking.services import accessible_account_ids, can_access_account
 
-from .adapters import get_statement_adapter, read_statement_upload
+from .adapters import extract_statement_balance, get_statement_adapter, read_statement_upload
 from .fatura_csv import CartaoCsvAdapter, formato_da_fatura
 from .models import BankStatementImport, BankStatementLine
 
@@ -108,10 +111,16 @@ def import_statement_file(
         raise ValueError("Nenhuma linha válida encontrada no extrato.")
 
     filename = _sanitize_filename(uploaded_file.name)
+    # Fatura de cartão não traz saldo; extrato de conta traz, às vezes.
+    saldo = None if account.is_credit_card else extract_statement_balance(uploaded_file)
 
     with transaction.atomic():
         batch = BankStatementImport.objects.create(
-            account_id=clean_account_id, source_filename=filename, row_count=0
+            account_id=clean_account_id,
+            source_filename=filename,
+            row_count=0,
+            statement_balance=saldo[0] if saldo else None,
+            statement_balance_date=saldo[1] if saldo else None,
         )
         existing_hashes = _existing_line_hashes(
             clean_account_id, {line.line_hash for line in parsed}
@@ -148,14 +157,59 @@ def import_statement_file(
     return batch, inserted, skipped
 
 
+@dataclass(frozen=True)
+class ConferenciaDeSaldo:
+    """O saldo que o extrato informa contra o saldo realizado do CB na mesma data."""
+
+    saldo_do_extrato: Decimal
+    data: date
+    saldo_no_cb: Decimal
+
+    @property
+    def diferenca(self) -> Decimal:
+        return (self.saldo_no_cb - self.saldo_do_extrato).quantize(Decimal("0.01"))
+
+    @property
+    def bate(self) -> bool:
+        return self.diferenca == 0
+
+
+def conferencia_de_saldo(lote: BankStatementImport) -> ConferenciaDeSaldo | None:
+    """Confere o saldo do arquivo com o do CB, ou `None` se o arquivo não traz saldo.
+
+    É o saldo absoluto da conta até a data (lançamentos realizados), não o do
+    período importado: por isso uma diferença aponta linha faltando ou sobrando
+    em qualquer ponto do histórico, e a conferência vale mesmo com o extrato
+    parcial."""
+    if lote.statement_balance is None or lote.statement_balance_date is None:
+        return None
+    from core.domain.finance import VIEW_REALIZED
+    from reports.services import decimal_balances_before_by_account
+
+    saldos = decimal_balances_before_by_account(
+        [lote.account_id], lote.statement_balance_date + timedelta(days=1), VIEW_REALIZED
+    )
+    return ConferenciaDeSaldo(
+        saldo_do_extrato=lote.statement_balance,
+        data=lote.statement_balance_date,
+        saldo_no_cb=saldos.get(lote.account_id, Decimal("0.00")),
+    )
+
+
 def statement_imports_for_user(user, limit: int = 20) -> Iterable[BankStatementImport]:
-    """Últimos lotes de importação visíveis para `user`."""
+    """Últimos lotes de importação visíveis para `user`, com a conferência de
+    saldo (`.conferencia`) em cada um que traz saldo."""
     account_ids = accessible_account_ids(user, "view")
     if not account_ids:
         return BankStatementImport.objects.none()
-    return BankStatementImport.objects.select_related(
-        "account__owner", "account__institution"
-    ).filter(account_id__in=account_ids)[:limit]
+    lotes = list(
+        BankStatementImport.objects.select_related("account__owner", "account__institution").filter(
+            account_id__in=account_ids
+        )[:limit]
+    )
+    for lote in lotes:
+        lote.conferencia = conferencia_de_saldo(lote)
+    return lotes
 
 
 def statement_import_status(user, batch_id: int) -> dict[str, object] | None:

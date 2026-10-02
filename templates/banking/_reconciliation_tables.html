@@ -9,6 +9,13 @@
         {% csrf_token %}
         <div class="u-d-flex u-items-center u-gap-05 u-mb-075">
             <h3 class="u-mb-0">Linhas de extrato pendentes de conciliação</h3>
+            <button type="submit" name="bulk_action" value="apply_plan" class="btn-sm btn-primary"
+                    data-sa-confirmar="Aplicar a sugestão mostrada em cada linha selecionada? Concilia, cria lançamentos e pareia transferências entre contas suas; linhas que pedem decisão ficam pendentes."
+                    data-sa-titulo="Aplicar sugestões"
+                    data-sa-severidade="warning"
+                    data-sa-ok="Aplicar">
+                Aplicar sugestões
+            </button>
             <button type="submit" name="bulk_action" value="reconcile" class="btn-sm btn-primary"
                     data-sa-confirmar="Conciliar todas as linhas selecionadas? Cada lançamento será marcado como realizado."
                     data-sa-titulo="Confirmar conciliação em lote"
@@ -40,6 +47,7 @@
                 <th>Conta</th>
                 <th>Descrição</th>
                 <th>Valor</th>
+                <th>Sugestão</th>
                 <th>Conciliar com movimento</th>
                 <th>Ou criar lançamento</th>
                 <th>Ações</th>
@@ -57,6 +65,7 @@
                 <td>{{ line.account.owner.name }} / {{ line.account.institution.institution_name }} / {{ line.account.account_name }}</td>
                 <td>{{ line.description }}</td>
                 <td class="amount {{ line.amount|amount_class }}">{{ line.amount|money_signed:line.account.currency }}</td>
+                <td>{% if line.plano %}{{ line.plano.rotulo }}{% else %}<span class="empty-state">-</span>{% endif %}</td>
                 <td>
                     {% if line.status == "novo" %}
                         {% if line.reconcile_candidates %}
@@ -133,7 +142,7 @@
                 </td>
             </tr>
         {% empty %}
-            <tr><td colspan="8" class="empty-state">Nenhuma linha pendente.</td></tr>
+            <tr><td colspan="9" class="empty-state">Nenhuma linha pendente.</td></tr>
         {% endfor %}
         </tbody>
     </table>

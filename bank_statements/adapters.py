@@ -666,7 +666,77 @@ def get_statement_adapter(file: UploadedFile | None, *, institution=None) -> Sta
     )
 
 
+# --- Saldo informado pelo próprio arquivo ---
+#
+# O saldo do extrato serve para conferir o saldo do CB na mesma data: se bate, a
+# conta está conciliada; se não, falta ou sobra linha em algum lugar. Fica fora
+# de `parse` de propósito: nada aqui entra no hash nem muda uma linha, e um
+# arquivo sem saldo (o OFX do C6, o CSV) continua importando como sempre.
+
+_RE_OFX_LEDGERBAL = re.compile(
+    r"<LEDGERBAL>.*?<BALAMT>\s*([-+]?[\d.,]+).*?<DTASOF>\s*(\d{8})", re.IGNORECASE | re.DOTALL
+)
+_RE_GENIAL_SALDO_FINAL = re.compile(r"(-)?\s*R\$\s*(-)?\s*([\d.]+,\d{2})\s*\n\s*Saldo final do per[ií]odo", re.IGNORECASE)
+_RE_GENIAL_PERIODO = re.compile(
+    r"De\s+\d{1,2}\s+[A-Za-zç]{3}\s+\d{4}\s+a\s+(\d{1,2})\s+([A-Za-zç]{3})\s+(\d{4})", re.IGNORECASE
+)
+_RE_MP_SALDO_FINAL_COM_SINAL = re.compile(
+    r"Saldo final:\s*(-)?\s*R\$\s*(-)?\s*([\d.]+,\d{2})", re.IGNORECASE
+)
+_RE_MP_PERIODO = re.compile(r"Per[ií]odo:\s*De\s+\d{2}-\d{2}-\d{4}\s+al\s+(\d{2})-(\d{2})-(\d{4})", re.IGNORECASE)
+
+
+def _brl(sinal_antes: str | None, sinal_depois: str | None, bruto: str) -> Decimal:
+    valor = _to_decimal(bruto.replace(".", "").replace(",", "."))
+    return -valor if (sinal_antes or sinal_depois) else valor
+
+
+def _saldo_do_ofx(content: str) -> tuple[Decimal, date] | None:
+    achado = _RE_OFX_LEDGERBAL.search(content)
+    if achado is None:
+        return None
+    return _to_decimal(achado.group(1).replace(",", ".")), _parse_ofx_date(achado.group(2))
+
+
+def _saldo_do_pdf(text: str) -> tuple[Decimal, date] | None:
+    formato = sniff_pdf_format(text)
+    if formato == "genial":
+        saldo, periodo = _RE_GENIAL_SALDO_FINAL.search(text), _RE_GENIAL_PERIODO.search(text)
+        if saldo and periodo and periodo.group(2).lower() in _MONTHS_PT:
+            dia = date(int(periodo.group(3)), _MONTHS_PT[periodo.group(2).lower()], int(periodo.group(1)))
+            return _brl(saldo.group(1), saldo.group(2), saldo.group(3)), dia
+    if formato == "mercado pago":
+        saldo, periodo = _RE_MP_SALDO_FINAL_COM_SINAL.search(text), _RE_MP_PERIODO.search(text)
+        if saldo and periodo:
+            dia = date(int(periodo.group(3)), int(periodo.group(2)), int(periodo.group(1)))
+            return _brl(saldo.group(1), saldo.group(2), saldo.group(3)), dia
+    return None
+
+
+def extract_statement_balance(file: UploadedFile) -> tuple[Decimal, date] | None:
+    """`(saldo, data)` que o arquivo informa, ou `None` quando não informa.
+
+    Nunca levanta: um arquivo que não traz saldo, ou cujo saldo não dá para ler,
+    importa do mesmo jeito, só sem a conferência."""
+    try:
+        filename = (getattr(file, "name", "") or "").lower()
+        mimetype = (getattr(file, "content_type", "") or "").lower()
+        raw = read_statement_upload(file, label="de extrato")
+        if filename.endswith(".pdf") or "pdf" in mimetype:
+            return _saldo_do_pdf(extract_pdf_text(raw))
+        if any(filename.endswith(ext) for ext in _OFX_EXTENSIONS) or any(m in mimetype for m in _OFX_MIMETYPES):
+            try:
+                content = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                content = raw.decode("latin-1")
+            return _saldo_do_ofx(content)
+    except (ValueError, ArithmeticError):
+        return None
+    return None
+
+
 __all__ = [
+    "extract_statement_balance",
     "CsvStatementAdapter",
     "GenialPdfStatementAdapter",
     "MercadoPagoPdfStatementAdapter",

@@ -9,11 +9,12 @@ from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_POST
 
 from accounts.services import has_function_permission
+from banking.services import accessible_account_ids
 from core.htmx import quer_fragmento
 from core.permissions import permission_required
 from core.services import audit_request_context
 
-from . import fatura, fatura_projetada, pending_imports, reclassificacao, reconciliation
+from . import extrato, fatura, fatura_projetada, pending_imports, reclassificacao, reconciliation
 from .attachments import (
     attachment_download_path,
     attachment_for_download,
@@ -21,6 +22,7 @@ from .attachments import (
     recent_attachments_for_user,
     save_entry_attachment,
 )
+from .models import BankStatementLine
 from .services import (
     accounts_for_import_form,
     statement_import_status,
@@ -358,6 +360,26 @@ def bulk_action_lines_view(request):
             messages.success(request, f"{reconciled} linha(s) conciliada(s).")
         if errors:
             messages.error(request, f"{len(errors)} linha(s) não puderam ser conciliadas: {errors[0][1]}")
+    elif action == 'apply_plan':
+        linhas = list(
+            BankStatementLine.objects.filter(
+                id__in=[valor for valor in line_ids if str(valor).isdigit()],
+                account_id__in=accessible_account_ids(request.user, "update"),
+            ).select_related("account__owner", "account__institution")
+        )
+        feitas, errors = extrato.aplicar(
+            request.user, linhas, audit_context=audit_request_context(request)
+        )
+        if feitas:
+            detalhe = ", ".join(
+                f"{quantidade} {extrato.ROTULOS_CURTOS[acao]}" for acao, quantidade in feitas.items()
+            )
+            messages.success(request, f"Sugestões aplicadas: {detalhe}.")
+        if errors:
+            messages.warning(
+                request,
+                f"{len(errors)} linha(s) esperam decisão sua. Primeira: {errors[0][0]} — {errors[0][1]}",
+            )
     elif action == 'create':
         created, errors = reconciliation.bulk_create_entries_from_lines(
             request.user,

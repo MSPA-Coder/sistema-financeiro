@@ -10,9 +10,10 @@ conciliação apenas vincula os dois: não tenta realizá-lo de novo, porque
 `mark_transaction_realized` recusa lançamentos já realizados e a operação
 falharia sempre.
 
-Períodos fechados bloqueiam conciliação, e conciliar uma ponta de
-transferência interna realiza a contraparte junto — as duas pontas nunca
-ficam em estados diferentes.
+Períodos fechados bloqueiam conciliação que realiza ou altera o lançamento,
+e conciliar uma ponta de transferência interna realiza a contraparte junto —
+as duas pontas nunca ficam em estados diferentes. A exceção é o vínculo puro
+(parágrafo acima): ele não muda saldo, então vale em mês fechado.
 
 Excluir o lançamento vinculado a uma linha conciliada (ver
 `transactions.services.delete_transaction_or_operation`) não apaga a linha
@@ -210,16 +211,14 @@ def _category_hint(description: str) -> str | None:
 def suggested_category_for_line(line: BankStatementLine) -> CashFlowCategory | None:
     """Categoria sugerida para criar um lançamento a partir da linha.
 
-    Tenta casar o prefixo de categoria do extrato (quando existe) com uma
-    categoria cadastrada pelo nome; sem casamento - caso comum de categorias
-    do extrato sem equivalente direto, como "Rendimentos" - cai para "Outros"
-    quando essa categoria existir."""
-    hint = _category_hint(line.description)
-    if hint:
-        match = CashFlowCategory.objects.filter(category_name__iexact=hint).first()
-        if match:
-            return match
-    return CashFlowCategory.objects.filter(category_name__iexact=_FALLBACK_CATEGORY_NAME).first()
+    Vem do histórico (a categoria mais frequente que o usuário deu à mesma
+    descrição, sem contar "Outros"), depois da categoria do banco e do prefixo
+    do extrato, e por último de "Outros". Ver `classificacao`. O prefixo ficou
+    atrás do histórico porque o rótulo do banco erra de vez em quando: o PDF da
+    Genial chama o aluguel de ações de "Rendimentos"."""
+    from .classificacao import sugerir_categoria
+
+    return sugerir_categoria(line.description, line.bank_category).categoria
 
 
 def _get_line_in_scope(
@@ -312,10 +311,18 @@ def reconciliation_view_data(user, target_line_id: int | None = None) -> dict:
     # separado por id) porque o Django Template Language não suporta lookup
     # de dicionário por variável (`candidates[line.id]`); anexar o atributo
     # aqui é mais simples do que registrar um template filter só para isso.
+    from . import extrato
+
     candidates_by_line = candidate_entries_for_lines(lines)
+    planos = {plano.linha.id: plano for plano in extrato.planejar(user, lines)}
     for line in lines:
         line.reconcile_candidates = candidates_by_line.get(line.id, [])
-        suggested = suggested_category_for_line(line)
+        plano = planos.get(line.id)
+        line.plano = plano
+        suggested = (
+            plano.sugestao.categoria if plano is not None and plano.sugestao is not None
+            else suggested_category_for_line(line)
+        )
         line.suggested_category_id = suggested.id if suggested else None
 
     return {
@@ -387,12 +394,19 @@ def reconcile_line_with_entry(user, *, line_id, entry_id, audit_context=None) ->
             raise ValueError("Movimento já realizado com data ou valor diferente da linha de extrato.")
         already_realized_matching = True
 
-    assert_entry_period_open(entry, action_label="conciliar")
-    if is_month_closed(entry.account, line.statement_date.year, line.statement_date.month):
-        raise ValueError(
-            f"Não é possível conciliar: mês {line.statement_date.month:02d}/"
-            f"{line.statement_date.year} fechado para a conta {entry.account}."
-        )
+    # Vincular um lançamento que já está realizado, na mesma data e valor da
+    # linha, não muda nenhum saldo nem nenhum lançamento: é só dizer que o
+    # extrato confirma o que já estava lá. É o caso do histórico (meses
+    # fechados, lançamentos digitados à mão antes de o extrato ser importado), e
+    # exigir mês aberto aqui obrigaria a reabrir e fechar tudo para nada. Realizar
+    # ou mudar o lançamento continua exigindo o mês aberto.
+    if not already_realized_matching:
+        assert_entry_period_open(entry, action_label="conciliar")
+        if is_month_closed(entry.account, line.statement_date.year, line.statement_date.month):
+            raise ValueError(
+                f"Não é possível conciliar: mês {line.statement_date.month:02d}/"
+                f"{line.statement_date.year} fechado para a conta {entry.account}."
+            )
 
     line.matched_entry = entry
     line.status = LINE_STATUS_RECONCILED
