@@ -35,6 +35,11 @@ class BankStatementImport(models.Model):
     )
     source_filename = models.CharField(max_length=255)
     row_count = models.IntegerField(default=0)
+    # Saldo que o próprio arquivo informa (LEDGERBAL do OFX, "Saldo final" do
+    # PDF) e a data a que ele se refere. Serve só à conferência com o saldo
+    # do CB; não entra no hash nem muda nenhuma linha.
+    statement_balance = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    statement_balance_date = models.DateField(null=True, blank=True)
     status = models.CharField(
         max_length=20,
         choices=[
@@ -159,6 +164,116 @@ class PendingStatementUpload(models.Model):
 
     def __str__(self):
         return self.original_filename
+
+
+RULE_ACTION_CATEGORY = "categoria"
+RULE_ACTION_TRANSFER = "transferencia"
+RULE_ACTION_IGNORE = "ignorar"
+VALID_RULE_ACTIONS = (RULE_ACTION_CATEGORY, RULE_ACTION_TRANSFER, RULE_ACTION_IGNORE)
+
+RULE_SIGN_ANY = "qualquer"
+RULE_SIGN_CREDIT = "credito"
+RULE_SIGN_DEBIT = "debito"
+VALID_RULE_SIGNS = (RULE_SIGN_ANY, RULE_SIGN_CREDIT, RULE_SIGN_DEBIT)
+
+
+class StatementRule(models.Model):
+    """Regra explícita para uma família de linhas de extrato.
+
+    O aprendizado pelo histórico (`classificacao`) resolve o que o usuário já
+    classificou. A regra existe para o que ele não alcança: dizer que "Rende
+    Fácil" é transferência para a conta de aplicação do mesmo banco, ou que
+    "Liberação de dinheiro" é prêmio de loteria.
+
+    A regra descreve uma **família**, nunca um id: o padrão é um trecho do
+    texto (sem acento nem caixa) e a conta de destino é achada pelo nome, entre
+    as contas do mesmo titular e da mesma instituição da linha. É por isso que
+    ela viaja com os dados de um ambiente para o outro.
+    """
+
+    name = models.CharField(max_length=120)
+    pattern = models.CharField(max_length=120)
+    institution = models.ForeignKey(
+        "banking.FinancialInstitution",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="statement_rules",
+    )
+    sign = models.CharField(
+        max_length=10,
+        choices=[
+            (RULE_SIGN_ANY, "Entrada ou saída"),
+            (RULE_SIGN_CREDIT, "Só entrada"),
+            (RULE_SIGN_DEBIT, "Só saída"),
+        ],
+        default=RULE_SIGN_ANY,
+    )
+    action = models.CharField(
+        max_length=20,
+        choices=[
+            (RULE_ACTION_CATEGORY, "Categorizar"),
+            (RULE_ACTION_TRANSFER, "Transferência para conta do mesmo titular"),
+            (RULE_ACTION_IGNORE, "Ignorar a linha"),
+        ],
+    )
+    category = models.ForeignKey(
+        "transactions.CashFlowCategory",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="statement_rules",
+    )
+    destination_account_name = models.CharField(max_length=100, blank=True, default="")
+    # Instituição da conta de destino, quando não é a da linha (a compra de
+    # Tesouro Direto sai da corretora e cai na conta de aplicação "Tesouro Direto"
+    # da instituição XP). Vazio, vale a instituição da própria linha.
+    destination_institution = models.ForeignKey(
+        "banking.FinancialInstitution",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="statement_rules_as_destination",
+    )
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "statement_rule"
+        ordering = ["name", "id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(pattern__regex=r"^\s*.{3,}\s*$"),
+                name="ck_statement_rule_pattern_min_length",
+            ),
+            models.CheckConstraint(
+                condition=Q(action__in=VALID_RULE_ACTIONS),
+                name="ck_statement_rule_action_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(sign__in=VALID_RULE_SIGNS),
+                name="ck_statement_rule_sign_valid",
+            ),
+            # Cada ação exige o que ela usa: categoria para categorizar, nome da
+            # conta para transferir. Sem isso a regra seria aceita e nunca valeria.
+            models.CheckConstraint(
+                condition=(
+                    Q(action=RULE_ACTION_CATEGORY, category__isnull=False)
+                    | Q(action=RULE_ACTION_TRANSFER, destination_account_name__regex=r"^\s*.+\s*$")
+                    | Q(action=RULE_ACTION_IGNORE)
+                ),
+                name="ck_statement_rule_action_fields",
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            self.updated_at = timezone.now()
+        super().save(*args, **kwargs)
 
 
 class BankStatementLine(models.Model):

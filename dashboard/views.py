@@ -120,18 +120,30 @@ def _saldo_diario(account_ids, month_start: date, next_month: date, view_mode: s
 	return list(por_dia.items())
 
 
-def _categorias(month_entries, view_mode: str, filter_type: str) -> list[tuple[str, Decimal]]:
-	"""Total por categoria gerencial no mês, maior primeiro.
+SEM_GRUPO = "Sem grupo"
+
+
+def _categorias(
+	month_entries, view_mode: str, filter_type: str, por_grupo: bool = False
+) -> list[tuple[str, Decimal]]:
+	"""Total por categoria (ou por grupo de categorias) gerencial no mês, maior primeiro.
 
 	Transferência e movimentação ficam fora, como no drill-down para
 	Lançamentos (`dashboard_drilldown=1`): a fatia do gráfico tem de ser a
-	soma da tela que ele abre.
+	soma da tela que ele abre. Por grupo, o grupo fora dos gráficos ("Sistema")
+	também fica de fora, e a categoria sem grupo vira "Sem grupo".
 	"""
 	totais: dict[str, Decimal] = {}
 	for entry in month_entries:
 		if entry.entry_type != filter_type or entry.category is None or entry.category.is_internal:
 			continue
-		nome = entry.category.category_name
+		if por_grupo:
+			grupo = entry.category.group
+			if grupo is not None and not grupo.in_charts:
+				continue
+			nome = grupo.group_name if grupo is not None else SEM_GRUPO
+		else:
+			nome = entry.category.category_name
 		totais[nome] = totais.get(nome, Decimal("0.00")) + entry_amount_for_view_mode(entry, view_mode)
 	return sorted(totais.items(), key=lambda item: (-item[1], item[0]))
 
@@ -255,7 +267,8 @@ def dashboard_view(request):
 		if month_start <= entry_date_for_view_mode(entry, view_mode) < next_month
 	]
 
-	categorias = _categorias(month_entries, view_mode, filter_type)
+	por_grupo = (request.GET.get("categorias") or "").strip().lower() == "grupo"
+	categorias = _categorias(month_entries, view_mode, filter_type, por_grupo)
 	saldo_diario = _saldo_diario(account_ids, month_start, next_month, view_mode, month_entries)
 
 	chart_periods = [m["month"] for m in months]
@@ -295,6 +308,7 @@ def dashboard_view(request):
 		"currencySymbol": CURRENCY_SYMBOLS.get(currency, CURRENCY_SYMBOLS[BASE_CURRENCY]),
 		"viewMode": view_mode,
 		"filterType": filter_type,
+		"catMode": "grupo" if por_grupo else "categoria",
 		"currentOwnerId": ctx.owner_id,
 		"currentInstitutionId": ctx.institution_id,
 		"currentAccountId": ctx.account_id,
@@ -319,6 +333,8 @@ def dashboard_view(request):
 		"view_mode_label": dict(VIEW_MODE_OPTIONS).get(view_mode, view_mode),
 		"view_mode_options": VIEW_MODE_OPTIONS,
 		"filter_type": filter_type,
+		"show_group_choice": True,
+		"categorias_modo": "grupo" if por_grupo else "categoria",
 		"owners": options.owners,
 		"banks": options.institutions,
 		"accounts": options.accounts,

@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db.models import Exists, OuterRef
+from django.db.models import Count, Exists, OuterRef
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -24,22 +24,26 @@ from core.htmx import invalid_period_response, quer_fragmento, recusa_moedas_mis
 from core.permissions import permission_required
 from core.services import audit_request_context, log_audit_event
 from transactions import access
-from transactions.models import CashFlowCategory, CashFlowEntry
+from transactions.models import CashFlowCategory, CashFlowCategoryGroup, CashFlowEntry
 from transactions.operations import OPERATION_LABELS, operations_page_for_user
 from transactions.services import (
     TransactionRequest,
     build_transactions_view_context,
     create_category,
+    create_category_group,
     create_transaction_batch,
     delete_category,
+    delete_category_group,
     delete_transaction_or_operation,
     list_categories,
+    list_category_groups,
     possible_duplicates_for_created_entries,
     realize_transaction,
     supports_operation_scope,
     transactions_query_params,
     unrealize_transaction,
     update_category,
+    update_category_group,
     update_transaction_operation,
 )
 
@@ -432,11 +436,12 @@ def categories_view(request):
     context = {
         # `has_entries` trava o seletor de tipo na tela: categoria com histórico
         # não muda de tipo sem passar pela reclassificação, que tem relatório.
-        "categories": list_categories(current_filter_type or None).annotate(
+        "categories": list_categories(current_filter_type or None).select_related("group").annotate(
             has_entries=Exists(CashFlowEntry.objects.filter(category_id=OuterRef("pk")))
         ),
         "category_kind_options": CATEGORY_KIND_OPTIONS,
         "current_filter_type": current_filter_type,
+        "category_groups": list_category_groups().annotate(total_categories=Count("categories")),
     }
     if quer_fragmento(request):
         return render(request, 'tables/_categories_table.html', context)
@@ -447,9 +452,61 @@ def categories_view(request):
 @permission_required('tables.view', fallback='transactions:categories_view')
 @permission_required('tables.categories.manage', fallback='transactions:categories_view')
 @require_POST
+def create_category_group_view(request):
+    try:
+        create_category_group(
+            request.POST.get('group_name', ''),
+            request.POST.get('position', ''),
+            in_charts=request.POST.get('in_charts') == '1',
+        )
+        messages.success(request, "Grupo cadastrado com sucesso.")
+    except ValueError as e:
+        messages.error(request, str(e))
+    return _respond_categories(request)
+
+
+@login_required
+@permission_required('tables.view', fallback='transactions:categories_view')
+@permission_required('tables.categories.manage', fallback='transactions:categories_view')
+@require_POST
+def update_category_group_view(request, group_id):
+    group = get_object_or_404(CashFlowCategoryGroup, id=group_id)
+    try:
+        update_category_group(
+            group,
+            request.POST.get('group_name', ''),
+            request.POST.get('position', ''),
+            in_charts=request.POST.get('in_charts') == '1',
+        )
+        messages.success(request, "Grupo atualizado com sucesso.")
+    except ValueError as e:
+        messages.error(request, str(e))
+    return _respond_categories(request)
+
+
+@login_required
+@permission_required('tables.view', fallback='transactions:categories_view')
+@permission_required('tables.categories.manage', fallback='transactions:categories_view')
+@require_POST
+def delete_category_group_view(request, group_id):
+    group = get_object_or_404(CashFlowCategoryGroup, id=group_id)
+    try:
+        delete_category_group(group)
+        messages.success(request, "Grupo excluído com sucesso.")
+    except ValueError as e:
+        messages.error(request, str(e))
+    return _respond_categories(request)
+
+
+@login_required
+@permission_required('tables.view', fallback='transactions:categories_view')
+@permission_required('tables.categories.manage', fallback='transactions:categories_view')
+@require_POST
 def create_category_view(request):
     try:
-        create_category(request.POST.get('category_name', ''), request.POST.get('kind', ''))
+        create_category(
+            request.POST.get('category_name', ''), request.POST.get('kind', ''), request.POST.get('group_id', '')
+        )
         messages.success(request, "Categoria cadastrada com sucesso.")
     except ValueError as e:
         messages.error(request, str(e))
@@ -463,7 +520,13 @@ def create_category_view(request):
 def update_category_view(request, category_id):
     category = get_object_or_404(CashFlowCategory, id=category_id)
     try:
-        update_category(category, request.POST.get('category_name', ''), request.POST.get('kind', ''))
+        if 'group_id' in request.POST:
+            update_category(
+                category, request.POST.get('category_name', ''), request.POST.get('kind', ''),
+                request.POST.get('group_id', ''),
+            )
+        else:
+            update_category(category, request.POST.get('category_name', ''), request.POST.get('kind', ''))
         messages.success(request, "Categoria atualizada com sucesso.")
     except ValueError as e:
         messages.error(request, str(e))

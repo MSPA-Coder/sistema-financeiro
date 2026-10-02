@@ -21,18 +21,23 @@ from banking.models import FinancialAccount, FinancialInstitution
 from banking.services import update_account
 from core.account_group_filter import (
     ALL_ACCOUNT_GROUPS,
+    DEFAULT_ACCOUNT_GROUPS,
+    GROUP_ADMINISTERED,
     GROUP_BANKS,
     GROUP_BROKERS,
     GROUP_CARDS,
     GROUP_INVESTMENTS,
     account_group,
     account_group_q,
+    is_filtering,
     parse_account_groups,
 )
 from core.domain.finance import (
     ACCOUNT_KIND_CREDIT_CARD,
     ACCOUNT_KIND_INVESTMENT,
     ACCOUNT_KIND_REGULAR,
+    ACCOUNT_PURPOSE_ADMINISTERED,
+    ACCOUNT_PURPOSE_PERSONAL,
     ENTRY_TYPE_EXPENSE,
     OPERATION_SINGLE,
     STATUS_PROJECTED,
@@ -60,9 +65,54 @@ def test_cada_conta_cai_em_um_grupo_so(kind, institution_type, grupo):
     assert account_group(kind, institution_type) == grupo
 
 
-def test_ausente_ou_vazio_vale_todos_os_grupos():
-    assert parse_account_groups({}) == ALL_ACCOUNT_GROUPS
-    assert parse_account_groups({"grupos": ""}) == ALL_ACCOUNT_GROUPS
+def test_ausente_ou_vazio_vale_o_padrao_que_nao_inclui_administradas():
+    # Decisão de 02/10/2026: o dinheiro de terceiros que o titular só gere não
+    # entra no fluxo pessoal sem que ele peça.
+    assert parse_account_groups({}) == DEFAULT_ACCOUNT_GROUPS
+    assert parse_account_groups({"grupos": ""}) == DEFAULT_ACCOUNT_GROUPS
+    assert ALL_ACCOUNT_GROUPS - {GROUP_ADMINISTERED} == DEFAULT_ACCOUNT_GROUPS
+    assert not is_filtering(DEFAULT_ACCOUNT_GROUPS)
+    assert is_filtering(ALL_ACCOUNT_GROUPS)
+
+
+@pytest.mark.parametrize(
+    ("kind", "institution_type"),
+    [
+        (ACCOUNT_KIND_REGULAR, "Banco"),
+        (ACCOUNT_KIND_CREDIT_CARD, "Banco"),
+        (ACCOUNT_KIND_INVESTMENT, "Corretora"),
+    ],
+)
+def test_a_finalidade_administrada_vence_o_tipo_da_conta(kind, institution_type):
+    assert account_group(kind, institution_type, ACCOUNT_PURPOSE_ADMINISTERED) == GROUP_ADMINISTERED
+    assert account_group(kind, institution_type, ACCOUNT_PURPOSE_PERSONAL) != GROUP_ADMINISTERED
+
+
+@pytest.mark.django_db
+def test_grupos_continuam_uma_particao_com_a_conta_administrada(contas):
+    administrada = FinancialAccount.objects.create(
+        owner=contas[GROUP_BANKS].owner, institution=contas[GROUP_BANKS].institution,
+        account_name="Conta administrada", purpose=ACCOUNT_PURPOSE_ADMINISTERED,
+    )
+    administrada_aplicacao = FinancialAccount.objects.create(
+        owner=contas[GROUP_BANKS].owner, institution=contas[GROUP_BANKS].institution,
+        account_name="Caixinha administrada", account_kind=ACCOUNT_KIND_INVESTMENT,
+        purpose=ACCOUNT_PURPOSE_ADMINISTERED,
+    )
+    todas = set(FinancialAccount.objects.values_list("id", flat=True))
+    por_grupo = {
+        grupo: set(FinancialAccount.objects.filter(account_group_q([grupo])).values_list("id", flat=True))
+        for grupo in ALL_ACCOUNT_GROUPS
+    }
+    # Cada conta em um grupo só, e todas em algum.
+    assert set().union(*por_grupo.values()) == todas
+    assert sum(len(ids) for ids in por_grupo.values()) == len(todas)
+    assert por_grupo[GROUP_ADMINISTERED] == {administrada.id, administrada_aplicacao.id}
+    assert administrada_aplicacao.id not in por_grupo[GROUP_INVESTMENTS]
+    # O padrão deixa as administradas de fora; marcar todas as traz de volta.
+    padrao = set(FinancialAccount.objects.filter(account_group_q(DEFAULT_ACCOUNT_GROUPS)).values_list("id", flat=True))
+    assert padrao == todas - por_grupo[GROUP_ADMINISTERED]
+    assert set(FinancialAccount.objects.filter(account_group_q(ALL_ACCOUNT_GROUPS)).values_list("id", flat=True)) == todas
 
 
 def test_lista_de_grupos_e_normalizada():
@@ -265,7 +315,10 @@ def test_menu_conta_as_contas_de_cada_grupo_e_avisa_o_filtro_ativo(client, usuar
     assert resposta.context["global_account_groups_active"] is True
     assert resposta.context["global_account_groups_labels"] == ["Cartões"]
     opcoes = {opcao["code"]: opcao for opcao in resposta.context["global_account_group_options"]()}
-    assert {codigo: opcao["count"] for codigo, opcao in opcoes.items()} == dict.fromkeys(ALL_ACCOUNT_GROUPS, 1)
+    # O cenário não tem conta administrada: o grupo existe no menu, com zero.
+    assert {codigo: opcao["count"] for codigo, opcao in opcoes.items()} == {
+        **dict.fromkeys(ALL_ACCOUNT_GROUPS, 1), GROUP_ADMINISTERED: 0,
+    }
     assert [codigo for codigo, opcao in opcoes.items() if opcao["selected"]] == [GROUP_CARDS]
 
 

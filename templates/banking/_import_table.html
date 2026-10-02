@@ -1,4 +1,5 @@
 {% load icons %}
+{% load money_filters %}
 <div class="table-container">
     <h3 class="u-mb-075">Últimas importações</h3>
     <table class="tx-table">
@@ -8,6 +9,7 @@
                 <th>Conta</th>
                 <th>Arquivo</th>
                 <th>Linhas novas</th>
+                <th>Saldo do extrato × CB</th>
                 <th>Status</th>
                 <th>Ações</th>
             </tr>
@@ -19,6 +21,17 @@
                 <td>{{ batch.account.owner.name }} / {{ batch.account.institution.institution_name }} / {{ batch.account.account_name }}</td>
                 <td>{{ batch.source_filename }}</td>
                 <td>{{ batch.row_count }}</td>
+                <td>
+                    {% if batch.conferencia %}
+                        {% if batch.conferencia.bate %}
+                        <span class="amount amount-positive">Bate em {{ batch.conferencia.data|date:"d/m/Y" }}: {{ batch.conferencia.saldo_do_extrato|money:batch.account.currency }}</span>
+                        {% else %}
+                        <span class="amount amount-negative">Extrato {{ batch.conferencia.saldo_do_extrato|money:batch.account.currency }} · CB {{ batch.conferencia.saldo_no_cb|money:batch.account.currency }} em {{ batch.conferencia.data|date:"d/m/Y" }} · diferença {{ batch.conferencia.diferenca|money:batch.account.currency }}</span>
+                        {% endif %}
+                    {% else %}
+                    <span class="empty-state">O arquivo não informa saldo</span>
+                    {% endif %}
+                </td>
                 <td>{{ batch.get_status_display }}
                     {% if batch.account.is_credit_card %}· <a href="{% url 'bank_statements:fatura' batch.id %}">{% if batch.status == "importado" %}Revisar fatura{% else %}Ver fatura{% endif %}</a>{% endif %}
                 </td>
@@ -40,7 +53,7 @@
             </tr>
         {% empty %}
             <tr>
-                <td colspan="6" class="empty-state">Nenhuma importação encontrada.</td>
+                <td colspan="7" class="empty-state">Nenhuma importação encontrada.</td>
             </tr>
         {% endfor %}
         </tbody>

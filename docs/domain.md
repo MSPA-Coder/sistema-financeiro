@@ -306,7 +306,74 @@ processamento próprios, descritos em "Importação da fatura".
 
 A conciliação verifica acesso à conta, tipo, valor, status, duplicidade e
 fechamento do período. Um lançamento pode ter no máximo uma conciliação ativa,
-restrição também garantida no PostgreSQL.
+restrição também garantida no PostgreSQL. Vincular uma linha a um lançamento que
+já está realizado, na mesma data e valor, não muda saldo nem lançamento e por
+isso vale em mês fechado (é o caso do histórico digitado à mão); realizar ou
+mudar o lançamento continua exigindo o mês aberto.
+
+Os PDFs com adapter são o da Genial, o do Mercado Pago e o da conta de
+investimento da XP (`XpPdfStatementAdapter`). O da XP lê a geometria da tabela
+(a descrição quebra em até três linhas, antes e depois da data), valida a cadeia
+de saldos de linha a linha e informa como saldo o da linha mais recente na data
+final do período. A instituição cadastrada como "SCP XP Investimestos" (sic) usa
+o mesmo adapter, e a conta é reconhecida pelo número do rótulo "Conta:" do PDF.
+
+### Plano do extrato de conta
+
+A tela de Conciliação mostra, por linha pendente, o que ela vai virar, e
+"Aplicar sugestões" executa exatamente isso (`bank_statements/extrato.py`; é o
+que `fatura.planejar` faz para o cartão). Na ordem em que é decidido:
+
+1. **ignorar**, quando uma regra explícita manda;
+2. **conciliar** com o único lançamento candidato (mesma conta, sinal e valor,
+   no mês do extrato); vários candidatos pedem escolha manual;
+3. **transferência pareada**: outra linha pendente, em outra conta do usuário,
+   de sinal oposto, mesmo valor e até dois dias de distância, com o nome de um
+   titular no texto (ou cara de transferência nas duas) e par único dos dois
+   lados. As duas linhas viram **uma** transferência, cada ponta na sua data,
+   exigindo a permissão de destino de transferência;
+4. **transferência por regra**: a regra aponta a conta de destino do mesmo
+   titular e instituição (Rende Fácil, caixinha) e a outra ponta não tem extrato;
+5. **concilia com valor diferente**: recorrência aberta da conta, mesmo sinal,
+   valor até 25% do previsto e vencimento a até 5 dias. O lançamento é realizado
+   pelo valor do extrato e o previsto fica como estava;
+6. **transferência sem par**: o texto cita um titular e a outra ponta ainda não
+   foi importada. Fica pendente, porque criar receita e despesa para uma
+   transferência própria infla as duas pontas do mês;
+7. **criar** lançamento com a categoria sugerida.
+
+A categoria sugerida (`classificacao.py`) vem, nesta ordem, da regra explícita,
+da categoria mais frequente que o usuário deu à mesma descrição (sem contar
+"Outros"), da categoria do banco já escolhida antes, do prefixo do extrato e de
+"Outros". O prefixo do PDF fica depois do histórico porque erra (a Genial chama
+o aluguel de ações de "Rendimentos"). A regra explícita (`StatementRule`,
+`manage.py regras_de_extrato`) descreve uma família de texto por instituição e
+sinal, nunca por id.
+
+O arquivo pode informar o saldo (`LEDGERBAL` do OFX, "Saldo final" da Genial e do
+Mercado Pago). Ele é guardado no lote e conferido, na tela de Importações, com o
+saldo realizado do CB na mesma data; a diferença aponta linha faltando ou sobrando
+em qualquer ponto do histórico. Não entra no hash da linha.
+
+### Atualizar saldo
+
+Para o que o extrato não mostra linha a linha (rendimento de CDB, cofrinho,
+conta remunerada), o usuário informa o saldo real de uma conta numa data e a
+diferença para o saldo realizado do CB vira um lançamento realizado, com destino
+explícito: *Rendimentos* ou *Ajuste assumido* quando o saldo real é maior;
+*IR/IOF*, *Perda* ou *Ajuste assumido* quando é menor. Perda e ajuste assumido
+exigem motivo, usam a categoria "Ajustes de Saldo" e aparecem na lista de
+assunções. Se o saldo do CB mudou entre a prévia e o lançamento, nada é gravado.
+
+### Dados já gravados
+
+Dois comandos de manutenção, ambos com simulação por padrão e backup antes de
+aplicar: `converter_pares_proprios` transforma em transferência os pares de
+receita e despesa entre contas do mesmo titular (só natureza e vínculo mudam; o
+saldo de cada conta e de cada mês fechado fica igual, e é isso que autoriza
+reabrir o mês), e `reclassificar_familias` move famílias determinísticas (IRRF,
+VA/VR, plano de saúde...) da categoria em que estão para a de destino. Nenhum dos
+dois toca categoria que o usuário já escolheu fora da origem da família.
 
 Comprovantes são arquivos distintos do registro relacional. O sistema valida
 tamanho, extensão e assinatura, grava o arquivo sob `MEDIA_ROOT/attachments` e
@@ -377,14 +444,20 @@ isso que torna a seleção múltipla legível (`core/account_group_filter.py`):
 
 | Conta | Grupo |
 |---|---|
+| finalidade `administrada`, de qualquer tipo | Administradas |
 | `cartao_credito`, em qualquer instituição | Cartões |
 | `aplicacao`, em qualquer instituição | Aplicações |
 | `conta` em instituição do tipo Banco | Bancos |
 | `conta` em instituição do tipo Corretora | Corretoras |
 
-O tipo da conta vence o da instituição: o cartão emitido por um banco não
-aparece ao marcar só "Bancos". Como a moeda, o filtro vive na URL
-(`grupos=bancos,cartoes`) e não é gravado; ausente, valem todos. Ele tira
+A finalidade vence o tipo da conta, e o tipo da conta vence o da instituição: o
+cartão emitido por um banco não aparece ao marcar só "Bancos". Conta
+**administrada** é a que só recebe, gere e distribui dinheiro de terceiros (os
+aluguéis do Jardim Iva); ela fica fora do fluxo pessoal por padrão. Dinheiro que
+cruza a fronteira entre administrada e pessoal não é transferência: é repasse
+(despesa) e renda (receita). Como a moeda, o filtro vive na URL
+(`grupos=bancos,cartoes`) e não é gravado; ausente, valem todos **menos
+Administradas**, e marcar só Administradas mostra o resultado delas sozinho. Ele tira
 contas dos números, deixa os seletores inteiros e cede à conta escolhida
 explicitamente. No Planejamento anual, cujo seletor de
 contas é o próprio escopo, ele restringe as opções.
@@ -398,6 +471,22 @@ por usuário que escondia contas soltas do Dashboard e de Projeções. A tela e
 a tabela `user_account_visibility` saíram em 24/09/2026
 (`accounts.0010_remover_contas_em_analises`): o recorte agora é por grupo, e
 uma conta específica se vê escolhendo-a no filtro de conta.
+
+## Grupos de categoria
+
+A categoria tem um grupo opcional (`CashFlowCategory.group`), em exatamente dois
+níveis: Saúde > Plano de saúde, Moradia > Energia. O lançamento continua
+apontando para a categoria; o grupo só agrupa para ler o resultado. Importação,
+reclassificação, fatura estimada e orçamento não o conhecem. O Dashboard pode
+mostrar a distribuição **por grupo** (a fatia abre Lançamentos filtrado por
+`filter_group`), e o Planejamento anual pode agrupar, com subtotal por grupo
+(`agrupar=grupo`); o total geral não muda. O grupo "Sistema" (transferências,
+movimentações, ajustes de saldo) tem `in_charts=False` e fica fora dos gráficos.
+"Cartão de Crédito" continua sendo uma categoria com esse nome exato (a fatura
+projetada a procura pelo nome); ela vive no grupo "Bancos e cartões".
+
+`manage.py grupos_de_categoria semear` cria os grupos aprovados e liga as
+categorias existentes sem grupo, sem nunca trocar um grupo já escolhido.
 
 ## Gestão gerencial: ciclo de vida
 

@@ -25,11 +25,12 @@ O que cada linha vira:
   valor e até 3 dias de distância. É conciliada em vez de duplicada;
 - **compra** e **estorno**: criam a despesa ou a receita, já realizadas.
 
-A categoria sugerida vem, nesta ordem, da última compra da mesma loja em
-qualquer conta (a descrição sem portador, dólar e número de pedido; ver
-`reclassificacao.chave_da_descricao`), da categoria escolhida da última vez para a mesma categoria do banco
-(a fatura aprende com a prévia), da categoria do banco quando ela tem o nome de
-uma categoria cadastrada, e de "Outros". A prévia deixa trocar cada uma.
+A categoria sugerida vem, nesta ordem, da categoria mais frequente que o usuário
+deu à mesma loja em qualquer conta, sem contar "Outros" (a descrição sem
+portador, dólar e número de pedido; ver `reclassificacao.chave_da_descricao`),
+da categoria escolhida antes para a mesma categoria do banco (a fatura aprende
+com a prévia), da categoria do banco quando ela tem o nome de uma categoria
+cadastrada, e de "Outros" (ver `classificacao`). A prévia deixa trocar cada uma.
 """
 from __future__ import annotations
 
@@ -202,40 +203,12 @@ def _compra_lancada(conta, linha, usados) -> CashFlowEntry | None:
 
 
 def _categoria_sugerida(conta, linha) -> CashFlowCategory | None:
-    # A mesma loja em qualquer conta, pela chave da descrição (sem portador,
-    # dólar nem número de pedido): é assim que a Reclassificação vira regra.
-    from .reclassificacao import chave_da_descricao
+    # A mesma loja em qualquer conta, a mais frequente entre as que o usuário
+    # classificou (nunca "Outros"), e só depois a categoria do banco: ver
+    # `classificacao`, que o extrato de conta também usa.
+    from .classificacao import sugerir_categoria
 
-    chave = chave_da_descricao(linha.description)
-    termo = chave.split(" ", 1)[0]
-    anteriores = (
-        CashFlowEntry.objects.filter(category__kind=CATEGORY_KIND_MANAGERIAL, description__icontains=termo)
-        .select_related("category")
-        .order_by("-due_date", "-id")[:300]
-    )
-    for anterior in anteriores:
-        if chave_da_descricao(anterior.description) == chave:
-            return anterior.category
-    gerenciais = CashFlowCategory.objects.filter(kind=CATEGORY_KIND_MANAGERIAL)
-    if linha.bank_category:
-        # O que já foi escolhido para essa categoria do banco, em qualquer
-        # cartão: a escolha feita numa prévia vale para as faturas seguintes.
-        aprendida = (
-            BankStatementLine.objects.filter(
-                bank_category=linha.bank_category,
-                status=LINE_STATUS_RECONCILED,
-                matched_entry__category__kind=CATEGORY_KIND_MANAGERIAL,
-            )
-            .select_related("matched_entry__category")
-            .order_by("-id")
-            .first()
-        )
-        if aprendida is not None:
-            return aprendida.matched_entry.category
-        do_banco = gerenciais.filter(category_name__iexact=linha.bank_category).first()
-        if do_banco is not None:
-            return do_banco
-    return gerenciais.filter(category_name__iexact=_CATEGORIA_PADRAO).first()
+    return sugerir_categoria(linha.description, linha.bank_category, apenas_gerenciais=True).categoria
 
 
 def planejar(conta: FinancialAccount, linhas) -> list[Plano]:

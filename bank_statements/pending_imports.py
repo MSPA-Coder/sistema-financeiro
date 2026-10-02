@@ -32,6 +32,7 @@ from .adapters import (
     extract_ofx_account_hint,
     extract_pdf_text,
     get_statement_adapter,
+    pdf_institution_names,
     read_statement_upload,
     sniff_pdf_format,
 )
@@ -119,13 +120,16 @@ def detect_account(
             return None, "", str(exc)
 
         format_key = sniff_pdf_format(text)
-        institution = (
-            FinancialInstitution.objects.filter(
-                homologada=True, institution_name__iexact=format_key
-            ).first()
-            if format_key
-            else None
-        )
+        institution = None
+        if format_key:
+            # O mesmo adapter pode servir a instituições cadastradas sob mais
+            # de um nome (ex. "SCP XP Investimestos" para a XP).
+            for nome in pdf_institution_names(format_key):
+                institution = FinancialInstitution.objects.filter(
+                    homologada=True, institution_name__iexact=nome
+                ).first()
+                if institution is not None:
+                    break
         conta = extract_conta_label(text)
         label = institution.institution_name if institution else "PDF não reconhecido"
         if conta:

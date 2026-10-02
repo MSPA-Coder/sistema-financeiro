@@ -137,6 +137,8 @@
 .annual-level-1 .annual-category-label { padding-left: 1rem; }
 .annual-level-2 .annual-category-label { padding-left: 2rem; }
 .annual-level-3 .annual-category-label { padding-left: 3rem; }
+.annual-row-group th,
+.annual-row-group td { font-weight: 700; background: var(--card); }
 .annual-row-category th { font-weight: 700; color: var(--text); }
 .annual-row-description th { font-weight: 500; }
 .annual-row-total th,

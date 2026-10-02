@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% load static %}
+{% load money_filters %}
+
+{% block title %}Banking • Atualizar saldo{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/bank-imports.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>💰 Atualizar saldo</h1>
+        <p>Informe o saldo real de uma conta numa data. A diferença para o saldo do CB vira um lançamento realizado,
+            com destino explícito (rendimento, IR/IOF, perda ou ajuste assumido), em vez de mexer no saldo inicial.</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="chart-card u-mb-1">
+    <h3>1. Informe o saldo</h3>
+    <form method="post" action="{% url 'bank_statements:atualizar_saldo' %}" class="top-filter-row">
+        {% csrf_token %}
+        <input type="hidden" name="acao" value="previa">
+        <label>Conta
+            <select name="conta" required>
+                <option value="">Selecione…</option>
+                {% for conta in contas %}
+                <option value="{{ conta.id }}" {% if escolhas.conta == conta.id|stringformat:"s" %}selected{% endif %}>{{ conta.owner.name }} / {{ conta.institution.institution_name }} / {{ conta.account_name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Data do saldo
+            <input type="date" name="data" value="{{ data|date:'Y-m-d' }}" required>
+        </label>
+        <label>Saldo real
+            <input type="text" name="saldo" inputmode="decimal" value="{{ escolhas.saldo }}" placeholder="0,00" required>
+        </label>
+        <button type="submit" class="btn-sm btn-primary">Comparar</button>
+    </form>
+</div>
+
+{% if previa %}
+<div class="chart-card u-mb-1">
+    <h3>2. Diferença</h3>
+    <p>
+        {{ previa.conta.owner.name }} / {{ previa.conta.institution.institution_name }} / {{ previa.conta.account_name }}
+        em {{ previa.data|date:"d/m/Y" }}:
+        saldo informado <strong>{{ previa.saldo_informado|money:previa.conta.currency }}</strong>,
+        saldo no CB <strong>{{ previa.saldo_no_cb|money:previa.conta.currency }}</strong>,
+        diferença <strong class="amount {{ previa.diferenca|amount_class }}">{{ previa.diferenca|money_signed:previa.conta.currency }}</strong>.
+    </p>
+    {% if previa.tipo %}
+    <form method="post" action="{% url 'bank_statements:atualizar_saldo' %}" class="top-filter-row">
+        {% csrf_token %}
+        <input type="hidden" name="acao" value="aplicar">
+        <input type="hidden" name="conta" value="{{ previa.conta.id }}">
+        <input type="hidden" name="data" value="{{ previa.data|date:'Y-m-d' }}">
+        <input type="hidden" name="saldo" value="{{ previa.saldo_informado }}">
+        <input type="hidden" name="diferenca" value="{{ previa.diferenca }}">
+        <label>Destino da diferença
+            <select name="destino" required>
+                {% for chave, rotulo in previa.destinos %}
+                <option value="{{ chave }}">{{ rotulo }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Motivo (obrigatório para perda e ajuste assumido)
+            <input type="text" name="motivo" maxlength="120" placeholder="Ex.: rendimento de setembro do CDB">
+        </label>
+        <button type="submit" class="btn-sm btn-action-edit"
+                data-sa-confirmar="Lançar esta diferença como um lançamento realizado na data do saldo?"
+                data-sa-titulo="Lançar a diferença"
+                data-sa-severidade="warning"
+                data-sa-ok="Lançar">Lançar a diferença</button>
+    </form>
+    {% else %}
+    <p class="empty-state">O saldo informado já bate com o do CB.</p>
+    {% endif %}
+</div>
+{% endif %}
+
+<div class="table-container">
+    <h3 class="u-mb-075">Assunções: tudo o que foi lançado como "Ajustes de Saldo"</h3>
+    <table class="tx-table">
+        <thead>
+            <tr><th>Data</th><th>Conta</th><th>Descrição</th><th>Valor</th></tr>
+        </thead>
+        <tbody>
+        {% for entrada in assuncoes %}
+            <tr>
+                <td>{{ entrada.due_date|date:"d/m/Y" }}</td>
+                <td>{{ entrada.account.owner.name }} / {{ entrada.account.institution.institution_name }} / {{ entrada.account.account_name }}</td>
+                <td>{{ entrada.description }}</td>
+                <td class="amount {% if entrada.entry_type == 'receita' %}amount-positive{% else %}amount-negative{% endif %}">{{ entrada.entry_amount|money:entrada.account.currency }}</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="4" class="empty-state">Nenhuma assunção lançada.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -10,9 +10,10 @@ conciliação apenas vincula os dois: não tenta realizá-lo de novo, porque
 `mark_transaction_realized` recusa lançamentos já realizados e a operação
 falharia sempre.
 
-Períodos fechados bloqueiam conciliação, e conciliar uma ponta de
-transferência interna realiza a contraparte junto — as duas pontas nunca
-ficam em estados diferentes.
+Períodos fechados bloqueiam conciliação que realiza ou altera o lançamento,
+e conciliar uma ponta de transferência interna realiza a contraparte junto —
+as duas pontas nunca ficam em estados diferentes. A exceção é o vínculo puro
+(parágrafo acima): ele não muda saldo, então vale em mês fechado.
 
 Excluir o lançamento vinculado a uma linha conciliada (ver
 `transactions.services.delete_transaction_or_operation`) não apaga a linha
@@ -22,6 +23,8 @@ conciliada -- o extrato continua existindo, só sem lançamento vinculado.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import timedelta
+from decimal import Decimal
 
 from django.db import transaction as db_transaction
 
@@ -191,6 +194,43 @@ def candidate_entries_for_lines(
     return candidates_by_line
 
 
+# Recorrência cujo valor varia (energia, condomínio, cartão): o lançamento
+# projetado serve de candidato se o valor do extrato estiver até esta fração
+# acima ou abaixo do previsto e a data a poucos dias do vencimento. Só vale para
+# recorrência ainda não realizada: um lançamento avulso com valor diferente é
+# outro lançamento, não o mesmo com valor variável.
+TOLERANCIA_DO_VALOR = Decimal("0.25")
+JANELA_DA_RECORRENCIA = timedelta(days=5)
+
+
+def candidatos_aproximados(line: BankStatementLine, limit: int = 3) -> list[CashFlowEntry]:
+    """Recorrências abertas da conta, de mesmo sinal, com valor e data próximos.
+
+    Não inclui as de valor exato: essas são os candidatos normais
+    (`candidate_entries_for_line`). Ordena pela data mais próxima e, em empate,
+    pelo valor mais próximo."""
+    valor = abs(line.amount)
+    tipo = ENTRY_TYPE_INCOME if line.amount > 0 else ENTRY_TYPE_EXPENSE
+    candidatos = (
+        CashFlowEntry.objects.filter(
+            account_id=line.account_id,
+            entry_type=tipo,
+            is_recurring=True,
+            due_date__gte=line.statement_date - JANELA_DA_RECORRENCIA,
+            due_date__lte=line.statement_date + JANELA_DA_RECORRENCIA,
+            entry_amount__gte=valor * (1 - TOLERANCIA_DO_VALOR),
+            entry_amount__lte=valor * (1 + TOLERANCIA_DO_VALOR),
+        )
+        .exclude(status=STATUS_REALIZED)
+        .exclude(entry_amount=valor)
+        .exclude(statement_matches__status=LINE_STATUS_RECONCILED)
+    )
+    return sorted(
+        candidatos,
+        key=lambda c: (abs((c.due_date - line.statement_date).days), abs(c.entry_amount - valor), c.id),
+    )[:limit]
+
+
 _FALLBACK_CATEGORY_NAME = "Outros"
 
 
@@ -210,16 +250,14 @@ def _category_hint(description: str) -> str | None:
 def suggested_category_for_line(line: BankStatementLine) -> CashFlowCategory | None:
     """Categoria sugerida para criar um lançamento a partir da linha.
 
-    Tenta casar o prefixo de categoria do extrato (quando existe) com uma
-    categoria cadastrada pelo nome; sem casamento - caso comum de categorias
-    do extrato sem equivalente direto, como "Rendimentos" - cai para "Outros"
-    quando essa categoria existir."""
-    hint = _category_hint(line.description)
-    if hint:
-        match = CashFlowCategory.objects.filter(category_name__iexact=hint).first()
-        if match:
-            return match
-    return CashFlowCategory.objects.filter(category_name__iexact=_FALLBACK_CATEGORY_NAME).first()
+    Vem do histórico (a categoria mais frequente que o usuário deu à mesma
+    descrição, sem contar "Outros"), depois da categoria do banco e do prefixo
+    do extrato, e por último de "Outros". Ver `classificacao`. O prefixo ficou
+    atrás do histórico porque o rótulo do banco erra de vez em quando: o PDF da
+    Genial chama o aluguel de ações de "Rendimentos"."""
+    from .classificacao import sugerir_categoria
+
+    return sugerir_categoria(line.description, line.bank_category).categoria
 
 
 def _get_line_in_scope(
@@ -273,6 +311,35 @@ def _locked_entry_for_update(entry_id) -> CashFlowEntry:
     raise ValueError("Movimento não encontrado.")
 
 
+def rendimentos_agrupados(lines) -> list[dict]:
+    """Rendimentos pendentes agrupados por conta e mês, para aplicar de uma vez.
+
+    O extrato do Mercado Pago lista o rendimento de cada dia (R$ 0,02 por dia);
+    a linha continua sendo importada uma a uma, para a conferência de saldo
+    bater, mas não faz sentido pedir uma decisão por linha. Entram as linhas
+    cujo plano é criar lançamento na categoria "Rendimentos"."""
+    from . import extrato
+
+    grupos: dict[tuple[int, int, int], dict] = {}
+    for line in lines:
+        plano = getattr(line, "plano", None)
+        if plano is None or plano.acao != extrato.CRIA or plano.sugestao is None:
+            continue
+        categoria = plano.sugestao.categoria
+        if categoria is None or categoria.category_name.strip().lower() != "rendimentos":
+            continue
+        chave = (line.account_id, line.statement_date.year, line.statement_date.month)
+        grupo = grupos.setdefault(
+            chave,
+            {"conta": line.account, "mes": line.statement_date.replace(day=1), "quantidade": 0,
+             "total": Decimal("0.00"), "line_ids": []},
+        )
+        grupo["quantidade"] += 1
+        grupo["total"] += line.amount
+        grupo["line_ids"].append(line.id)
+    return sorted(grupos.values(), key=lambda g: (g["mes"], g["conta"].id), reverse=True)
+
+
 def reconciliation_view_data(user, target_line_id: int | None = None) -> dict:
     """Dados para a tela de conciliação: linhas pendentes, candidatos por
     linha e conciliações recentes agrupadas por lote de importação, com
@@ -312,14 +379,23 @@ def reconciliation_view_data(user, target_line_id: int | None = None) -> dict:
     # separado por id) porque o Django Template Language não suporta lookup
     # de dicionário por variável (`candidates[line.id]`); anexar o atributo
     # aqui é mais simples do que registrar um template filter só para isso.
+    from . import extrato
+
     candidates_by_line = candidate_entries_for_lines(lines)
+    planos = {plano.linha.id: plano for plano in extrato.planejar(user, lines)}
     for line in lines:
         line.reconcile_candidates = candidates_by_line.get(line.id, [])
-        suggested = suggested_category_for_line(line)
+        plano = planos.get(line.id)
+        line.plano = plano
+        suggested = (
+            plano.sugestao.categoria if plano is not None and plano.sugestao is not None
+            else suggested_category_for_line(line)
+        )
         line.suggested_category_id = suggested.id if suggested else None
 
     return {
         "lines": lines,
+        "rendimentos_agrupados": rendimentos_agrupados(lines),
         "reconciled_batches": reconciled_batches,
         "target_line_id": target_line.id if target_line else None,
         "target_batch_id": target_batch_id,
@@ -328,13 +404,19 @@ def reconciliation_view_data(user, target_line_id: int | None = None) -> dict:
 
 
 @db_transaction.atomic
-def reconcile_line_with_entry(user, *, line_id, entry_id, audit_context=None) -> BankStatementLine:
+def reconcile_line_with_entry(
+    user, *, line_id, entry_id, audit_context=None, aceitar_valor_diferente: bool = False
+) -> BankStatementLine:
     """Concilia uma linha de extrato com um lançamento existente.
 
     Realiza o lançamento com a data e o valor da linha (a menos que já
     esteja realizado com a mesma data/valor — ver nota de módulo). Ver
     `transactions.services.realize_transaction` para o tratamento de
     transferências internas (contraparte realizada junto).
+
+    `aceitar_valor_diferente` vale só para recorrência ainda aberta (ver
+    `candidatos_aproximados`): o lançamento é realizado pelo valor do extrato e
+    o valor previsto fica como estava, para comparar previsto e realizado.
     """
     line = _get_line_in_scope(user, line_id, "update", for_update=True)
     if not entry_id:
@@ -375,7 +457,9 @@ def reconcile_line_with_entry(user, *, line_id, entry_id, audit_context=None) ->
 
     line_value = abs(line.amount)
     if entry.entry_amount != line_value:
-        raise ValueError("Valor do movimento incompatível com a linha de extrato.")
+        variavel = aceitar_valor_diferente and entry.is_recurring and entry.status != STATUS_REALIZED
+        if not variavel:
+            raise ValueError("Valor do movimento incompatível com a linha de extrato.")
 
     already_realized_matching = False
     if entry.status == STATUS_REALIZED:
@@ -387,12 +471,19 @@ def reconcile_line_with_entry(user, *, line_id, entry_id, audit_context=None) ->
             raise ValueError("Movimento já realizado com data ou valor diferente da linha de extrato.")
         already_realized_matching = True
 
-    assert_entry_period_open(entry, action_label="conciliar")
-    if is_month_closed(entry.account, line.statement_date.year, line.statement_date.month):
-        raise ValueError(
-            f"Não é possível conciliar: mês {line.statement_date.month:02d}/"
-            f"{line.statement_date.year} fechado para a conta {entry.account}."
-        )
+    # Vincular um lançamento que já está realizado, na mesma data e valor da
+    # linha, não muda nenhum saldo nem nenhum lançamento: é só dizer que o
+    # extrato confirma o que já estava lá. É o caso do histórico (meses
+    # fechados, lançamentos digitados à mão antes de o extrato ser importado), e
+    # exigir mês aberto aqui obrigaria a reabrir e fechar tudo para nada. Realizar
+    # ou mudar o lançamento continua exigindo o mês aberto.
+    if not already_realized_matching:
+        assert_entry_period_open(entry, action_label="conciliar")
+        if is_month_closed(entry.account, line.statement_date.year, line.statement_date.month):
+            raise ValueError(
+                f"Não é possível conciliar: mês {line.statement_date.month:02d}/"
+                f"{line.statement_date.year} fechado para a conta {entry.account}."
+            )
 
     line.matched_entry = entry
     line.status = LINE_STATUS_RECONCILED

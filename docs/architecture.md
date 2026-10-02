@@ -91,7 +91,11 @@ urls -> views -> services -> models -> PostgreSQL
 - `transactions/`: lançamentos, operações compostas, transferências,
   recorrências e fechamento mensal;
 - `bank_statements/`: leitura de extratos, importação, conciliação e
-  comprovantes;
+  comprovantes. `classificacao.py` aprende a categoria pelo histórico (usado
+  também pela fatura), `extrato.py` decide o que cada linha pendente vira
+  (conciliar, criar, transferência pareada), `regras.py` aplica as regras
+  explícitas, `saldo.py` é o Atualizar saldo, e `pares_proprios.py` e
+  `familias.py` são as manutenções de dados com simulação;
 - `management/`: tags, projetos e orçamentos;
 - `reports/` e `dashboard/`: consultas e apresentação analítica;
 - `core/`: configuração da aplicação, auditoria, segurança e serviços comuns;
@@ -225,6 +229,11 @@ Todas as rotas v3 são GET-only, usam o Bearer de patrimônio e não oferecem
 qualquer caminho de escrita.
 
 ### Snapshot de integração v4
+
+Desde 02/10/2026 a conta publica `purpose` (`pessoal` ou `administrada`) e a
+categoria publica `group` (nome do grupo ou `null`), como acréscimos opcionais
+que não mudam a versão do contrato; quem não os conhece os ignora. Renomear um
+grupo toca as categorias dele, para o feed de mudanças pedir um novo snapshot.
 
 `GET /patrimonio/v4/metadata`, `GET /patrimonio/v4/snapshot` e
 `GET /patrimonio/v4/changes` iniciam a

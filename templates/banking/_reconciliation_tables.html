@@ -1,6 +1,29 @@
 {% load static %}
 {% load icons %}
 {% load money_filters %}
+{% if rendimentos_agrupados %}
+<div class="table-container u-mb-1">
+    <h3 class="u-mb-075">Rendimentos pendentes, por conta e mês</h3>
+    <p class="help-text">Cada linha do extrato continua existindo (é o que faz o saldo do arquivo bater), mas não precisa de uma decisão por linha: aplique o grupo de uma vez.</p>
+    {% for grupo in rendimentos_agrupados %}
+    <form method="post" action="{% url 'bank_statements:bulk_action_lines' %}"
+          hx-post="{% url 'bank_statements:bulk_action_lines' %}"
+          hx-target="#reconciliation-results"
+          hx-swap="innerHTML" class="u-d-flex u-gap-05 u-items-center u-mb-075">
+        {% csrf_token %}
+        <input type="hidden" name="bulk_action" value="apply_plan">
+        {% for line_id in grupo.line_ids %}<input type="hidden" name="line_ids" value="{{ line_id }}">{% endfor %}
+        <span>{{ grupo.mes|date:"m/Y" }} · {{ grupo.conta.owner.name }} / {{ grupo.conta.institution.institution_name }} / {{ grupo.conta.account_name }}
+            · {{ grupo.quantidade }} linha{{ grupo.quantidade|pluralize }} · <strong class="amount amount-positive">{{ grupo.total|money:grupo.conta.currency }}</strong></span>
+        <button type="submit" class="btn-sm btn-primary"
+                data-sa-confirmar="Criar os {{ grupo.quantidade }} lançamentos de rendimento deste mês?"
+                data-sa-titulo="Aplicar rendimentos do mês"
+                data-sa-severidade="info"
+                data-sa-ok="Aplicar">Aplicar o mês</button>
+    </form>
+    {% endfor %}
+</div>
+{% endif %}
 <div class="table-container u-mb-1">
     <form id="bulkPendingLinesForm" method="post" action="{% url 'bank_statements:bulk_action_lines' %}"
           hx-post="{% url 'bank_statements:bulk_action_lines' %}"
@@ -9,6 +32,13 @@
         {% csrf_token %}
         <div class="u-d-flex u-items-center u-gap-05 u-mb-075">
             <h3 class="u-mb-0">Linhas de extrato pendentes de conciliação</h3>
+            <button type="submit" name="bulk_action" value="apply_plan" class="btn-sm btn-primary"
+                    data-sa-confirmar="Aplicar a sugestão mostrada em cada linha selecionada? Concilia, cria lançamentos e pareia transferências entre contas suas; linhas que pedem decisão ficam pendentes."
+                    data-sa-titulo="Aplicar sugestões"
+                    data-sa-severidade="warning"
+                    data-sa-ok="Aplicar">
+                Aplicar sugestões
+            </button>
             <button type="submit" name="bulk_action" value="reconcile" class="btn-sm btn-primary"
                     data-sa-confirmar="Conciliar todas as linhas selecionadas? Cada lançamento será marcado como realizado."
                     data-sa-titulo="Confirmar conciliação em lote"
@@ -40,6 +70,7 @@
                 <th>Conta</th>
                 <th>Descrição</th>
                 <th>Valor</th>
+                <th>Sugestão</th>
                 <th>Conciliar com movimento</th>
                 <th>Ou criar lançamento</th>
                 <th>Ações</th>
@@ -57,6 +88,7 @@
                 <td>{{ line.account.owner.name }} / {{ line.account.institution.institution_name }} / {{ line.account.account_name }}</td>
                 <td>{{ line.description }}</td>
                 <td class="amount {{ line.amount|amount_class }}">{{ line.amount|money_signed:line.account.currency }}</td>
+                <td>{% if line.plano %}{{ line.plano.rotulo }}{% else %}<span class="empty-state">-</span>{% endif %}</td>
                 <td>
                     {% if line.status == "novo" %}
                         {% if line.reconcile_candidates %}
@@ -133,7 +165,7 @@
                 </td>
             </tr>
         {% empty %}
-            <tr><td colspan="8" class="empty-state">Nenhuma linha pendente.</td></tr>
+            <tr><td colspan="9" class="empty-state">Nenhuma linha pendente.</td></tr>
         {% endfor %}
         </tbody>
     </table>

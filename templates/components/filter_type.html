@@ -16,5 +16,12 @@
             <option value="receita" {% if filter_type == 'receita' %}selected{% endif %}>Receita</option>
             <option value="despesa" {% if filter_type == 'despesa' %}selected{% endif %}>Despesa</option>
         </select>
+        {% if show_group_choice %}
+        <span data-ui="filter-type-label">Ver por:</span>
+        <select name="categorias" class="filter-select" aria-label="Agrupar a distribuição">
+            <option value="categoria" {% if categorias_modo != 'grupo' %}selected{% endif %}>Categoria</option>
+            <option value="grupo" {% if categorias_modo == 'grupo' %}selected{% endif %}>Grupo</option>
+        </select>
+        {% endif %}
     </form>
 </div>

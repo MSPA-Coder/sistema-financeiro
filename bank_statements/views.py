@@ -1,6 +1,8 @@
 """Views de importação, conciliação e anexos bancários (Bancos)."""
 from __future__ import annotations
 
+from datetime import date
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import FileResponse, HttpResponse, JsonResponse, QueryDict
@@ -9,11 +11,20 @@ from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_POST
 
 from accounts.services import has_function_permission
+from banking.services import accessible_account_ids
 from core.htmx import quer_fragmento
 from core.permissions import permission_required
 from core.services import audit_request_context
 
-from . import fatura, fatura_projetada, pending_imports, reclassificacao, reconciliation
+from . import (
+    extrato,
+    fatura,
+    fatura_projetada,
+    pending_imports,
+    reclassificacao,
+    reconciliation,
+    saldo,
+)
 from .attachments import (
     attachment_download_path,
     attachment_for_download,
@@ -21,6 +32,7 @@ from .attachments import (
     recent_attachments_for_user,
     save_entry_attachment,
 )
+from .models import BankStatementLine
 from .services import (
     accounts_for_import_form,
     statement_import_status,
@@ -269,6 +281,57 @@ def reclassificacao_view(request):
     return render(request, 'banking/reclassificacao.html', context)
 
 
+@login_required
+@permission_required('banking.view')
+@permission_required('banking.reconcile', fallback='dashboard:dashboard')
+@require_http_methods(["GET", "POST"])
+def atualizar_saldo_view(request):
+    """Informa o saldo real de uma conta e lança a diferença com destino explícito."""
+    previa = None
+    dados = request.POST if request.method == 'POST' else request.GET
+    data_informada = dados.get('data', '')
+    try:
+        data = date.fromisoformat(data_informada) if data_informada else date.today()
+    except ValueError:
+        data = date.today()
+        messages.error(request, "Data inválida.")
+    if request.method == 'POST':
+        try:
+            if request.POST.get('acao') == 'aplicar':
+                lancamento = saldo.aplicar(
+                    request.user,
+                    account_id=request.POST.get('conta'),
+                    data=data,
+                    saldo_informado=request.POST.get('saldo'),
+                    diferenca_esperada=request.POST.get('diferenca'),
+                    destino=request.POST.get('destino'),
+                    motivo=request.POST.get('motivo', ''),
+                    audit_context=audit_request_context(request),
+                )
+                messages.success(
+                    request, f"Diferença lançada: {lancamento.description} ({lancamento.entry_amount})."
+                )
+                return redirect('bank_statements:atualizar_saldo')
+            previa = saldo.previa(
+                request.user, account_id=request.POST.get('conta'), data=data,
+                saldo_informado=request.POST.get('saldo'),
+            )
+        except ValueError as exc:
+            messages.error(request, str(exc))
+    contas = [
+        conta for conta in accounts_for_import_form(request.user)
+        if not conta.is_credit_card
+    ]
+    return render(request, 'banking/atualizar_saldo.html', {
+        "contas": contas,
+        "data": data,
+        "previa": previa,
+        "escolhas": request.POST if request.method == 'POST' else {},
+        "assuncoes": saldo.assuncoes(request.user),
+        "destinos": saldo.DESTINOS,
+    })
+
+
 def _reconciliation_context(request, *, target_line_id=None):
     return reconciliation.reconciliation_view_data(request.user, target_line_id)
 
@@ -358,6 +421,26 @@ def bulk_action_lines_view(request):
             messages.success(request, f"{reconciled} linha(s) conciliada(s).")
         if errors:
             messages.error(request, f"{len(errors)} linha(s) não puderam ser conciliadas: {errors[0][1]}")
+    elif action == 'apply_plan':
+        linhas = list(
+            BankStatementLine.objects.filter(
+                id__in=[valor for valor in line_ids if str(valor).isdigit()],
+                account_id__in=accessible_account_ids(request.user, "update"),
+            ).select_related("account__owner", "account__institution")
+        )
+        feitas, errors = extrato.aplicar(
+            request.user, linhas, audit_context=audit_request_context(request)
+        )
+        if feitas:
+            detalhe = ", ".join(
+                f"{quantidade} {extrato.ROTULOS_CURTOS[acao]}" for acao, quantidade in feitas.items()
+            )
+            messages.success(request, f"Sugestões aplicadas: {detalhe}.")
+        if errors:
+            messages.warning(
+                request,
+                f"{len(errors)} linha(s) esperam decisão sua. Primeira: {errors[0][0]} — {errors[0][1]}",
+            )
     elif action == 'create':
         created, errors = reconciliation.bulk_create_entries_from_lines(
             request.user,

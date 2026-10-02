@@ -725,8 +725,13 @@ def annual_planning_presentation(
     layout: str = ANNUAL_PLANNING_CALENDAR,
     view_mode: str = VIEW_ALL,
     show_descriptions: bool = False,
+    by_group: bool = False,
 ) -> dict:
     """Monta o contrato de apresentação da grade anual por titular.
+
+    Com `by_group`, cada seção ganha um nível: o grupo de categorias, com o
+    subtotal dele, entre a seção e suas categorias. A categoria sem grupo cai
+    em "Sem grupo", depois dos grupos.
 
     O mês de referência mostra, por titular, somente lançamentos abertos
     (``vencidos`` e ``a_vencer``) cuja data de vencimento pertence ao mês.
@@ -802,7 +807,7 @@ def annual_planning_presentation(
             due_date__gte=first_month,
             due_date__lt=end_exclusive,
         )
-    entries = CashFlowEntry.objects.select_related("account__owner", "category").filter(
+    entries = CashFlowEntry.objects.select_related("account__owner", "category__group").filter(
         account_id__in=selected_account_ids
     ).filter(in_months).order_by("category__category_name", "description", "id")
     for entry in entries:
@@ -847,9 +852,15 @@ def annual_planning_presentation(
         category_id = entry.category_id
         category_name = entry.category.category_name if entry.category else "Sem categoria"
         category_key = (section_key, category_id, category_name)
+        grupo = entry.category.group if entry.category else None
         category_bucket = buckets.setdefault(
             category_key,
-            {"owner_values": owner_zeroes(), "months": zeroes(), "descriptions": {}},
+            {
+                "owner_values": owner_zeroes(),
+                "months": zeroes(),
+                "descriptions": {},
+                "group": (grupo.position, grupo.group_name) if grupo else (10**6, "Sem grupo"),
+            },
         )
         category_bucket["months"][month_index] += signed_amount
         section_totals[section_key]["months"][month_index] += signed_amount
@@ -891,31 +902,60 @@ def annual_planning_presentation(
                 "months": _month_values(section["months"]),
             }
         )
-        for key, bucket in sorted(
+        section_items = sorted(
             (item for item in buckets.items() if item[0][0] == section_key), key=lambda item: item[0][2].lower()
-        ):
-            rows.append(
-                {
-                    "kind": "category",
-                    "label": key[2],
-                    "category_path": section_label,
-                    "level": 1,
-                    "owner_values": bucket["owner_values"],
-                    "months": _month_values(bucket["months"]),
-                }
-            )
-            for description, description_bucket in sorted(bucket["descriptions"].items()):
+        )
+        # Sem agrupar, uma "pasta" só e sem linha de grupo: a grade é a de sempre.
+        folders: list[tuple[tuple[int, str] | None, list]] = []
+        if by_group:
+            by_folder: dict[tuple[int, str], list] = {}
+            for item in section_items:
+                by_folder.setdefault(item[1]["group"], []).append(item)
+            folders = sorted(by_folder.items(), key=lambda pair: (pair[0][0], pair[0][1].lower()))
+        else:
+            folders = [(None, section_items)]
+        offset = 1 if by_group else 0
+        for folder, members in folders:
+            if folder is not None:
+                folder_owner, folder_months = owner_zeroes(), zeroes()
+                for _key, member in members:
+                    for index, value in enumerate(member["owner_values"]):
+                        folder_owner[index] += value
+                    for index, value in enumerate(member["months"]):
+                        folder_months[index] += value
                 rows.append(
                     {
-                        "kind": "description",
-                        "label": key[2],
-                        "description": description,
+                        "kind": "group",
+                        "label": folder[1],
                         "category_path": section_label,
-                        "level": 2,
-                        "owner_values": description_bucket["owner_values"],
-                        "months": _month_values(description_bucket["months"]),
+                        "level": 1,
+                        "owner_values": folder_owner,
+                        "months": _month_values(folder_months),
                     }
                 )
+            for key, bucket in members:
+                rows.append(
+                    {
+                        "kind": "category",
+                        "label": key[2],
+                        "category_path": section_label,
+                        "level": 1 + offset,
+                        "owner_values": bucket["owner_values"],
+                        "months": _month_values(bucket["months"]),
+                    }
+                )
+                for description, description_bucket in sorted(bucket["descriptions"].items()):
+                    rows.append(
+                        {
+                            "kind": "description",
+                            "label": key[2],
+                            "description": description,
+                            "category_path": section_label,
+                            "level": 2 + offset,
+                            "owner_values": description_bucket["owner_values"],
+                            "months": _month_values(description_bucket["months"]),
+                        }
+                    )
         for index, value in enumerate(section["owner_values"]):
             grand_owner_values[index] += value
         for index, value in enumerate(section["months"]):
@@ -1234,7 +1274,7 @@ def entries_for_period(account_ids: list[int], start: date, end_exclusive: date,
     if floor_start >= end_exclusive:
         return []
     qs = (
-        CashFlowEntry.objects.select_related("category")
+        CashFlowEntry.objects.select_related("category__group")
         .annotate(proj_date=_listing_date_expr(view_mode))
         .filter(account_id__in=ids, proj_date__gte=floor_start, proj_date__lt=end_exclusive)
         .filter(_listing_status_q(view_mode, date.today()))
