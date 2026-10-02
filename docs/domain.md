@@ -311,6 +311,13 @@ já está realizado, na mesma data e valor, não muda saldo nem lançamento e po
 isso vale em mês fechado (é o caso do histórico digitado à mão); realizar ou
 mudar o lançamento continua exigindo o mês aberto.
 
+Os PDFs com adapter são o da Genial, o do Mercado Pago e o da conta de
+investimento da XP (`XpPdfStatementAdapter`). O da XP lê a geometria da tabela
+(a descrição quebra em até três linhas, antes e depois da data), valida a cadeia
+de saldos de linha a linha e informa como saldo o da linha mais recente na data
+final do período. A instituição cadastrada como "SCP XP Investimestos" (sic) usa
+o mesmo adapter, e a conta é reconhecida pelo número do rótulo "Conta:" do PDF.
+
 ### Plano do extrato de conta
 
 A tela de Conciliação mostra, por linha pendente, o que ela vai virar, e

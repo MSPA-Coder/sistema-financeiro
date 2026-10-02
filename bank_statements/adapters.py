@@ -621,14 +621,252 @@ class MercadoPagoPdfStatementAdapter:
         return _parse_mercadopago_lines(text, account_id)
 
 
+# --- PDF da XP Investimentos ---
+#
+# O extrato da conta de investimento da XP é uma tabela (Liq, Mov, Histórico,
+# Valor, Saldo) cuja descrição quebra em até três linhas, e o texto corrido do
+# PDF mistura essas linhas com as das linhas vizinhas ("TED BCO 336 ..." vem
+# antes da data, "DE TED - SPB" depois). Por isso este adapter lê a geometria:
+# as linhas da tabela são separadas por filetes horizontais, e cada palavra
+# pertence à linha cujo faixa de filetes a contém. Sem filetes, cada palavra
+# vai para a data mais próxima.
+#
+# O mais recente vem primeiro, e a coluna Saldo é o saldo depois da linha. É a
+# cadeia de saldos que confere o sinal e o valor de cada linha: o texto marca o
+# débito com "-R$", mas o que garante que nenhuma linha foi lida errada é
+# `saldo da linha mais velha = saldo da mais nova - valor da mais nova`. Se a
+# cadeia não fecha, o layout mudou e é melhor falhar alto.
+
+_RE_XP_DATA = re.compile(r"^\d{2}/\d{2}/\d{4}$")
+_RE_XP_VALOR = re.compile(r"(-)?\s*R\$\s*(-)?\s*([\d.]+,\d{2})")
+_RE_XP_PERIODO_FIM = re.compile(r"At[ée]:\s*(\d{2})/(\d{2})/(\d{4})")
+_XP_FILETE_MAX_ALTURA = 2.5
+_XP_TOLERANCIA_X = 5
+
+
+@dataclass(frozen=True)
+class _LinhaXp:
+    data: date
+    descricao: str
+    valor: Decimal
+    saldo: Decimal
+
+
+def _xp_data(texto: str) -> date:
+    dia, mes, ano = texto.split("/")
+    return date(int(ano), int(mes), int(dia))
+
+
+def _xp_cabecalho(palavras):
+    """As posições x das colunas, a partir da primeira linha de cabeçalho da página."""
+    por_texto: dict[str, list] = {}
+    for palavra in palavras:
+        if palavra["text"] in ("Liq", "Mov", "Histórico", "Valor", "Saldo"):
+            por_texto.setdefault(palavra["text"], []).append(palavra)
+    if not all(nome in por_texto for nome in ("Liq", "Mov", "Histórico", "Valor", "Saldo")):
+        return None
+    liq = min(por_texto["Liq"], key=lambda p: p["top"])
+    mesma_linha = {
+        nome: min(
+            (p for p in por_texto[nome] if abs(p["top"] - liq["top"]) < 3),
+            key=lambda p: p["x0"],
+            default=None,
+        )
+        for nome in por_texto
+    }
+    if any(valor is None for valor in mesma_linha.values()):
+        return None
+    return {
+        "topo": liq["top"],
+        "liq": mesma_linha["Liq"]["x0"],
+        "mov": mesma_linha["Mov"]["x0"],
+        "historico": mesma_linha["Histórico"]["x0"],
+        "valor": mesma_linha["Valor"]["x0"],
+    }
+
+
+def _xp_linhas_da_pagina(pagina, colunas_anteriores=None):
+    palavras = pagina.extract_words()
+    colunas = _xp_cabecalho(palavras) or colunas_anteriores
+    if colunas is None:
+        return [], None
+    inicio = colunas["topo"] if _xp_cabecalho(palavras) else 0
+    fim = float("inf")
+    for indice, palavra in enumerate(palavras):
+        if palavra["text"] == "Lançamentos" and palavra["top"] > inicio:
+            seguinte = palavras[indice + 1]["text"] if indice + 1 < len(palavras) else ""
+            if seguinte == "futuros":
+                fim = palavra["top"]
+                break
+    area = [p for p in palavras if inicio + 8 < p["top"] < fim]
+    datas = [
+        p for p in area
+        if _RE_XP_DATA.match(p["text"]) and p["x0"] < colunas["mov"] - 10
+    ]
+    if not datas:
+        return [], colunas
+    datas.sort(key=lambda p: p["top"])
+
+    filetes = sorted(
+        r["top"] for r in pagina.rects
+        if (r["bottom"] - r["top"]) <= _XP_FILETE_MAX_ALTURA
+        and colunas["liq"] - 20 <= r["x0"] <= colunas["liq"]
+        and inicio < r["top"] < fim
+    )
+    faixas: dict[int, list] = {indice: [] for indice in range(len(datas))}
+    for palavra in area:
+        if filetes:
+            acima = [f for f in filetes if f <= palavra["top"]]
+            abaixo = [f for f in filetes if f > palavra["top"]]
+            limite_inferior = max(acima) if acima else None
+            limite_superior = min(abaixo) if abaixo else None
+            dono = None
+            for indice, data in enumerate(datas):
+                dentro_de_baixo = limite_inferior is None or data["top"] >= limite_inferior
+                dentro_de_cima = limite_superior is None or data["top"] < limite_superior
+                if dentro_de_baixo and dentro_de_cima:
+                    dono = indice
+                    break
+            if dono is None:
+                continue
+        else:
+            dono = min(range(len(datas)), key=lambda i: (abs(datas[i]["top"] - palavra["top"]), i))
+        faixas[dono].append(palavra)
+
+    linhas = []
+    for indice, data in enumerate(datas):
+        palavras_da_linha = faixas[indice]
+        historico = sorted(
+            (p for p in palavras_da_linha
+             if colunas["historico"] - _XP_TOLERANCIA_X <= p["x0"] < colunas["valor"] - _XP_TOLERANCIA_X),
+            key=lambda p: (round(p["top"]), p["x0"]),
+        )
+        direita = sorted(
+            (p for p in palavras_da_linha if p["x0"] >= colunas["valor"] - _XP_TOLERANCIA_X),
+            key=lambda p: p["x0"],
+        )
+        valores = _RE_XP_VALOR.findall(" ".join(p["text"] for p in direita))
+        if len(valores) < 2:
+            raise ValueError(
+                f"Não consegui ler o valor e o saldo da linha de {data['text']} no extrato XP."
+            )
+        (s1a, s1b, v1), (s2a, s2b, v2) = valores[0], valores[1]
+        linhas.append(
+            _LinhaXp(
+                data=_xp_data(data["text"]),
+                descricao=" ".join(p["text"] for p in historico if p["text"]).strip(),
+                valor=_brl(s1a, s1b, v1),
+                saldo=_brl(s2a, s2b, v2),
+            )
+        )
+    return linhas, colunas
+
+
+def _xp_ler(pdf_paginas) -> list[_LinhaXp]:
+    """As linhas de todas as páginas, na ordem do arquivo (a mais recente primeiro)."""
+    linhas: list[_LinhaXp] = []
+    colunas = None
+    for pagina in pdf_paginas:
+        da_pagina, colunas = _xp_linhas_da_pagina(pagina, colunas)
+        linhas.extend(da_pagina)
+    return linhas
+
+
+def _xp_conferir_cadeia(linhas: list[_LinhaXp]) -> None:
+    for mais_nova, mais_velha in zip(linhas, linhas[1:], strict=False):
+        if abs((mais_nova.saldo - mais_nova.valor) - mais_velha.saldo) > Decimal("0.01"):
+            raise ValueError(
+                "Inconsistência no extrato XP: o saldo depois da linha de "
+                f"{mais_velha.data:%d/%m/%Y} não bate com o valor da linha seguinte "
+                f"({mais_nova.data:%d/%m/%Y}). O layout pode ter mudado."
+            )
+
+
+def _xp_abrir(raw: bytes):
+    try:
+        import pdfplumber
+    except ImportError as exc:
+        raise ValueError(
+            "Suporte a extrato em PDF indisponível no momento (dependência não instalada)."
+        ) from exc
+    try:
+        return pdfplumber.open(io.BytesIO(raw))
+    except Exception as exc:
+        raise ValueError("Não foi possível ler o PDF do extrato.") from exc
+
+
+def _parse_xp_linhas(linhas: list[_LinhaXp], account_id: int) -> list[ParsedStatementLine]:
+    if not linhas:
+        raise ValueError("Nenhum lançamento encontrado no extrato XP (PDF).")
+    _xp_conferir_cadeia(linhas)
+    max_rows = max_statement_rows()
+    if len(linhas) > max_rows:
+        raise ValueError(f"Extrato XP excede o limite de {max_rows} linha(s).")
+    parsed = []
+    for linha in linhas:
+        if linha.valor == 0:
+            raise ValueError("Valor zerado no extrato não é aceito.")
+        descricao = linha.descricao[:255] or "Movimento XP"
+        parsed.append(
+            ParsedStatementLine(
+                statement_date=linha.data,
+                description=descricao,
+                amount=linha.valor,
+                line_hash=line_hash(account_id, linha.data, descricao, linha.valor),
+            )
+        )
+    return numerar_repeticoes(parsed, account_id)
+
+
+class XpPdfStatementAdapter:
+    """Adapter para o extrato da conta de investimento em PDF da XP Investimentos."""
+
+    def parse(self, file: UploadedFile, account_id: int) -> list[ParsedStatementLine]:
+        raw = read_statement_upload(file, label="PDF")
+        with _xp_abrir(raw) as pdf:
+            linhas = _xp_ler(pdf.pages)
+        return _parse_xp_linhas(linhas, account_id)
+
+
+def _saldo_do_xp(raw: bytes, text: str) -> tuple[Decimal, date] | None:
+    """Saldo depois da linha mais recente, na data final do período.
+
+    O "Saldo disponível" do cabeçalho é o de quando o extrato foi consultado,
+    não o do fim do período; o saldo da primeira linha é o que vale."""
+    periodo = _RE_XP_PERIODO_FIM.search(text)
+    if periodo is None:
+        return None
+    with _xp_abrir(raw) as pdf:
+        linhas = _xp_ler(pdf.pages)
+    if not linhas:
+        return None
+    fim = date(int(periodo.group(3)), int(periodo.group(2)), int(periodo.group(1)))
+    return linhas[0].saldo, fim
+
+
 _PDF_ADAPTERS = {
     "genial": GenialPdfStatementAdapter,
     "mercado pago": MercadoPagoPdfStatementAdapter,
+    "xp investimentos": XpPdfStatementAdapter,
+}
+# Outros nomes sob os quais a mesma instituição pode estar cadastrada. O "SCP XP
+# Investimestos" (sic) é como a conta de investimento da XP foi cadastrada.
+_PDF_ALIASES = {
+    "xp investimentos": ("scp xp investimentos", "scp xp investimestos"),
 }
 
 
+def pdf_institution_names(format_key: str) -> tuple[str, ...]:
+    """Os nomes de instituição (minúsculos) que usam o adapter de `format_key`."""
+    return (format_key, *_PDF_ALIASES.get(format_key, ()))
+
+
 def _normalize_institution_key(name: str) -> str:
-    return (name or "").strip().lower()
+    chave = (name or "").strip().lower()
+    for formato, apelidos in _PDF_ALIASES.items():
+        if chave in apelidos:
+            return formato
+    return chave
 
 
 def get_statement_adapter(file: UploadedFile | None, *, institution=None) -> StatementAdapter:
@@ -723,7 +961,10 @@ def extract_statement_balance(file: UploadedFile) -> tuple[Decimal, date] | None
         mimetype = (getattr(file, "content_type", "") or "").lower()
         raw = read_statement_upload(file, label="de extrato")
         if filename.endswith(".pdf") or "pdf" in mimetype:
-            return _saldo_do_pdf(extract_pdf_text(raw))
+            texto = extract_pdf_text(raw)
+            if sniff_pdf_format(texto) == "xp investimentos":
+                return _saldo_do_xp(raw, texto)
+            return _saldo_do_pdf(texto)
         if any(filename.endswith(ext) for ext in _OFX_EXTENSIONS) or any(m in mimetype for m in _OFX_MIMETYPES):
             try:
                 content = raw.decode("utf-8")
@@ -736,7 +977,9 @@ def extract_statement_balance(file: UploadedFile) -> tuple[Decimal, date] | None
 
 
 __all__ = [
+    "XpPdfStatementAdapter",
     "extract_statement_balance",
+    "pdf_institution_names",
     "CsvStatementAdapter",
     "GenialPdfStatementAdapter",
     "MercadoPagoPdfStatementAdapter",
