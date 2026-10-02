@@ -141,43 +141,51 @@
 
 <div class="table-container">
     <h3 class="u-mb-075">Últimas conciliações</h3>
-    <table class="tx-table">
-        <thead>
-            <tr>
-                <th>Data</th>
-                <th>Conta</th>
-                <th>Descrição do extrato</th>
-                <th>Valor</th>
-                <th>Movimento</th>
-                <th>Ações</th>
-            </tr>
-        </thead>
-        <tbody>
-        {% for line in reconciled_lines %}
-            <tr id="statement-line-{{ line.id }}">
-                <td>{{ line.statement_date|date:"d/m/Y" }}</td>
-                <td>{{ line.account.owner.name }} / {{ line.account.institution.institution_name }} / {{ line.account.account_name }}</td>
-                <td>{{ line.description }}</td>
-                <td class="amount {{ line.amount|amount_class }}">{{ line.amount|money_signed:line.account.currency }}</td>
-                <td>{% if line.matched_entry %}#{{ line.matched_entry.id }} - {{ line.matched_entry.description|default:"-" }}{% else %}Movimento não encontrado{% endif %}</td>
-                <td class="actions">
-                    <form method="post" action="{% url 'bank_statements:undo_reconciliation' %}"
-                          hx-post="{% url 'bank_statements:undo_reconciliation' %}"
-                          hx-target="#reconciliation-results"
-                          hx-swap="innerHTML" class="u-d-inline">
-                        {% csrf_token %}
-                        <input type="hidden" name="line_id" value="{{ line.id }}">
-                        <button type="submit" class="btn-sm btn-action-edit"
-                                data-sa-confirmar="Desfazer esta conciliação?"
-                                data-sa-titulo="Desfazer conciliação"
-                                data-sa-severidade="info"
-                                data-sa-ok="Desfazer">{% icon 'undo' %} Desfazer</button>
-                    </form>
-                </td>
-            </tr>
-        {% empty %}
-            <tr><td colspan="6" class="empty-state">Nenhuma conciliação recente.</td></tr>
-        {% endfor %}
-        </tbody>
-    </table>
+    {% for batch in reconciled_batches %}
+    <details class="reconciled-batch" {% if batch.id == target_batch_id %}open{% endif %}>
+        <summary>
+            <strong>{{ batch.created_at|date:"d/m/Y H:i" }}</strong>
+            — {{ batch.account.owner.name }} / {{ batch.account.institution.institution_name }} / {{ batch.account.account_name }}
+            — {{ batch.source_filename }}
+            — {{ batch.reconciled_lines|length }} linha{{ batch.reconciled_lines|length|pluralize }} conciliada{{ batch.reconciled_lines|length|pluralize }}
+        </summary>
+        <table class="tx-table">
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Descrição do extrato</th>
+                    <th>Valor</th>
+                    <th>Movimento</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for line in batch.reconciled_lines %}
+                <tr id="statement-line-{{ line.id }}">
+                    <td>{{ line.statement_date|date:"d/m/Y" }}</td>
+                    <td>{{ line.description }}</td>
+                    <td class="amount {{ line.amount|amount_class }}">{{ line.amount|money_signed:line.account.currency }}</td>
+                    <td>{% if line.matched_entry %}#{{ line.matched_entry.id }} - {{ line.matched_entry.description|default:"-" }}{% else %}Movimento não encontrado{% endif %}</td>
+                    <td class="actions">
+                        <form method="post" action="{% url 'bank_statements:undo_reconciliation' %}"
+                              hx-post="{% url 'bank_statements:undo_reconciliation' %}"
+                              hx-target="#reconciliation-results"
+                              hx-swap="innerHTML" class="u-d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="line_id" value="{{ line.id }}">
+                            <button type="submit" class="btn-sm btn-action-edit"
+                                    data-sa-confirmar="Desfazer esta conciliação?"
+                                    data-sa-titulo="Desfazer conciliação"
+                                    data-sa-severidade="info"
+                                    data-sa-ok="Desfazer">{% icon 'undo' %} Desfazer</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </details>
+    {% empty %}
+    <p class="empty-state">Nenhuma conciliação recente.</p>
+    {% endfor %}
 </div>

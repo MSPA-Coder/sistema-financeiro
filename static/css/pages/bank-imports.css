@@ -3,3 +3,9 @@
 .help-text { color: var(--muted); font-size: 0.85rem; margin-bottom: 0.75rem; }
 /* Mesmo desenho do .warning-panel de permissions.css. */
 .fatura-aviso { border: 1px solid var(--warning); border-radius: 8px; padding: 0.55rem 0.75rem; color: var(--text); background: rgba(245, 158, 11, 0.08); line-height: 1.45; margin-bottom: 0.75rem; }
+
+/* Lotes de conciliação recolhidos por padrão (ver reconciled_statement_batches_for_user). */
+.reconciled-batch { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 0.5rem; overflow: hidden; }
+.reconciled-batch summary { padding: 0.55rem 0.75rem; cursor: pointer; background: var(--bg-header); font-size: 0.85rem; }
+.reconciled-batch summary:hover { background: rgba(148, 163, 184, 0.14); }
+.reconciled-batch .tx-table { margin: 0; }

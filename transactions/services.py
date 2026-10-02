@@ -1757,6 +1757,26 @@ def delete_transaction_or_operation(
     except Exception:  # pragma: no cover - app pode não estar instalado em algum contexto
         pass
 
+    try:
+        from bank_statements.models import (
+            LINE_STATUS_NEW,
+            LINE_STATUS_RECONCILED,
+            BankStatementLine,
+        )
+
+        # BankStatementLine.matched_entry é PROTECT (ver bank_statements/models.py):
+        # excluir o lançamento sem desfazer o vínculo primeiro levantaria
+        # ProtectedError. Em vez de recusar a exclusão, a linha volta para
+        # "novo" -- o extrato que ela representa não deixou de existir só
+        # porque o lançamento que alguém ligou a ela foi apagado, e o usuário
+        # decide o que fazer com ela (conciliar com outro lançamento, criar um
+        # novo, ou ignorar) na tela de Conciliação.
+        BankStatementLine.objects.filter(
+            matched_entry_id__in=deleted_ids, status=LINE_STATUS_RECONCILED
+        ).update(matched_entry=None, status=LINE_STATUS_NEW, updated_at=timezone.now())
+    except Exception:  # pragma: no cover - app pode não estar instalado em algum contexto
+        pass
+
     count = len(scoped)
     bank_operation_id = tx.bank_operation_id
     try:
@@ -1771,14 +1791,12 @@ def delete_transaction_or_operation(
             for entry in scoped:
                 entry.delete()
     except ProtectedError as exc:
-        # Linha de extrato conciliada aponta pro lancamento via PROTECT
-        # (ver bank_statements/models.py). Sem este catch a excecao subia
-        # crua ate a view como erro 500, e o modal de exclusao ficava
-        # travado sem nenhum feedback -- o pedido de excluir nem chegava a
-        # ser recusado de forma visivel.
+        # Defesa de segunda linha: se outra FK PROTECT alem de matched_entry
+        # aparecer um dia, a exclusao recusa com mensagem em vez de subir
+        # como erro 500 sem nenhum retorno visivel no modal.
         raise ValueError(
-            "Não é possível excluir: ao menos um lançamento está conciliado com uma linha "
-            "de extrato. Desfaça a conciliação em Bancos > Conciliação antes de excluir."
+            "Não é possível excluir: ao menos um lançamento ainda está protegido por um "
+            "vínculo que não foi possível desfazer automaticamente."
         ) from exc
 
     for entry in scoped:
