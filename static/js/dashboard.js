@@ -123,11 +123,16 @@
             if (!elements.length) return;
             var label = d.catLabels[elements[0].index];
             if (!label || label === 'Sem dados') return;
-            window.location.href = transactionUrlFor({
-                dashboard_drilldown: '1',
-                filter_type: d.filterType,
-                filter_category: label
-            });
+            var extras = { dashboard_drilldown: '1', filter_type: d.filterType };
+            /* Por grupo, a fatia abre Lançamentos filtrado pelo grupo; por
+               categoria, pela categoria. "Sem grupo" não é um grupo cadastrado. */
+            if (d.catMode === 'grupo') {
+                if (label === 'Sem grupo') return;
+                extras.filter_group = label;
+            } else {
+                extras.filter_category = label;
+            }
+            window.location.href = transactionUrlFor(extras);
         };
         var handleEvolutionClick = function (_event, elements) {
             if (!elements.length) return;

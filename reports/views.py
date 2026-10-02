@@ -264,6 +264,7 @@ def annual_planning_view(request):
         else sorted(allowed_account_ids.intersection(account_ids))
     )
     show_descriptions = request.GET.get("show_descriptions") == "1"
+    by_group = request.GET.get("agrupar") == "grupo"
     # Uma grade por moeda: a grade soma titulares e meses numa coluna só, e essa
     # coluna não existe entre moedas. Passar os ids do grupo é equivalente ao
     # que a apresentação já resolveria sozinha quando há uma moeda só.
@@ -278,6 +279,7 @@ def annual_planning_view(request):
                 layout=layout,
                 view_mode=view_mode,
                 show_descriptions=show_descriptions,
+                by_group=by_group,
             ),
         }
         for currency, ids in currency_blocks(selected_account_ids, currency_filter)
@@ -295,6 +297,7 @@ def annual_planning_view(request):
         "selected_account_ids": selected_account_ids,
         "filter_panel_open": request.GET.get("filters_open") == "1",
         "show_descriptions": show_descriptions,
+        "by_group": by_group,
         "system_start_date": system_start_date(),
     }
     if quer_fragmento(request):

@@ -29,6 +29,12 @@
             <option value="{{ value }}">{{ label }}</option>
             {% endfor %}
         </select>
+        <select name="group_id" aria-label="Grupo da categoria" data-ui="w-260">
+            <option value="">Sem grupo</option>
+            {% for group in category_groups %}
+            <option value="{{ group.id }}">{{ group.group_name }}</option>
+            {% endfor %}
+        </select>
         <button type="submit" class="btn btn-primary btn-sm"
                 data-sa-confirmar="Cadastrar esta categoria?"
                 data-sa-titulo="Confirmar cadastro"
@@ -48,10 +54,73 @@
                             <option value="internal" {% if current_filter_type == 'internal' %}selected{% endif %}>Interna</option>
                         </select>
                     </th>
+                    <th>Grupo</th>
                     <th data-ui="w-100">Ações</th>
                 </tr>
             </thead>
             {% include "tables/_categories_table.html" %}
+        </table>
+    </div>
+</div>
+
+<div class="chart-card">
+    <div class="section-header"><h4>Grupos de categoria</h4></div>
+    <p class="help-text">O grupo agrupa categorias para ler o resultado (Dashboard e Planejamento anual). O lançamento continua
+        apontando para a categoria. Grupos fora dos gráficos (como "Sistema") não aparecem na rosca por padrão.</p>
+    <form method="post" action="{% url 'transactions:create_category_group' %}" class="add-form">
+        {% csrf_token %}
+        <input type="text" name="group_name" aria-label="Nome do grupo" placeholder="Nome do grupo..." maxlength="100" required data-ui="flex-1">
+        <input type="number" name="position" min="0" max="32000" aria-label="Posição" placeholder="Posição" data-ui="w-100">
+        <label><input type="checkbox" name="in_charts" value="1" checked> Aparece nos gráficos</label>
+        <button type="submit" class="btn btn-primary btn-sm"
+                data-sa-confirmar="Cadastrar este grupo?"
+                data-sa-titulo="Confirmar cadastro"
+                data-sa-severidade="info"
+                data-sa-ok="Cadastrar">{% icon 'plus' %}<span>Incluir</span></button>
+    </form>
+    <div class="table-container" data-ui="table-plain-flex">
+        <table>
+            <thead>
+                <tr><th>Grupo</th><th>Posição</th><th>Gráficos</th><th>Categorias</th><th data-ui="w-100">Ações</th></tr>
+            </thead>
+            <tbody>
+            {% for group in category_groups %}
+                <tr>
+                    <td>{{ group.group_name }}</td>
+                    <td>{{ group.position }}</td>
+                    <td>{% if group.in_charts %}Sim{% else %}Não{% endif %}</td>
+                    <td>{{ group.total_categories }}</td>
+                    <td class="actions">
+                        <button type="button" class="btn btn-sm btn-icon btn-action-edit" title="Editar" data-toggle-edit="edit-group-{{ group.id }}">{% icon 'edit' %}</button>
+                        <form method="post" action="{% url 'transactions:delete_category_group' group.id %}" data-ui="inline">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-icon btn-action-delete" title="Excluir"
+                                data-sa-confirmar="Excluir o grupo {{ group.group_name }}? Só é possível se ele estiver vazio."
+                                data-sa-titulo="Excluir grupo"
+                                data-sa-severidade="error"
+                                data-sa-ok="Excluir">{% icon 'delete' %}</button>
+                        </form>
+                    </td>
+                </tr>
+                <tr id="edit-group-{{ group.id }}" class="edit-row">
+                    <td colspan="5">
+                        <form method="post" action="{% url 'transactions:update_category_group' group.id %}" class="edit-form">
+                            {% csrf_token %}
+                            <input type="text" name="group_name" value="{{ group.group_name }}" aria-label="Nome do grupo" maxlength="100" required data-ui="flex-1">
+                            <input type="number" name="position" min="0" max="32000" value="{{ group.position }}" aria-label="Posição" data-ui="w-100">
+                            <label><input type="checkbox" name="in_charts" value="1" {% if group.in_charts %}checked{% endif %}> Aparece nos gráficos</label>
+                            <button type="submit" class="btn btn-primary btn-sm"
+                                    data-sa-confirmar="Salvar as alterações deste grupo?"
+                                    data-sa-titulo="Confirmar alteração"
+                                    data-sa-severidade="info"
+                                    data-sa-ok="Salvar">{% icon 'save' %}<span>Salvar</span></button>
+                        </form>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="5" class="empty-state">Nenhum grupo cadastrado.</td></tr>
+            {% endfor %}
+            </tbody>
         </table>
     </div>
 </div>

@@ -842,6 +842,8 @@ def _categoria_v4(categoria: CashFlowCategory) -> dict:
         "source_id": _source_id_v4("category", categoria.id),
         "name": categoria.category_name,
         "kind": categoria.kind,
+        # Acréscimo opcional (02/10/2026): o nome do grupo da categoria, ou null.
+        "group": categoria.group.group_name if categoria.group_id else None,
         "created_at": categoria.created_at.isoformat() if categoria.created_at else None,
         "updated_at": categoria.updated_at.isoformat() if categoria.updated_at else None,
     }
@@ -881,7 +883,7 @@ def _lancamento_v4(entry: CashFlowEntry) -> dict:
 
 def _metadata_v4(referencia: date, watermark: str) -> dict:
     contas = list(FinancialAccount.objects.select_related("owner", "institution").order_by("id"))
-    categorias = list(CashFlowCategory.objects.order_by("id"))
+    categorias = list(CashFlowCategory.objects.select_related("group").order_by("id"))
     lancamentos = CashFlowEntry.objects.order_by("id")
     periodo = lancamentos.aggregate(inicio=Min("due_date"), fim=Max("due_date"))
     entradas_transferencia = lancamentos.filter(
@@ -1010,7 +1012,7 @@ def snapshot_v4_view(request):
         saldos = decimal_balances_before_by_account(
             contas_ativas, referencia + timedelta(days=1), VIEW_REALIZED
         )
-        categorias = list(CashFlowCategory.objects.order_by("id"))
+        categorias = list(CashFlowCategory.objects.select_related("group").order_by("id"))
         lancamentos = list(
             CashFlowEntry.objects.select_related("account", "category")
             .order_by("id")

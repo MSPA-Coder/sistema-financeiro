@@ -39,6 +39,7 @@ from transactions.models import (
     AccountMonthClose,
     BankOperation,
     CashFlowCategory,
+    CashFlowCategoryGroup,
     CashFlowEntry,
 )
 
@@ -514,18 +515,35 @@ def _clean_category_kind(raw_value: str | None) -> str:
     return kind
 
 
-def create_category(name: str, kind: str) -> CashFlowCategory:
+_SEM_ALTERACAO = object()
+
+
+def _clean_category_group(raw_value) -> CashFlowCategoryGroup | None:
+    """O grupo escolhido, ou `None` para "sem grupo". Id que não existe é erro."""
+    texto = str(raw_value).strip() if raw_value is not None else ""
+    if not texto:
+        return None
+    try:
+        return CashFlowCategoryGroup.objects.get(id=int(texto))
+    except (CashFlowCategoryGroup.DoesNotExist, ValueError) as exc:
+        raise ValueError("Grupo de categoria inválido.") from exc
+
+
+def create_category(name: str, kind: str, group_id=None) -> CashFlowCategory:
     from django.db import IntegrityError
 
     clean_name = _clean_category_name(name)
     clean_kind = _clean_category_kind(kind)
+    group = _clean_category_group(group_id)
     try:
-        return CashFlowCategory.objects.create(category_name=clean_name, kind=clean_kind)
+        return CashFlowCategory.objects.create(category_name=clean_name, kind=clean_kind, group=group)
     except IntegrityError as exc:
         raise ValueError("Já existe uma categoria com este nome.") from exc
 
 
-def update_category(category: CashFlowCategory, name: str, kind: str) -> CashFlowCategory:
+def update_category(
+    category: CashFlowCategory, name: str, kind: str, group_id=_SEM_ALTERACAO
+) -> CashFlowCategory:
     from django.db import IntegrityError
 
     clean_name = _clean_category_name(name)
@@ -540,13 +558,89 @@ def update_category(category: CashFlowCategory, name: str, kind: str) -> CashFlo
             "mudar o tipo reclassifica todo o passado dela de uma vez, inclusive "
             "meses fechados. Use a reclassificação, que registra o que mudou."
         )
+    campos = ["category_name", "kind", "updated_at"]
     category.category_name = clean_name
     category.kind = clean_kind
+    if group_id is not _SEM_ALTERACAO:
+        category.group = _clean_category_group(group_id)
+        campos.append("group")
     try:
-        category.save(update_fields=["category_name", "kind", "updated_at"])
+        category.save(update_fields=campos)
     except IntegrityError as exc:
         raise ValueError("Já existe uma categoria com este nome.") from exc
     return category
+
+
+# --- Grupos de categoria ----------------------------------------------------
+
+
+def list_category_groups():
+    return CashFlowCategoryGroup.objects.all()
+
+
+def _clean_group_name(name: str) -> str:
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("Nome do grupo é obrigatório.")
+    if len(name) > _MAX_CATEGORY_NAME_LENGTH:
+        raise ValueError(f"Nome do grupo não pode exceder {_MAX_CATEGORY_NAME_LENGTH} caracteres.")
+    return name
+
+
+def _clean_group_position(raw_value) -> int:
+    texto = str(raw_value).strip() if raw_value is not None else ""
+    if not texto:
+        return 100
+    try:
+        posicao = int(texto)
+    except ValueError as exc:
+        raise ValueError("Posição do grupo inválida.") from exc
+    if not 0 <= posicao <= 32000:
+        raise ValueError("Posição do grupo deve estar entre 0 e 32000.")
+    return posicao
+
+
+def create_category_group(name: str, position=None, in_charts: bool = True) -> CashFlowCategoryGroup:
+    from django.db import IntegrityError
+
+    try:
+        return CashFlowCategoryGroup.objects.create(
+            group_name=_clean_group_name(name),
+            position=_clean_group_position(position),
+            in_charts=in_charts,
+        )
+    except IntegrityError as exc:
+        raise ValueError("Já existe um grupo com este nome.") from exc
+
+
+def update_category_group(
+    group: CashFlowCategoryGroup, name: str, position=None, in_charts: bool = True
+) -> CashFlowCategoryGroup:
+    from django.db import IntegrityError
+
+    group.group_name = _clean_group_name(name)
+    group.position = _clean_group_position(position)
+    group.in_charts = in_charts
+    try:
+        with db_transaction.atomic():
+            group.save(update_fields=["group_name", "position", "in_charts", "updated_at"])
+            # O contrato patrimonial publica o nome do grupo dentro de cada
+            # categoria, e só a tabela de categorias dispara a invalidação do
+            # feed: tocar as categorias do grupo faz o consumidor pedir um novo
+            # snapshot, em vez de ficar com o nome antigo.
+            CashFlowCategory.objects.filter(group=group).update(updated_at=timezone.now())
+    except IntegrityError as exc:
+        raise ValueError("Já existe um grupo com este nome.") from exc
+    return group
+
+
+def delete_category_group(group: CashFlowCategoryGroup) -> None:
+    """Só grupo vazio: apagar com categorias dentro as deixaria sem grupo em silêncio."""
+    if group.categories.exists():
+        raise ValueError(
+            "Não é possível excluir este grupo: ainda há categorias nele. Mova-as para outro grupo antes."
+        )
+    group.delete()
 
 
 def delete_category(category: CashFlowCategory) -> None:
@@ -1832,6 +1926,7 @@ def list_transactions_for_view(
     *, account_ids: list[int], view_mode: str, start_selected: date, end_selected: date,
     filter_type: str = "", filter_category: str = "", filter_date: date | None = None,
     operation_key: str = "", entry_id: int | None = None, exclude_internal: bool = False,
+    filter_group: str = "",
 ) -> list[CashFlowEntry]:
     """Consulta de lançamentos para a listagem: filtros por tipo, categoria,
     data, operação e entrada específica, mais a matriz de status/data por
@@ -1858,6 +1953,8 @@ def list_transactions_for_view(
         qs = qs.filter(entry_type=filter_type)
     if filter_category:
         qs = qs.filter(category__category_name=filter_category)
+    if filter_group:
+        qs = qs.filter(category__group__group_name=filter_group)
     if exclude_internal:
         qs = qs.filter(category__kind=CATEGORY_KIND_MANAGERIAL)
     if filter_date is not None:
@@ -1918,7 +2015,7 @@ def counterparty_accounts_for_transfer(user):
 
 TRANSACTIONS_QUERY_PARAMS = (
     "period", "year", "month", "mode", "owner_id", "institution_id", "account_id",
-    "filter_type", "filter_category", "filter_date", "operation_id", "entry_id",
+    "filter_type", "filter_category", "filter_group", "filter_date", "operation_id", "entry_id",
     "dashboard_drilldown",
 )
 
@@ -2000,11 +2097,13 @@ class StatementScope:
     operation_key: str = ""
     entry_id: int | None = None
     exclude_internal: bool = False
+    # Vem do Dashboard por grupo; não tem seletor próprio na tela.
+    filter_group: str = ""
 
     @property
     def filters_active(self) -> bool:
         return bool(
-            self.filter_date or self.filter_type or self.filter_category
+            self.filter_date or self.filter_type or self.filter_category or self.filter_group
             or self.operation_key or self.entry_id or self.exclude_internal
         )
 
@@ -2094,6 +2193,7 @@ def resolve_statement_request(user, get_params, session, *, request=None) -> Sta
         currency_filter=currency_filter,
         filter_type=get_params.get("filter_type", ""),
         filter_category=get_params.get("filter_category", ""),
+        filter_group=get_params.get("filter_group", ""),
         filter_date=filter_date_parsed,
         operation_key=operation_key,
         entry_id=entry_id,
@@ -2126,6 +2226,7 @@ def compute_statement(scope: StatementScope, view_mode: str) -> tuple[list[CashF
         start_selected=scope.start_selected, end_selected=scope.end_selected,
         filter_type=scope.filter_type, filter_category=scope.filter_category, filter_date=scope.filter_date,
         operation_key=scope.operation_key, entry_id=scope.entry_id, exclude_internal=scope.exclude_internal,
+        filter_group=scope.filter_group,
     )
     for tx in current_txs:
         tx.display_date = _entry_date_for_view_mode(tx, view_mode)
@@ -2258,6 +2359,7 @@ def build_transactions_view_context(user, get_params, session, *, request=None) 
         "view_mode": view_mode,
         "filter_type": scope.filter_type,
         "filter_category": scope.filter_category,
+        "filter_group": scope.filter_group,
         "filter_date": resolved.filter_date_raw,
         "operation_id": scope.operation_key,
         "entry_id": scope.entry_id,

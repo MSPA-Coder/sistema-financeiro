@@ -22,6 +22,44 @@ from core.domain.finance import (
 )
 
 
+class CashFlowCategoryGroup(models.Model):
+    """Grupo de categorias: o nível acima da categoria (Saúde, Moradia, DBR...).
+
+    São exatamente dois níveis. O lançamento continua apontando para a
+    categoria; o grupo só agrupa categorias para ler o resultado (rosca do
+    Dashboard, subtotal do Planejamento anual). Importação, reclassificação,
+    fatura estimada e orçamento não conhecem o grupo.
+
+    `in_charts` é falso para o grupo "Sistema" (transferências, movimentações,
+    ajustes de saldo e estimativas): existe, mas fica fora dos gráficos por
+    padrão, para não parecer gasto.
+    """
+
+    group_name = models.CharField(max_length=100, unique=True)
+    position = models.PositiveSmallIntegerField(default=100)
+    in_charts = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'cash_flow_category_group'
+        ordering = ['position', 'group_name']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(group_name__regex=r'^\s*.+\s*$'),
+                name='ck_cash_flow_category_group_name_not_blank',
+            ),
+        ]
+
+    def __str__(self):
+        return self.group_name
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            self.updated_at = timezone.now()
+        super().save(*args, **kwargs)
+
+
 class CashFlowCategory(models.Model):
     """Categoria de fluxo de caixa.
 
@@ -38,6 +76,13 @@ class CashFlowCategory(models.Model):
         max_length=20,
         choices=CATEGORY_KIND_OPTIONS,
         default=CATEGORY_KIND_MANAGERIAL,
+    )
+    group = models.ForeignKey(
+        CashFlowCategoryGroup,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='categories',
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

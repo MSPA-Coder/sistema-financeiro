@@ -4,7 +4,7 @@
 <div class="charts-grid">
     <div class="chart-card">
         <div class="chart-header">
-            <h4>Distribuição por Categoria - {% if filter_type == 'receita' %}Receitas{% else %}Despesas{% endif %}</h4>
+            <h4>Distribuição por {% if categorias_modo == 'grupo' %}Grupo{% else %}Categoria{% endif %} - {% if filter_type == 'receita' %}Receitas{% else %}Despesas{% endif %}</h4>
             {% include 'components/filter_type.html' %}
         </div>
         {% if chart_cats_labels %}

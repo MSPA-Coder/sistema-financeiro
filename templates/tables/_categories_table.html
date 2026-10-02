@@ -12,6 +12,7 @@
             <span class="badge badge-success">Gerencial</span>
             {% endif %}
         </td>
+        <td>{% if category.group %}{{ category.group.group_name }}{% else %}<span class="empty-state">Sem grupo</span>{% endif %}</td>
         <td class="actions">
             <button type="button" class="btn btn-sm btn-icon btn-action-edit" title="Editar" data-toggle-edit="edit-category-{{ category.id }}">{% icon 'edit' %}</button>
             <form method="post" action="{% url 'transactions:delete_category' category.id %}" data-ui="inline">
@@ -25,7 +26,7 @@
         </td>
     </tr>
     <tr id="edit-category-{{ category.id }}" class="edit-row">
-        <td colspan="3">
+        <td colspan="4">
             <form method="post" action="{% url 'transactions:update_category' category.id %}" class="edit-form">
                 {% csrf_token %}
                 <input type="text" name="category_name" value="{{ category.category_name }}" aria-label="Nome da categoria" maxlength="100" required data-ui="flex-1">
@@ -42,6 +43,12 @@
                     {% endfor %}
                 </select>
                 {% if category.has_entries %}<input type="hidden" name="kind" value="{{ category.kind }}">{% endif %}
+                <select name="group_id" aria-label="Grupo da categoria" data-ui="w-260">
+                    <option value="">Sem grupo</option>
+                    {% for group in category_groups %}
+                    <option value="{{ group.id }}" {% if category.group_id == group.id %}selected{% endif %}>{{ group.group_name }}</option>
+                    {% endfor %}
+                </select>
                 <button type="submit" class="btn btn-primary btn-sm"
                         data-sa-confirmar="Salvar as alterações desta categoria?"
                         data-sa-titulo="Confirmar alteração"
@@ -52,7 +59,7 @@
     </tr>
 {% empty %}
     <tr>
-        <td colspan="3" class="empty-state">Nenhuma categoria cadastrada.</td>
+        <td colspan="4" class="empty-state">Nenhuma categoria cadastrada.</td>
     </tr>
 {% endfor %}
 </tbody>

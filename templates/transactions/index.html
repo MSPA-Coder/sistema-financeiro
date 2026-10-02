@@ -25,6 +25,7 @@
         {% if operation_id %}<input type="hidden" name="operation_id" value="{{ operation_id }}">{% endif %}
         {% if entry_id %}<input type="hidden" name="entry_id" value="{{ entry_id }}">{% endif %}
         {% if dashboard_drilldown %}<input type="hidden" name="dashboard_drilldown" value="1">{% endif %}
+        {% if filter_group %}<input type="hidden" name="filter_group" value="{{ filter_group }}">{% endif %}
         <label class="top-filter-field compact">
             Período
             <input type="month" name="period" value="{{ selected_period }}" {% if system_start_date %}min="{{ system_start_date|slice:':7' }}"{% endif %}>
