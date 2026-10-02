@@ -1726,6 +1726,8 @@ def delete_transaction_or_operation(
     audit_context=None, user=None,
 ) -> int:
     """Exclui um lançamento (ou o grupo/bloco escolhido pelo escopo)."""
+    from django.db.models import ProtectedError
+
     from core.services import log_audit_event
 
     if operation_scope == OPERATION_SCOPE_CURRENT_FUTURE:
@@ -1756,23 +1758,34 @@ def delete_transaction_or_operation(
         pass
 
     count = len(scoped)
+    bank_operation_id = tx.bank_operation_id
+    try:
+        if operation_type == OPERATION_INTERNAL_TRANSFER:
+            counterparts = [e for e in scoped if e.source_entry_id is not None]
+            origins = [e for e in scoped if e.source_entry_id is None]
+            for entry in counterparts:
+                entry.delete()
+            for entry in origins:
+                entry.delete()
+        else:
+            for entry in scoped:
+                entry.delete()
+    except ProtectedError as exc:
+        # Linha de extrato conciliada aponta pro lancamento via PROTECT
+        # (ver bank_statements/models.py). Sem este catch a excecao subia
+        # crua ate a view como erro 500, e o modal de exclusao ficava
+        # travado sem nenhum feedback -- o pedido de excluir nem chegava a
+        # ser recusado de forma visivel.
+        raise ValueError(
+            "Não é possível excluir: ao menos um lançamento está conciliado com uma linha "
+            "de extrato. Desfaça a conciliação em Bancos > Conciliação antes de excluir."
+        ) from exc
+
     for entry in scoped:
         log_audit_event(
             "cash_flow_entry", entry.id, "delete", request_context=audit_context,
             summary=f"Lançamento excluído (escopo: {operation_scope}).",
         )
-
-    bank_operation_id = tx.bank_operation_id
-    if operation_type == OPERATION_INTERNAL_TRANSFER:
-        counterparts = [e for e in scoped if e.source_entry_id is not None]
-        origins = [e for e in scoped if e.source_entry_id is None]
-        for entry in counterparts:
-            entry.delete()
-        for entry in origins:
-            entry.delete()
-    else:
-        for entry in scoped:
-            entry.delete()
 
     renumber_remaining_installments(operation_type, remaining)
 

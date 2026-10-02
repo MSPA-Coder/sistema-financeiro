@@ -70,15 +70,25 @@ def reconciled_statement_lines_for_user(user, limit: int = 25) -> Iterable[BankS
 def candidate_entries_for_line(line: BankStatementLine, limit: int = _CANDIDATE_LIMIT):
     """Lançamentos candidatos a conciliar com `line`: mesma conta, mesmo
     sinal (receita se valor > 0, despesa se < 0), mesmo valor absoluto, com
-    vencimento entre o início do mês e a data do extrato."""
+    vencimento no mês do extrato.
+
+    O teto é o mês inteiro, não a data do extrato: um recebimento alguns dias
+    antes do vencimento (ex. aluguel que cai dia 11 com vencimento dia 12) é
+    comum e não deve ficar sem candidato só porque a data do extrato é
+    anterior à do lançamento.
+    """
+    from reports.services import add_months
+
     value = abs(line.amount)
     entry_type = ENTRY_TYPE_INCOME if line.amount > 0 else ENTRY_TYPE_EXPENSE
     month_start = line.statement_date.replace(day=1)
+    month_end_exclusive = add_months(month_start, 1)
     return CashFlowEntry.objects.filter(
         account_id=line.account_id,
         entry_type=entry_type,
         entry_amount=value,
-        due_date__range=(month_start, line.statement_date),
+        due_date__gte=month_start,
+        due_date__lt=month_end_exclusive,
     ).order_by("-due_date", "-id")[:limit]
 
 
@@ -87,14 +97,16 @@ def candidate_entries_for_lines(
 ) -> dict[int, list[CashFlowEntry]]:
     """Candidatos a conciliar para várias linhas de uma vez.
 
-    Mesmo critério e mesmo limite de `candidate_entries_for_line`, mas
-    agrupado por (conta, tipo, valor) para evitar uma consulta por linha: a
-    tela de conciliação mostra até 100 linhas, e é comum poucas contas e
-    poucos valores se repetirem entre elas (contas fixas, salário). Busca o
-    conjunto que cobre a união das datas de cada grupo numa única consulta e
-    aplica a data e o limite exatos de cada linha em Python -- resultado
-    idêntico ao de chamar a versão de uma linha para cada, com uma fração
-    das consultas."""
+    Mesmo critério e mesmo limite de `candidate_entries_for_line` (teto no
+    mês inteiro, não na data do extrato), mas agrupado por (conta, tipo,
+    valor) para evitar uma consulta por linha: a tela de conciliação mostra
+    até 100 linhas, e é comum poucas contas e poucos valores se repetirem
+    entre elas (contas fixas, salário). Busca o conjunto que cobre a união
+    dos meses de cada grupo numa única consulta e aplica a janela e o limite
+    exatos de cada linha em Python -- resultado idêntico ao de chamar a
+    versão de uma linha para cada, com uma fração das consultas."""
+    from reports.services import add_months
+
     lines = list(lines)
     if not lines:
         return {}
@@ -108,19 +120,23 @@ def candidate_entries_for_lines(
     candidates_by_line: dict[int, list[CashFlowEntry]] = {line.id: [] for line in lines}
     for (account_id, entry_type, value), group_lines in groups.items():
         earliest_month_start = min(gl.statement_date.replace(day=1) for gl in group_lines)
-        latest_statement_date = max(gl.statement_date for gl in group_lines)
+        latest_month_end_exclusive = add_months(
+            max(gl.statement_date.replace(day=1) for gl in group_lines), 1
+        )
         pool = list(
             CashFlowEntry.objects.filter(
                 account_id=account_id,
                 entry_type=entry_type,
                 entry_amount=value,
-                due_date__range=(earliest_month_start, latest_statement_date),
+                due_date__gte=earliest_month_start,
+                due_date__lt=latest_month_end_exclusive,
             ).order_by("-due_date", "-id")
         )
         for gl in group_lines:
             month_start = gl.statement_date.replace(day=1)
+            month_end_exclusive = add_months(month_start, 1)
             candidates_by_line[gl.id] = [
-                entry for entry in pool if month_start <= entry.due_date <= gl.statement_date
+                entry for entry in pool if month_start <= entry.due_date < month_end_exclusive
             ][:limit]
 
     return candidates_by_line
