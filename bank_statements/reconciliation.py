@@ -13,6 +13,11 @@ falharia sempre.
 Períodos fechados bloqueiam conciliação, e conciliar uma ponta de
 transferência interna realiza a contraparte junto — as duas pontas nunca
 ficam em estados diferentes.
+
+Excluir o lançamento vinculado a uma linha conciliada (ver
+`transactions.services.delete_transaction_or_operation`) não apaga a linha
+nem recusa a exclusão: a linha volta para "novo", como se nunca tivesse sido
+conciliada -- o extrato continua existindo, só sem lançamento vinculado.
 """
 from __future__ import annotations
 
@@ -65,6 +70,40 @@ def reconciled_statement_lines_for_user(user, limit: int = 25) -> Iterable[BankS
     ).filter(
         account_id__in=account_ids, status=LINE_STATUS_RECONCILED, matched_entry__isnull=False
     )[:limit]
+
+
+def reconciled_statement_batches_for_user(user, limit: int = 20) -> list[BankStatementImport]:
+    """Lotes de importação com ao menos uma linha conciliada, do mais recente
+    ao mais antigo, cada um com suas linhas conciliadas em `.reconciled_lines`.
+
+    A tela de Conciliação mostrava as últimas 25 linhas conciliadas como
+    lista plana -- sem nenhuma relação visível com o lote que as trouxe,
+    então uma importação de 6 linhas conciliadas enchia a lista sozinha e
+    empurrava conciliações de outros lotes pra fora. Agrupar por lote (que já
+    é o nível em que a importação e o "desfazer importação" operam) resolve
+    os dois problemas de uma vez: cada lote aparece uma vez, recolhido, com
+    sua contagem, e expande para mostrar as linhas dele.
+    """
+    account_ids = accessible_account_ids(user, "view")
+    if not account_ids:
+        return []
+    reconciled = BankStatementLine.objects.filter(
+        account_id__in=account_ids, status=LINE_STATUS_RECONCILED, matched_entry__isnull=False
+    )
+    candidate_batch_ids = reconciled.values_list("import_batch_id", flat=True).distinct()
+    batches = list(
+        BankStatementImport.objects.select_related("account__owner", "account__institution")
+        .filter(id__in=candidate_batch_ids)
+        .order_by("-created_at", "-id")[:limit]
+    )
+    lines_by_batch: dict[int, list[BankStatementLine]] = {}
+    for line in reconciled.select_related(
+        "account__owner", "account__institution", "matched_entry"
+    ).filter(import_batch_id__in=[batch.id for batch in batches]).order_by("-statement_date", "-id"):
+        lines_by_batch.setdefault(line.import_batch_id, []).append(line)
+    for batch in batches:
+        batch.reconciled_lines = lines_by_batch.get(batch.id, [])
+    return batches
 
 
 def candidate_entries_for_line(line: BankStatementLine, limit: int = _CANDIDATE_LIMIT):
@@ -226,11 +265,11 @@ def _locked_entry_for_update(entry_id) -> CashFlowEntry:
 
 def reconciliation_view_data(user, target_line_id: int | None = None) -> dict:
     """Dados para a tela de conciliação: linhas pendentes, candidatos por
-    linha e conciliações recentes, com destaque opcional de uma linha alvo
-    (usado após uma ação HTMX, para manter a linha visível mesmo que ela
-    tenha saído da lista padrão)."""
+    linha e conciliações recentes agrupadas por lote de importação, com
+    destaque opcional de uma linha alvo (usado após uma ação HTMX, para
+    manter a linha visível mesmo que ela tenha saído da lista padrão)."""
     lines = list(pending_statement_lines_for_user(user))
-    reconciled_lines = list(reconciled_statement_lines_for_user(user))
+    reconciled_batches = reconciled_statement_batches_for_user(user)
 
     target_line = None
     if target_line_id:
@@ -243,10 +282,19 @@ def reconciliation_view_data(user, target_line_id: int | None = None) -> dict:
         if target_line is not None and not can_access_account(user, target_line.account_id, "view"):
             target_line = None
 
+    target_batch_id = None
     if target_line is not None:
         if target_line.status == LINE_STATUS_RECONCILED:
-            if all(existing.id != target_line.id for existing in reconciled_lines):
-                reconciled_lines = [target_line, *reconciled_lines]
+            target_batch_id = target_line.import_batch_id
+            batch = next((b for b in reconciled_batches if b.id == target_batch_id), None)
+            if batch is None:
+                batch = BankStatementImport.objects.select_related(
+                    "account__owner", "account__institution"
+                ).get(id=target_batch_id)
+                batch.reconciled_lines = [target_line]
+                reconciled_batches = [batch, *reconciled_batches]
+            elif all(existing.id != target_line.id for existing in batch.reconciled_lines):
+                batch.reconciled_lines = [target_line, *batch.reconciled_lines]
         elif all(existing.id != target_line.id for existing in lines):
             lines = [target_line, *lines]
 
@@ -262,8 +310,9 @@ def reconciliation_view_data(user, target_line_id: int | None = None) -> dict:
 
     return {
         "lines": lines,
-        "reconciled_lines": reconciled_lines,
+        "reconciled_batches": reconciled_batches,
         "target_line_id": target_line.id if target_line else None,
+        "target_batch_id": target_batch_id,
         "categories": list(list_categories().order_by("category_name")),
     }
 
