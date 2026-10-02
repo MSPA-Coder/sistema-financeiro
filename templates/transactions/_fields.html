@@ -1,4 +1,4 @@
-{% load l10n money_filters %}
+{% load l10n money_filters contas %}
 {% comment %}
 Campos compartilhados entre o formulário de novo lançamento e as linhas de
 edição inline da tabela. Espera no contexto: `t` (CashFlowEntry ou None),
@@ -11,12 +11,20 @@ edição inline da tabela. Espera no contexto: `t` (CashFlowEntry ou None),
     <select name="account_id" aria-label="Conta" required>
         <option value="">Selecione...</option>
         {% if t %}
-        {% for acc in update_accounts %}
-        <option value="{{ acc.id }}" data-currency="{{ acc.currency }}" data-currency-symbol="{{ acc.currency|currency_symbol }}" {% if t.account_id == acc.id %}selected{% endif %}>{{ acc.owner.name }} / {{ acc.institution.institution_name }} / {{ acc.account_name }}</option>
+        {% for titular, contas in update_accounts|por_titular %}
+        <optgroup label="{{ titular }}">
+            {% for acc in contas %}
+            <option value="{{ acc.id }}" data-currency="{{ acc.currency }}" data-currency-symbol="{{ acc.currency|currency_symbol }}" {% if t.account_id == acc.id %}selected{% endif %}>{{ acc.institution.institution_name }} / {{ acc.account_name }}</option>
+            {% endfor %}
+        </optgroup>
         {% endfor %}
         {% else %}
-        {% for acc in create_accounts %}
-        <option value="{{ acc.id }}" data-currency="{{ acc.currency }}" data-currency-symbol="{{ acc.currency|currency_symbol }}" {% if new_entry_defaults.account_id == acc.id|stringformat:"s" %}selected{% endif %}>{{ acc.owner.name }} / {{ acc.institution.institution_name }} / {{ acc.account_name }}</option>
+        {% for titular, contas in create_accounts|por_titular %}
+        <optgroup label="{{ titular }}">
+            {% for acc in contas %}
+            <option value="{{ acc.id }}" data-currency="{{ acc.currency }}" data-currency-symbol="{{ acc.currency|currency_symbol }}" {% if new_entry_defaults.account_id == acc.id|stringformat:"s" %}selected{% endif %}>{{ acc.institution.institution_name }} / {{ acc.account_name }}</option>
+            {% endfor %}
+        </optgroup>
         {% endfor %}
         {% endif %}
     </select>
@@ -57,8 +65,12 @@ edição inline da tabela. Espera no contexto: `t` (CashFlowEntry ou None),
     <label>{% if t %}Conta contraparte{% else %}Conta destino{% endif %}</label>
     <select name="counterparty_account_id" aria-label="Conta contraparte">
         <option value="">Selecione...</option>
-        {% for acc in counterparty_accounts %}
-        <option value="{{ acc.id }}" data-currency="{{ acc.currency }}" data-currency-symbol="{{ acc.currency|currency_symbol }}" {% if t and t.counterparty_account_id == acc.id %}selected{% endif %}>{{ acc.owner.name }} / {{ acc.institution.institution_name }} / {{ acc.account_name }}</option>
+        {% for titular, contas in counterparty_accounts|por_titular %}
+        <optgroup label="{{ titular }}">
+            {% for acc in contas %}
+            <option value="{{ acc.id }}" data-currency="{{ acc.currency }}" data-currency-symbol="{{ acc.currency|currency_symbol }}" {% if t and t.counterparty_account_id == acc.id %}selected{% endif %}>{{ acc.institution.institution_name }} / {{ acc.account_name }}</option>
+            {% endfor %}
+        </optgroup>
         {% endfor %}
     </select>
 </div>

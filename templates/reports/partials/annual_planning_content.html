@@ -1,4 +1,4 @@
-{% load money_filters navegacao %}
+{% load money_filters navegacao contas %}
 {% load icons %}
 <section class="annual-planning-report" aria-labelledby="annual-planning-title">
     <div class="section-header annual-planning-heading">
@@ -18,7 +18,7 @@
                         <label class="top-filter-field annual-layout-field">Layout<select name="layout" aria-label="Layout do planejamento"><option value="calendar"{% if layout == 'calendar' %} selected{% endif %}>Ano calendário</option><option value="rolling"{% if layout == 'rolling' %} selected{% endif %}>Janela móvel (13 meses)</option></select></label>
                         <label class="top-filter-field annual-status-field">Status<select name="mode">{% for mode_value, mode_label in status_options %}<option value="{{ mode_value }}"{% if mode_value == view_mode %} selected{% endif %}>{{ mode_label }}</option>{% endfor %}</select></label>
                         <label class="top-filter-field annual-multi-field">Titulares<select name="owner_ids" multiple size="3" aria-describedby="annual-filter-help">{% for owner in owners %}<option value="{{ owner.id }}"{% if owner.id in selected_owner_ids %} selected{% endif %}>{{ owner.name }}</option>{% endfor %}</select></label>
-                        <label class="top-filter-field annual-multi-field">Contas<select name="account_ids" multiple size="3" aria-describedby="annual-filter-help">{% for account in accounts %}<option value="{{ account.id }}"{% if account.id in selected_account_ids %} selected{% endif %}>{{ account.owner.name }} · {{ account.account_name }}</option>{% endfor %}</select></label>
+                        <label class="top-filter-field annual-multi-field">Contas<select name="account_ids" multiple size="3" aria-describedby="annual-filter-help">{% for titular, contas in accounts|por_titular %}<optgroup label="{{ titular }}">{% for account in contas %}<option value="{{ account.id }}"{% if account.id in selected_account_ids %} selected{% endif %}>{{ account.institution.institution_name }} / {{ account.account_name }}</option>{% endfor %}</optgroup>{% endfor %}</select></label>
                         <label class="annual-description-toggle"><input type="checkbox" name="show_descriptions" value="1"{% if show_descriptions %} checked{% endif %}><span>Mostrar descrições</span></label>
                         <label class="annual-description-toggle"><input type="checkbox" name="agrupar" value="grupo"{% if by_group %} checked{% endif %}><span>Agrupar por grupo de categorias</span></label>
                         <div class="top-filter-actions"><a href="{% url 'reports:annual_planning_view' %}?layout=calendar{% if default_reference_month %}&amp;reference_month={{ default_reference_month }}{% endif %}" class="btn btn-ghost btn-sm" hx-boost="true" {% nav_filtro %}>{% icon 'x' %}<span>Limpar</span></a></div>

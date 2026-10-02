@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static navegacao %}
 {% load money_filters %}
-{% load icons %}
+{% load icons contas %}
 
 {% block title %}Fechamento Mensal{% endblock %}
 
@@ -22,8 +22,12 @@
             Conta
             <select name="filter_account_id">
                 <option value="">Todas as Contas</option>
-                {% for account in close_accounts %}
-                <option value="{{ account.id }}" {% if monthly_close_filters.account_id == account.id %}selected{% endif %}>{{ account.owner.name }} / {{ account.institution.institution_name }} / {{ account.account_name }}</option>
+                {% for titular, contas in close_accounts|por_titular %}
+                <optgroup label="{{ titular }}">
+                    {% for account in contas %}
+                    <option value="{{ account.id }}" {% if monthly_close_filters.account_id == account.id %}selected{% endif %}>{{ account.institution.institution_name }} / {{ account.account_name }}</option>
+                    {% endfor %}
+                </optgroup>
                 {% endfor %}
             </select>
         </label>
@@ -73,8 +77,12 @@
             <label>Conta</label>
             <select name="account_id" class="form-control" required>
                 <option value="">Selecione...</option>
-                {% for account in monthly_close_form_accounts %}
-                <option value="{{ account.id }}" {% if monthly_close_filters.account_id == account.id %}selected{% endif %}>{{ account.owner.name }} / {{ account.institution.institution_name }} / {{ account.account_name }}</option>
+                {% for titular, contas in monthly_close_form_accounts|por_titular %}
+                <optgroup label="{{ titular }}">
+                    {% for account in contas %}
+                    <option value="{{ account.id }}" {% if monthly_close_filters.account_id == account.id %}selected{% endif %}>{{ account.institution.institution_name }} / {{ account.account_name }}</option>
+                    {% endfor %}
+                </optgroup>
                 {% endfor %}
             </select>
         </div>
