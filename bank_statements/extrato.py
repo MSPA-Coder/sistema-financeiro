@@ -152,13 +152,25 @@ def _nomes_dos_titulares() -> list[re.Pattern]:
     return padroes
 
 
-def _cita_titular(linha: BankStatementLine, padroes) -> bool:
-    texto = normalizar(linha.description)
+def texto_cita_titular(descricao: str, padroes) -> bool:
+    """Se o texto cita o nome de algum titular (palavra inteira, sem acento nem caixa)."""
+    texto = normalizar(descricao)
     return any(padrao.search(texto) for padrao in padroes)
 
 
+def texto_tem_cara_de_transferencia(descricao: str) -> bool:
+    return bool(_PALAVRAS_DE_TRANSFERENCIA.search(normalizar(descricao)))
+
+
+nomes_dos_titulares = _nomes_dos_titulares
+
+
+def _cita_titular(linha: BankStatementLine, padroes) -> bool:
+    return texto_cita_titular(linha.description, padroes)
+
+
 def _tem_cara_de_transferencia(linha: BankStatementLine) -> bool:
-    return bool(_PALAVRAS_DE_TRANSFERENCIA.search(normalizar(linha.description)))
+    return texto_tem_cara_de_transferencia(linha.description)
 
 
 def _pool_de_pareamento(user) -> list[BankStatementLine]:

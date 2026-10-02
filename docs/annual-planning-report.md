@@ -30,6 +30,14 @@ Além das opções de filtro (`reference_month`, `default_reference_month`,
   passar contas de moedas diferentes, `MixedCurrencyError` é levantada aqui.
   Sem conta nenhuma selecionada, vale a moeda base;
 
+## Agrupar por grupo de categorias
+
+Com `agrupar=grupo` na query string, cada seção ganha um nível: uma linha
+`{kind: "group", level: 1}` com o subtotal do grupo entre a seção e as suas
+categorias, que passam a ter `level` 2 (e as descrições, 3). A categoria sem grupo
+vai para "Sem grupo", depois dos grupos, que seguem a posição cadastrada. Sem o
+parâmetro, a grade é a de sempre, e o total geral não muda com o agrupamento.
+
 ## Regras de cálculo
 
 - As colunas de titulares usam apenas os lançamentos do mês de referência
