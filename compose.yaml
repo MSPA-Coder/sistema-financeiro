@@ -110,7 +110,7 @@ x-postgres-hardening: &postgres-hardening
 services:
   postgres:
     <<: *postgres-hardening
-    image: postgres:17-alpine@sha256:f02121de6f74d30d8a94cd1d9584125e2178d7e6c377d8130112d4e52d867995
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
     restart: unless-stopped
     cpus: 1.0
     mem_limit: 512m
@@ -139,7 +139,7 @@ services:
   # `migrate` criar depois. `DB_APP_MAINTAIN` libera o VACUUM ANALYZE da tela
   # Configurações > Banco de dados.
   db-provision:
-    image: postgres:17-alpine@sha256:f02121de6f74d30d8a94cd1d9584125e2178d7e6c377d8130112d4e52d867995
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
     user: postgres
     read_only: true
     cpus: 0.5
@@ -262,7 +262,7 @@ services:
   # de fechar a porta acima, deixa a suíte mais rápida, porque nada toca disco.
   postgres-teste:
     <<: [*postgres-hardening, *quality-secrets]
-    image: postgres:17-alpine@sha256:f02121de6f74d30d8a94cd1d9584125e2178d7e6c377d8130112d4e52d867995
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
     profiles: ["quality"]
     cpus: 1.0
     mem_limit: 512m
