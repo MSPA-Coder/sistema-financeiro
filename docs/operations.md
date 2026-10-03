@@ -228,8 +228,8 @@ aparece longe da causa.
 O bootstrap somente leitura está disponível em `GET /patrimonio/v4/metadata`,
 `GET /patrimonio/v4/snapshot` e `GET /patrimonio/v4/changes`, com o token
 exclusivo `PATRIMONIO_INTEGRATION_TOKEN`. O provisionador cria
-`.secrets/patrimonio_integration_token` sem alterar `patrimonio_token`; as rotas
-v1-v3 continuam usando `PATRIMONIO_TOKEN`. O snapshot contém contas, categorias, lançamentos persistidos e
+`.secrets/patrimonio_integration_token` sem alterar `patrimonio_token`, que só a
+projeção (`/patrimonio/v3/projection`) usa. O snapshot contém contas, categorias, lançamentos persistidos e
 grupos de transferência, lidos na mesma visão consistente do PostgreSQL.
 O feed é uma outbox de invalidação: `high_watermark` e `next_cursor` são
 cursores assinados. Ao receber uma mudança, o consumidor busca um novo snapshot
@@ -244,41 +244,12 @@ printf 'Authorization: Bearer %s\n' "$(sudo cat .secrets/patrimonio_integration_
   | curl -s -H @- "https://bancario-mspa.duckdns.org/patrimonio/v4/changes?limit=100"
 ```
 
-`GET /patrimonio/v1/resumo` devolve, em JSON, o caixa que este sistema conhece:
-uma linha por conta, com moeda e saldo na data pedida, mais o total **por
-moeda** -- nunca somado entre moedas. É o que o consolidador de patrimônio lê;
-ele não toca no banco daqui, e este sistema não sabe nada sobre ele.
-
-Enquanto o consumidor migra, a v2 convive com a v1 e usa o mesmo Bearer. Ela
-mantém o envelope de patrimônio e acrescenta fluxos diários agregados:
-
-```bash
-printf 'Authorization: Bearer %s\n' "$(sudo cat .secrets/patrimonio_token)" \
-  | curl -s -H @- "https://bancario-mspa.duckdns.org/patrimonio/v2/resumo?inicio=2026-09-01&data=2026-09-16"
-```
-
-`data` é o fim inclusivo e `inicio` o início inclusivo; sem `data`, vale hoje,
-e sem `inicio`, o recorte é de um dia. O limite é de 3.654 dias (dez anos),
-compatível com os recortes de cinco anos e "Tudo" do Dashboard. `fluxos` contém
-somente fatos realizados, agrupados por `data`, `moeda` e `natureza`:
-`gerencial`, `transferencia`, `movimentacao` e `ajuste_de_base`. Cada item traz
-`entradas`, `saidas`, `liquido` e `linhas`; valores são texto e moedas nunca
-são combinadas. Um saldo inicial datado dentro do período aparece como
-`ajuste_de_base`. Não são publicados movimentos individuais nem dados abertos,
-projetados ou fora do intervalo.
-
-```bash
-printf 'Authorization: Bearer %s\n' "$(sudo cat .secrets/patrimonio_token)" \
-  | curl -s -H @- "https://bancario-mspa.duckdns.org/patrimonio/v1/resumo?data=2026-09-16"
-```
-
-No servidor, pelo endereço público: no loopback (`127.0.0.1:5201`) o
-`SECURE_SSL_REDIRECT` responde **301** a qualquer rota. O token vai pela entrada
-padrão (`-H @-`), e não na linha de comando, onde qualquer usuário da máquina o
-leria em `ps`.
-
-`?data=` é opcional e vale a data de hoje. Conta cujo saldo inicial é posterior
-à data pedida fica fora da foto: ela ainda não existia.
+Os contratos `v1/resumo`, `v2/resumo` e `v3/activities`, `categories` e `metadata`
+foram retirados em 03/10/2026 (serviam ao NetWorth, aposentado). Só a projeção
+(`/patrimonio/v3/projection`) e o v4 respondem. No servidor, pelo endereço
+público: no loopback (`127.0.0.1:5201`) o `SECURE_SSL_REDIRECT` responde **301** a
+qualquer rota. O token vai pela entrada padrão (`-H @-`), e não na linha de
+comando, onde qualquer usuário da máquina o leria em `ps`.
 
 **O token é a permissão.** Quem o tem lê o saldo de todas as contas deste
 sistema, sem escopo por titular -- um resumo filtrado produziria um patrimônio
