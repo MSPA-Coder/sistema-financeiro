@@ -8,10 +8,10 @@ errado do outro lado.
 
 E as rotas carregam o saldo de todas as contas: os testes de autenticação são
 sobre isso, não sobre formalidade. Os contratos v1 a v3 (resumo, fluxos,
-atividades, categorias e metadata) foram retirados em 03/10/2026; a projeção
-(`/patrimonio/v3/projection`) fica e é a rota do token legado
-(`PATRIMONIO_TOKEN`), então é por ela que os testes de configuração do segredo
-passam. O corpo da projeção é coberto em `test_projecao_patrimonial.py`.
+atividades, categorias e metadata) foram retirados em 03/10/2026. A projeção
+(`/patrimonio/v3/projection`) fica e usa o MESMO token do v4
+(`PATRIMONIO_INTEGRATION_TOKEN`), então é por ela que os testes de configuração
+do segredo passam. O corpo da projeção é coberto em `test_projecao_patrimonial.py`.
 """
 
 from __future__ import annotations
@@ -83,10 +83,10 @@ def com_token(monkeypatch, tmp_path):
     teste que só exercitasse a variável passaria aqui e a rota responderia 503
     no servidor, que é o pior lugar para descobrir isso.
     """
-    arquivo = tmp_path / "patrimonio_token"
+    arquivo = tmp_path / "patrimonio_integration_token"
     arquivo.write_text(TOKEN, encoding="utf-8")
-    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO, raising=False)
-    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO}_FILE", str(arquivo))
+    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO_V4, raising=False)
+    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", str(arquivo))
     return TOKEN
 
 
@@ -112,8 +112,6 @@ def test_cursor_v4_usa_token_exclusivo_e_invalida_assinaturas_antigas(
     legado.write_text(TOKEN, encoding="utf-8")
     exclusivo.write_text(TOKEN_V4, encoding="utf-8")
     rotacionado.write_text(TOKEN_V4_ROTACIONADO, encoding="utf-8")
-    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO, raising=False)
-    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO}_FILE", str(legado))
     monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO_V4, raising=False)
     monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", str(exclusivo))
 
@@ -162,8 +160,8 @@ def test_sem_segredo_configurado_a_rota_nao_atende(contas, monkeypatch):
     Responder 401 aqui mandaria o operador procurar por horas um token errado
     que, na verdade, nunca foi concedido a este servidor.
     """
-    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO, raising=False)
-    monkeypatch.delenv(f"{patrimonio.NOME_DO_SEGREDO}_FILE", raising=False)
+    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO_V4, raising=False)
+    monkeypatch.delenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", raising=False)
 
     resposta = pedir()
 
@@ -172,10 +170,10 @@ def test_sem_segredo_configurado_a_rota_nao_atende(contas, monkeypatch):
 
 def test_segredo_curto_demais_e_tratado_como_ausente(contas, monkeypatch, tmp_path):
     """Um token de oito letras não protege saldo de conta nenhuma."""
-    arquivo = tmp_path / "patrimonio_token"
+    arquivo = tmp_path / "patrimonio_integration_token"
     arquivo.write_text("curtinho", encoding="utf-8")
-    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO, raising=False)
-    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO}_FILE", str(arquivo))
+    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO_V4, raising=False)
+    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", str(arquivo))
 
     resposta = pedir(token="curtinho")
 
@@ -185,13 +183,13 @@ def test_segredo_curto_demais_e_tratado_como_ausente(contas, monkeypatch, tmp_pa
 def test_sob_o_compose_a_variavel_direta_nao_concede_o_token(contas, monkeypatch):
     """`REQUIRE_FILE_SECRETS=true` é o contrato do Compose, e vale aqui também.
 
-    Sem esta trava, uma sobra de `PATRIMONIO_TOKEN` no ambiente do processo
+    Sem esta trava, uma sobra de `PATRIMONIO_INTEGRATION_TOKEN` no ambiente do processo
     substituiria em silêncio o segredo montado como arquivo -- e ninguém
     descobriria qual dos dois está valendo.
     """
     monkeypatch.setenv("REQUIRE_FILE_SECRETS", "true")
-    monkeypatch.setenv(patrimonio.NOME_DO_SEGREDO, TOKEN)
-    monkeypatch.delenv(f"{patrimonio.NOME_DO_SEGREDO}_FILE", raising=False)
+    monkeypatch.setenv(patrimonio.NOME_DO_SEGREDO_V4, TOKEN)
+    monkeypatch.delenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", raising=False)
 
     resposta = pedir()
 
@@ -213,53 +211,36 @@ def test_a_rota_so_responde_a_get(contas, com_token):
 # --- O v4 tem token próprio ------------------------------------------------
 
 
-def test_v4_nao_usa_o_token_das_rotas_anteriores(contas, monkeypatch, tmp_path):
-    arquivo_legado = tmp_path / "patrimonio_token"
-    arquivo_legado.write_text(TOKEN, encoding="utf-8")
-    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO, raising=False)
-    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO}_FILE", str(arquivo_legado))
+def test_o_token_antigo_nao_concede_mais_nada(contas, monkeypatch, tmp_path):
+    """`PATRIMONIO_TOKEN` foi retirado em 03/10/2026: nem configurado ele vale."""
+    arquivo_antigo = tmp_path / "patrimonio_token"
+    arquivo_antigo.write_text(TOKEN, encoding="utf-8")
+    monkeypatch.setenv("PATRIMONIO_TOKEN_FILE", str(arquivo_antigo))
     monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO_V4, raising=False)
     monkeypatch.delenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", raising=False)
 
-    resposta_v4 = Client().get(
-        "/patrimonio/v4/metadata", HTTP_AUTHORIZATION=f"Bearer {TOKEN}"
-    )
-    resposta_legada = pedir()
+    # Sem o token de integração, as duas rotas ficam fora do ar...
+    assert pedir().status_code == 503
+    assert Client().get("/patrimonio/v4/metadata", HTTP_AUTHORIZATION=f"Bearer {TOKEN}").status_code == 503
 
-    assert resposta_v4.status_code == 503
-    assert resposta_legada.status_code == 200
-
-
-def test_v4_recusa_o_token_das_rotas_anteriores(contas, monkeypatch, tmp_path):
-    arquivo_legado = tmp_path / "patrimonio_token"
-    arquivo_legado.write_text(TOKEN, encoding="utf-8")
-    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO, raising=False)
-    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO}_FILE", str(arquivo_legado))
+    # ...e, com ele configurado, o antigo é só um token errado.
     configurar_token_v4(monkeypatch, tmp_path)
-
-    resposta = Client().get(
-        "/patrimonio/v4/metadata", HTTP_AUTHORIZATION=f"Bearer {TOKEN}"
-    )
-
-    assert resposta.status_code == 401
+    assert pedir().status_code == 401
+    assert Client().get("/patrimonio/v4/metadata", HTTP_AUTHORIZATION=f"Bearer {TOKEN}").status_code == 401
 
 
 @pytest.mark.django_db(transaction=True)
-def test_v4_aceita_token_de_integracao_sem_mudar_autenticacao_legada(
-    contas, monkeypatch, tmp_path
-):
-    arquivo_legado = tmp_path / "patrimonio_token"
-    arquivo_legado.write_text(TOKEN, encoding="utf-8")
-    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO, raising=False)
-    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO}_FILE", str(arquivo_legado))
+def test_v4_e_projecao_aceitam_o_mesmo_token_de_integracao(contas, monkeypatch, tmp_path):
     token_v4 = configurar_token_v4(monkeypatch, tmp_path)
 
     resposta_v4 = Client().get(
         "/patrimonio/v4/snapshot", HTTP_AUTHORIZATION=f"Bearer {token_v4}"
     )
+    projecao = pedir(token=token_v4)
 
     assert resposta_v4.status_code == 200
     assert resposta_v4.json()["contrato"] == "patrimonio/v4"
+    assert projecao.status_code == 200
 
 
 # --- O vocabulário ---------------------------------------------------------

@@ -3,11 +3,14 @@
 ## Configuração e serviços
 
 O Compose exige os arquivos secretos `django_secret_key`, `postgres_password`,
-`postgres_app_password` e `patrimonio_token`. Por padrão ficam em `.secrets/`;
-`COMPOSE_SECRETS_DIRECTORY` altera esse diretório. Todos são provisionados
-por `.\scripts\provision_compose_secrets.ps1`, que **gera** o
-`patrimonio_token` e o `postgres_app_password` quando o arquivo de ambiente não
-os traz — são as credenciais daqui que ninguém precisa escolher.
+`postgres_app_password` e `patrimonio_integration_token`. Por padrão ficam em
+`.secrets/`; `COMPOSE_SECRETS_DIRECTORY` altera esse diretório. Todos são
+provisionados por `.\scripts\provision_compose_secrets.ps1`, que **gera** o
+`patrimonio_integration_token` e o `postgres_app_password` quando o arquivo de
+ambiente não os traz — são as credenciais daqui que ninguém precisa escolher.
+O `patrimonio_token` antigo foi retirado em 03/10/2026; um arquivo
+`.secrets/patrimonio_token` que sobrar no servidor não é lido por nada e pode
+ser apagado.
 
 ### Dois papéis no banco
 
@@ -192,22 +195,12 @@ imagem, aguarda os health checks e valida o endereço público. `.env.vps`,
 `.secrets/` e `.certs/` também ficam fora do Git e precisam ser preservados em
 uma reinstalação.
 
-**Antes do primeiro deploy desta versão**, crie `.secrets/patrimonio_token` no
-servidor. O Compose recusa subir com um arquivo de segredo declarado e ausente,
-e o `deploy.sh` faria rollback de uma implantação que não tinha defeito nenhum:
-
-```bash
-python3 -c "import secrets; print(secrets.token_urlsafe(48))" > .secrets/patrimonio_token
-sudo chown --reference=.secrets/django_secret_key .secrets/patrimonio_token
-sudo chmod --reference=.secrets/django_secret_key .secrets/patrimonio_token
-```
-
-Para o contrato v4, crie também `.secrets/patrimonio_integration_token` antes
-de iniciar a versão que declara esse segredo no Compose. Este arquivo é uma
-credencial independente; não substitua nem regenere `.secrets/patrimonio_token`.
-O provisionador local cria ambos quando não existem, preservando arquivos já
-presentes. No servidor, gere o arquivo v4 e copie as permissões do segredo do
-Django:
+**Antes do primeiro deploy**, crie `.secrets/patrimonio_integration_token` no
+servidor (o token do contrato v4 e da projeção). O Compose recusa subir com um
+arquivo de segredo declarado e ausente, e o `deploy.sh` faria rollback de uma
+implantação que não tinha defeito nenhum. O provisionador local o cria quando
+não existe, preservando arquivos já presentes. No servidor, gere o arquivo e
+copie as permissões do segredo do Django:
 
 ```bash
 python3 -c "import secrets; print(secrets.token_urlsafe(48))" > .secrets/patrimonio_integration_token
@@ -228,8 +221,8 @@ aparece longe da causa.
 O bootstrap somente leitura está disponível em `GET /patrimonio/v4/metadata`,
 `GET /patrimonio/v4/snapshot` e `GET /patrimonio/v4/changes`, com o token
 exclusivo `PATRIMONIO_INTEGRATION_TOKEN`. O provisionador cria
-`.secrets/patrimonio_integration_token` sem alterar `patrimonio_token`, que só a
-projeção (`/patrimonio/v3/projection`) usa. O snapshot contém contas, categorias, lançamentos persistidos e
+`.secrets/patrimonio_integration_token`; o mesmo token autentica a projeção
+(`/patrimonio/v3/projection`). O snapshot contém contas, categorias, lançamentos persistidos e
 grupos de transferência, lidos na mesma visão consistente do PostgreSQL.
 O feed é uma outbox de invalidação: `high_watermark` e `next_cursor` são
 cursores assinados. Ao receber uma mudança, o consumidor busca um novo snapshot

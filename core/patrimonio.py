@@ -15,9 +15,13 @@ O QUE EXISTE HOJE
 * `patrimonio/v4` (`metadata`, `snapshot`, `changes`): o contrato do
   consolidador. Contas, categorias e lançamentos de caixa lidos sob
   `REPEATABLE READ`, um feed de mudanças com cursor assinado e a cobertura
-  declarada. Autentica com `PATRIMONIO_INTEGRATION_TOKEN`.
+  declarada.
 * `patrimonio/v3/projection`: a projeção de caixa, reservada para a fase de
-  projeção consolidada. Autentica com `PATRIMONIO_TOKEN`.
+  projeção consolidada.
+
+As duas rotas autenticam com o mesmo `PATRIMONIO_INTEGRATION_TOKEN`. O
+`PATRIMONIO_TOKEN` antigo existiu só para a projeção e foi retirado em
+03/10/2026: eram dois segredos para uma integração só.
 
 Os contratos `patrimonio/v1` a `v3` (resumo, fluxos, atividades, categorias e
 metadata) serviam ao NetWorth, aposentado em 29/09/2026, e foram retirados em
@@ -93,7 +97,6 @@ SISTEMA = "controle-bancario"
 #: O token não tem valor padrão e não é gerado: sem ele configurado, a rota não
 #: atende. Um segredo gerado no arranque valeria até o próximo reinício e daria
 #: a impressão de que a integração está configurada quando não está.
-NOME_DO_SEGREDO = "PATRIMONIO_TOKEN"
 NOME_DO_SEGREDO_V4 = "PATRIMONIO_INTEGRATION_TOKEN"
 COMPRIMENTO_MINIMO_DO_TOKEN = 32
 MONEY_QUANT = Decimal("0.01")
@@ -168,9 +171,12 @@ def _change_limit_v4(request) -> int:
     return limit
 
 
-def _autorizacao_v3(request, versao: str = "v3"):
-    """Retorna uma resposta de erro ou ``None`` quando o Bearer é válido."""
-    esperado = _token_configurado(NOME_DO_SEGREDO_V4 if versao == "v4" else NOME_DO_SEGREDO)
+def _autorizacao(request, contrato: str):
+    """Retorna uma resposta de erro ou ``None`` quando o Bearer é válido.
+
+    ``contrato`` só rotula o log: a v4 e a projeção usam o mesmo token.
+    """
+    esperado = _token_configurado()
     if not esperado:
         return JsonResponse(
             {"erro": "integração de patrimônio não configurada neste servidor"},
@@ -178,7 +184,7 @@ def _autorizacao_v3(request, versao: str = "v3"):
         )
     recebido = _token_da_requisicao(request)
     if not recebido or not secrets.compare_digest(recebido, esperado):
-        logger.warning("Contrato patrimonial %s recusado: token ausente ou inválido.", versao)
+        logger.warning("Contrato patrimonial %s recusado: token ausente ou inválido.", contrato)
         return JsonResponse({"erro": "não autorizado"}, status=401)
     return None
 
@@ -202,7 +208,7 @@ def identidade(nome: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", sem_acento.lower()).strip("-")
 
 
-def _token_configurado(nome_do_segredo: str = NOME_DO_SEGREDO) -> str | None:
+def _token_configurado(nome_do_segredo: str = NOME_DO_SEGREDO_V4) -> str | None:
     """O token configurado, ou `None` quando não há um utilizável.
 
     Um token curto demais ou igual ao do `.env.example` é recusado como se não
@@ -424,7 +430,7 @@ def _metadata_v4(referencia: date, watermark: str) -> dict:
 @require_GET
 def metadata_v4_view(request):
     """Capacidades, cobertura e cursor da outbox v4, sob token exclusivo."""
-    erro = _autorizacao_v3(request, "v4")
+    erro = _autorizacao(request, "v4")
     if erro:
         return erro
     with transaction.atomic():
@@ -437,7 +443,7 @@ def metadata_v4_view(request):
 @require_GET
 def changes_v4_view(request):
     """Invalidações ordenadas; o consumidor reconcilia pelo snapshot v4."""
-    erro = _autorizacao_v3(request, "v4")
+    erro = _autorizacao(request, "v4")
     if erro:
         return erro
     try:
@@ -484,7 +490,7 @@ def changes_v4_view(request):
 @require_GET
 def snapshot_v4_view(request):
     """Foto consistente dos recursos bancários já persistidos no CB."""
-    erro = _autorizacao_v3(request, "v4")
+    erro = _autorizacao(request, "v4")
     if erro:
         return erro
     referencia = timezone.localdate()
@@ -824,7 +830,7 @@ def projecao_v3_view(request):
     `excluir`). A data-base é sempre hoje: projetar a partir de uma data
     passada misturaria o que aconteceu com o que estava previsto.
     """
-    erro = _autorizacao_v3(request)
+    erro = _autorizacao(request, "v3")
     if erro:
         return erro
     hoje = timezone.localdate()

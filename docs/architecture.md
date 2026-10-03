@@ -199,7 +199,7 @@ Wealthfolio) por duas rotas somente leitura, sem sessão e sem escopo por titula
 | Rota | Token | Para quê |
 |---|---|---|
 | `/patrimonio/v4/metadata`, `/snapshot`, `/changes` | `PATRIMONIO_INTEGRATION_TOKEN` | o contrato do consolidador (abaixo) |
-| `/patrimonio/v3/projection` | `PATRIMONIO_TOKEN` | a projeção de caixa, reservada para a fase de projeção consolidada |
+| `/patrimonio/v3/projection` | `PATRIMONIO_INTEGRATION_TOKEN` | a projeção de caixa, reservada para a fase de projeção consolidada |
 
 Os contratos `v1/resumo`, `v2/resumo`, `v3/activities`, `v3/categories` e
 `v3/metadata` serviam ao NetWorth, aposentado em 29/09/2026, e foram retirados em
@@ -253,8 +253,8 @@ com o dia sem que o lançamento mude, então um consumidor que guarda a foto pel
 
 `GET /patrimonio/v4/metadata`, `GET /patrimonio/v4/snapshot` e
 `GET /patrimonio/v4/changes` são a integração com o Wealthfolio. Usam o Bearer
-exclusivo `PATRIMONIO_INTEGRATION_TOKEN`; a projeção v3 continua com
-`PATRIMONIO_TOKEN`. Todas são somente leitura. O snapshot lê contas, categorias,
+`PATRIMONIO_INTEGRATION_TOKEN`, o mesmo da projeção v3 (o `PATRIMONIO_TOKEN`
+antigo foi retirado em 03/10/2026). Todas são somente leitura. O snapshot lê contas, categorias,
 lançamentos de caixa e agrupadores de transferência sob `REPEATABLE READ`,
 com valores decimais em texto e IDs opacos e estáveis derivados da identidade
 da fonte e da chave persistida.

@@ -28,9 +28,6 @@ x-app-environment: &app-environment
   DB_EXIGIR_PAPEL_RESTRITO: "1"
   POSTGRES_DB: ${POSTGRES_DB:-controle_bancario}
   DJANGO_SECRET_KEY_FILE: /run/secrets/django_secret_key
-  # Token da rota /patrimonio/v3/projection (a projeção de caixa). A integração é
-  # opcional: sem um token utilizável a rota responde 503 e nada mais muda.
-  PATRIMONIO_TOKEN_FILE: /run/secrets/patrimonio_token
   REQUIRE_FILE_SECRETS: "true"
   TZ: America/Sao_Paulo
   PYTHONUNBUFFERED: "1"
@@ -39,7 +36,6 @@ x-app-secrets: &app-secrets
   secrets:
     - django_secret_key
     - postgres_app_password
-    - patrimonio_token
     - patrimonio_integration_token
 
 # A suíte nunca precisa ler os arquivos usados pelos serviços operacionais.
@@ -53,7 +49,6 @@ x-quality-environment: &quality-environment
   POSTGRES_PASSWORD_FILE: /run/secrets/quality_postgres_password
   POSTGRES_DB: ${POSTGRES_DB:-controle_bancario}
   DJANGO_SECRET_KEY_FILE: /run/secrets/quality_django_secret_key
-  PATRIMONIO_TOKEN_FILE: /run/secrets/quality_patrimonio_token
   PATRIMONIO_INTEGRATION_TOKEN_FILE: /run/secrets/quality_patrimonio_integration_token
   REQUIRE_FILE_SECRETS: "true"
   TZ: America/Sao_Paulo
@@ -63,7 +58,6 @@ x-quality-secrets: &quality-secrets
   secrets:
     - quality_django_secret_key
     - quality_postgres_password
-    - quality_patrimonio_token
     - quality_patrimonio_integration_token
 
 # O portão roda em um contêiner descartável, mas ainda deve ter a mesma
@@ -195,7 +189,6 @@ services:
     secrets:
       - django_secret_key
       - postgres_password
-      - patrimonio_token
     pids_limit: 128
     stop_grace_period: 30s
     logging: *service-logging
@@ -343,18 +336,11 @@ secrets:
   # `db-provision` roda como `postgres`) e pelo usuário do `web`.
   postgres_app_password:
     file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/postgres_app_password
-  # Gerado por `provision_compose_secrets.ps1` junto com os outros dois. O
-  # arquivo precisa existir para o Compose subir, mas o conteúdo só importa
-  # para quem usa a integração de patrimônio.
-  patrimonio_token:
-    file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/patrimonio_token
   patrimonio_integration_token:
     file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/patrimonio_integration_token
   quality_django_secret_key:
     file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/quality_django_secret_key
   quality_postgres_password:
     file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/quality_postgres_password
-  quality_patrimonio_token:
-    file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/quality_patrimonio_token
   quality_patrimonio_integration_token:
     file: ${COMPOSE_SECRETS_DIRECTORY:-.secrets}/quality_patrimonio_integration_token
