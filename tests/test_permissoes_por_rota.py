@@ -42,7 +42,7 @@ ROTAS_ABERTAS: dict[str, str] = {
     "logout/": "encerrar sessao nao pode depender de permissao",
     "health": "sonda de infraestrutura, sem sessao",
     "health/": "sonda de infraestrutura, sem sessao",
-    "patrimonio/v1/resumo": (
+    "patrimonio/v3/projection": (
         "integracao maquina a maquina: quem chama e o consolidador de "
         "patrimonio, que nao tem sessao nem usuario neste sistema. A permissao "
         "e o token compartilhado, verificado no corpo da view em tempo "
@@ -50,29 +50,9 @@ ROTAS_ABERTAS: dict[str, str] = {
         "titular seria pior que inutil aqui: produziria um patrimonio "
         "consolidado que esconde contas sem avisar."
     ),
-    "patrimonio/v2/resumo": (
-        "integracao maquina a maquina: mesma autorizacao Bearer da v1, com "
-        "agregados diarios realizados; nao ha sessao nem usuario neste sistema."
-    ),
-    "patrimonio/v3/activities": (
-        "integracao maquina a maquina: mesma autorizacao Bearer da v1/v2, "
-        "somente leitura e sem sessao de usuario."
-    ),
-    "patrimonio/v3/categories": (
-        "integracao maquina a maquina: mesma autorizacao Bearer da v1/v2, "
-        "somente leitura e sem sessao de usuario."
-    ),
-    "patrimonio/v3/projection": (
-        "integracao maquina a maquina: mesma autorizacao Bearer da v1/v2, "
-        "somente leitura e sem sessao de usuario."
-    ),
-"patrimonio/v4/snapshot": "integracao maquina a maquina: leitura Bearer sem sessao de usuario.",
+    "patrimonio/v4/snapshot": "integracao maquina a maquina: leitura Bearer sem sessao de usuario.",
     "patrimonio/v4/changes": "integracao maquina a maquina: leitura Bearer sem sessao de usuario.",
     "patrimonio/v4/metadata": "integracao maquina a maquina: leitura Bearer sem sessao de usuario.",
-    "patrimonio/v3/metadata": (
-        "integracao maquina a maquina: mesma autorizacao Bearer da v1/v2, "
-        "somente leitura e sem sessao de usuario."
-    ),
     "change-password/": "todo usuario troca a propria senha, sempre",
     "inicio/": (
         "nao e tela: resolve para onde a pessoa pode ir e redireciona. Exigir "

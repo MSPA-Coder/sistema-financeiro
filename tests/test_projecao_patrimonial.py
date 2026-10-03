@@ -261,10 +261,3 @@ def test_rota_recusa_parametros_invalidos(cenario, com_token, parametros, trecho
 
     assert resposta.status_code == 400
     assert trecho in resposta.json()["erro"]
-
-
-@pytest.mark.django_db(transaction=True)
-def test_metadata_declara_a_capacidade_de_projecao(cenario, com_token):
-    resposta = Client().get("/patrimonio/v3/metadata", HTTP_AUTHORIZATION=f"Bearer {TOKEN}")
-
-    assert resposta.json()["capacidades"]["projecao"] is True

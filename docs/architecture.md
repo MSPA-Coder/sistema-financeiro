@@ -191,42 +191,21 @@ usuário e as permissões continuam pertencendo a este projeto. O repositório d
 SharedAuth é público: o build o instala por Git, na tag fixada no
 `pyproject.toml` e no commit registrado no `uv.lock`, sem credencial.
 
-## Publicação patrimonial v2
+## Publicação patrimonial
 
-`GET /patrimonio/v2/resumo` convive com a v1 e reutiliza o mesmo Bearer
-(`PATRIMONIO_TOKEN`), sem sessão ou escopo por titular. O envelope patrimonial
-da v1 permanece; a v2 apenas troca `contrato` para `patrimonio/v2` e acrescenta
-`periodo_dos_fluxos` (`inicio`/`fim`) e `fluxos`.
+Este sistema publica o caixa para quem consolida o patrimônio (hoje, o
+Wealthfolio) por duas rotas somente leitura, sem sessão e sem escopo por titular:
 
-`data` é o fim inclusivo da foto e `inicio` é o começo inclusivo dos fluxos.
-Sem `data`, usa-se o dia local; sem `inicio`, o período tem um dia. O intervalo
-aceita no máximo 3.654 dias (dez anos calendáricos, cobrindo os recortes de cinco anos e
-"Tudo" do Dashboard) e não há migration: a consulta lê o schema corrente.
-Cada fluxo é agregado por data, moeda e natureza (`gerencial`, `transferencia`,
-`movimentacao` ou `ajuste_de_base`), com valores monetários serializados como
-texto. Só lançamentos `realizado` com `realized_date` e `realized_amount` entram;
-lançamentos abertos ou projetados são deliberadamente omitidos. O saldo
-inicial cuja data cair no intervalo vira `ajuste_de_base`. Os grupos nunca
-misturam moedas e não expõem movimentos individuais.
-Foto e fluxos são lidos sob o mesmo snapshot `REPEATABLE READ`; a agregação
-dos lançamentos ocorre no PostgreSQL antes de os grupos chegarem à aplicação.
+| Rota | Token | Para quê |
+|---|---|---|
+| `/patrimonio/v4/metadata`, `/snapshot`, `/changes` | `PATRIMONIO_INTEGRATION_TOKEN` | o contrato do consolidador (abaixo) |
+| `/patrimonio/v3/projection` | `PATRIMONIO_TOKEN` | a projeção de caixa, reservada para a fase de projeção consolidada |
 
-### Extensão somente leitura v3 para o shell
-
-As rotas `/patrimonio/v3/activities`, `/categories` e `/metadata` ampliam a
-publicação sem alterar v1 ou v2. Atividades são lançamentos persistidos, com
-paginação, filtros e IDs opacos; categorias e metadados permitem ao consumidor
-montar filtros e links sem copiar tabelas.
-
-O metadata declara também as capacidades analíticas da fonte. `fluxos` é
-verdadeiro porque o caixa agregado já é publicado em v2. `renda`,
-`performance` e `eventos` são falsos: este sistema não mantém um livro de
-investimentos, uma série de retorno de carteira ou uma entidade de eventos do
-shell. O consumidor deve exibir o estado indisponível correspondente, sem
-reconstruir essas métricas a partir de saldos ou inventar registros.
-
-Todas as rotas v3 são GET-only, usam o Bearer de patrimônio e não oferecem
-qualquer caminho de escrita.
+Os contratos `v1/resumo`, `v2/resumo`, `v3/activities`, `v3/categories` e
+`v3/metadata` serviam ao NetWorth, aposentado em 29/09/2026, e foram retirados em
+03/10/2026: o nginx não registra acesso a eles desde 28/09, o Wealthfolio só lê o
+v4 (o patch dele recusa qualquer outro caminho), e o histórico está no Git.
+Todas as rotas respondem só a `GET`, e o nginx fecha `/patrimonio/` para fora.
 
 ### Snapshot de integração v4
 
@@ -245,9 +224,8 @@ com o dia sem que o lançamento mude, então um consumidor que guarda a foto pel
 `high_watermark` precisa pedir uma nova a cada dia.
 
 `GET /patrimonio/v4/metadata`, `GET /patrimonio/v4/snapshot` e
-`GET /patrimonio/v4/changes` iniciam a
-integração com o Wealthfolio sem alterar os contratos v1-v3. Usam o Bearer
-exclusivo `PATRIMONIO_INTEGRATION_TOKEN`; v1-v3 continuam com
+`GET /patrimonio/v4/changes` são a integração com o Wealthfolio. Usam o Bearer
+exclusivo `PATRIMONIO_INTEGRATION_TOKEN`; a projeção v3 continua com
 `PATRIMONIO_TOKEN`. Todas são somente leitura. O snapshot lê contas, categorias,
 lançamentos de caixa e agrupadores de transferência sob `REPEATABLE READ`,
 com valores decimais em texto e IDs opacos e estáveis derivados da identidade

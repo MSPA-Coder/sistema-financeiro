@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import pytest
 from django.db import connection
+from django.test import Client
 from django.test.utils import CaptureQueriesContext, override_settings
 
 from accounts.models import AccountOwner
@@ -30,27 +31,32 @@ def test_upcoming_period_limit_has_a_clear_message():
         services.bounded_upcoming_period(date(2026, 1, 1), date(2026, 1, 3))
 
 
-@pytest.mark.django_db
-def test_patrimony_summary_reads_balances_in_batch():
+@pytest.mark.django_db(transaction=True)
+def test_patrimony_snapshot_reads_balances_in_batch(monkeypatch, tmp_path):
+    """O custo de consulta do snapshot v4 não cresce com o número de contas."""
+    token = "token-de-integracao-v4-com-mais-de-trinta-e-dois-caracteres"
+    arquivo = tmp_path / "patrimonio_integration_token"
+    arquivo.write_text(token, encoding="utf-8")
+    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO_V4, raising=False)
+    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", str(arquivo))
+
     owner = AccountOwner.objects.create(name="Auditoria")
     institution = FinancialInstitution.objects.create(
         institution_name="Banco de auditoria", institution_type="Banco"
     )
     category = CashFlowCategory.objects.create(category_name="Auditoria")
-    accounts = [
-        FinancialAccount.objects.create(
+
+    def criar_conta(indice):
+        conta = FinancialAccount.objects.create(
             owner=owner,
             institution=institution,
-            account_name=f"Conta {index}",
+            account_name=f"Conta {indice}",
             initial_balance=Decimal("100.00"),
             currency="BRL",
             initial_balance_date=date(2025, 12, 31),
         )
-        for index in range(3)
-    ]
-    for account in accounts:
         CashFlowEntry.objects.create(
-            account=account,
+            account=conta,
             category=category,
             entry_type="receita",
             description="Entrada",
@@ -61,8 +67,18 @@ def test_patrimony_summary_reads_balances_in_batch():
             status="realizado",
         )
 
-    with CaptureQueriesContext(connection) as queries:
-        resumo = patrimonio.montar_resumo(date(2026, 1, 31))
+    def pedir_snapshot():
+        with CaptureQueriesContext(connection) as queries:
+            resposta = Client().get("/patrimonio/v4/snapshot", HTTP_AUTHORIZATION=f"Bearer {token}")
+        assert resposta.status_code == 200
+        return resposta.json(), len(queries)
 
-    assert {linha["saldo"] for linha in resumo["contas"]} == {"110.00"}
-    assert len(queries) <= 5
+    criar_conta(0)
+    _, consultas_com_uma = pedir_snapshot()
+    for indice in range(1, 4):
+        criar_conta(indice)
+    corpo, consultas_com_quatro = pedir_snapshot()
+
+    saldos = [item["payload"]["balance"] for item in corpo["items"] if item["resource"] == "account"]
+    assert saldos == ["110.00"] * 4
+    assert consultas_com_quatro == consultas_com_uma
