@@ -207,6 +207,34 @@ Os contratos `v1/resumo`, `v2/resumo`, `v3/activities`, `v3/categories` e
 v4 (o patch dele recusa qualquer outro caminho), e o histórico está no Git.
 Todas as rotas respondem só a `GET`, e o nginx fecha `/patrimonio/` para fora.
 
+### Esquema `leitura`: o contrato para quem lê o banco de fora
+
+Quem lê o PostgreSQL direto (hoje, o FinancasMCP, por um usuário `mcp_leitura`
+só de leitura) não deve ler as tabelas: acopla o próprio SQL ao schema e
+reescreve as regras do domínio. O esquema `leitura`, criado pela migração
+`core/0004_esquema_leitura`, publica essas regras em views, e o usuário de
+leitura recebe `SELECT` só nelas.
+
+| View | O que carrega |
+|---|---|
+| `leitura.lancamento` | status **efetivo** (derivado da data, como o v4), data e valor que valem, sinal, parcela, se é estimativa de fatura |
+| `leitura.conta` | saldo realizado hoje, vencido em aberto e saldo com todo o previsto |
+| `leitura.categoria` | natureza (`gerencial`, `transferencia`, `movimentacao`) e grupo |
+| `leitura.orcamento_mensal`, `leitura.operacao`, `leitura.fechamento_mes` | metas, parcelas/recorrências e meses fechados |
+| `leitura.extrato_importacao`, `leitura.extrato_linha` | extratos e faturas importados |
+| `leitura.lancamento_etiqueta`, `leitura.lancamento_projeto` | etiquetas e projetos por lançamento |
+
+`leitura.hoje()` é a data do fuso de São Paulo, e não a do servidor. Ficam de
+fora, de propósito, usuários, senhas, sessões, permissões, auditoria e anexos.
+
+O PostgreSQL recusa `DROP COLUMN` e `ALTER ... TYPE` de coluna que uma view lê.
+Quem precisar mudar uma coluna lida aqui escreve a migração dependendo de
+`core/0004_esquema_leitura`, recria a view e atualiza `tests/test_esquema_leitura.py`.
+A quebra deixa de aparecer em produção, no leitor, e passa a reprovar a
+migração na suíte, que aplica todas as migrações num banco vazio. Uma view nova
+só chega ao usuário de leitura depois de rodar de novo
+`python -m financas_mcp.usuario_leitura` (ver o FinancasMCP).
+
 ### Snapshot de integração v4
 
 Desde 02/10/2026 a conta publica `purpose` (`pessoal` ou `administrada`) e a
