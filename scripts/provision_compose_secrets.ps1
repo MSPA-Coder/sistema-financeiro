@@ -78,24 +78,13 @@ foreach ($fileName in $secretSources.Keys) {
     }
 }
 
-# O token da integração de patrimônio é a única credencial daqui que ninguém
-# precisa escolher: ela não é compartilhada com um humano nem com outro serviço
-# já instalado -- é entregue ao consolidador depois de gerada. Por isso ela é
-# gerada aqui quando o arquivo de ambiente não a traz, em vez de recusar a
-# provisão. Quem quiser fixar um valor (rotação coordenada com o consolidador,
-# por exemplo) define PATRIMONIO_TOKEN no arquivo de ambiente.
-$patrimonioPath = Join-Path $secretsPath "patrimonio_token"
-if (($Force -or -not (Test-Path -LiteralPath $patrimonioPath)) -and
-    (-not $settings.ContainsKey("PATRIMONIO_TOKEN") -or [string]::IsNullOrWhiteSpace($settings["PATRIMONIO_TOKEN"]))) {
-    $settings["PATRIMONIO_TOKEN"] = New-UrlSafeSecret
-} elseif ($Force -or -not (Test-Path -LiteralPath $patrimonioPath)) {
-    Assert-SecretValue -Name "PATRIMONIO_TOKEN" -Value $settings["PATRIMONIO_TOKEN"]
-}
-$secretSources["patrimonio_token"] = "PATRIMONIO_TOKEN"
-
-# O contrato v4 tem credencial separada para permitir rotação independente sem
-# alterar o Bearer das rotas anteriores. Gera-se uma quando ausente; o arquivo
-# existente permanece a fonte de verdade, salvo uso explícito de -Force.
+# O token da integração de patrimônio (contrato v4 e projeção) é a única
+# credencial daqui que ninguém precisa escolher: ela não é compartilhada com um
+# humano nem com outro serviço já instalado -- é entregue ao consolidador depois
+# de gerada. Por isso é gerada aqui quando o arquivo de ambiente não a traz, em
+# vez de recusar a provisão. Quem quiser fixar um valor (rotação coordenada com
+# o consolidador, por exemplo) define PATRIMONIO_INTEGRATION_TOKEN no arquivo de
+# ambiente. O arquivo existente permanece a fonte de verdade, salvo -Force.
 $integrationTokenPath = Join-Path $secretsPath "patrimonio_integration_token"
 if (($Force -or -not (Test-Path -LiteralPath $integrationTokenPath)) -and
     (-not $settings.ContainsKey("PATRIMONIO_INTEGRATION_TOKEN") -or [string]::IsNullOrWhiteSpace($settings["PATRIMONIO_INTEGRATION_TOKEN"]))) {
@@ -122,11 +111,9 @@ $secretSources["postgres_app_password"] = "POSTGRES_APP_PASSWORD"
 # não são lidos do .env nem reaproveitados pelos serviços de runtime.
 $settings["QUALITY_DJANGO_SECRET_KEY"] = New-UrlSafeSecret
 $settings["QUALITY_POSTGRES_PASSWORD"] = New-UrlSafeSecret
-$settings["QUALITY_PATRIMONIO_TOKEN"] = New-UrlSafeSecret
 $settings["QUALITY_PATRIMONIO_INTEGRATION_TOKEN"] = New-UrlSafeSecret
 $secretSources["quality_django_secret_key"] = "QUALITY_DJANGO_SECRET_KEY"
 $secretSources["quality_postgres_password"] = "QUALITY_POSTGRES_PASSWORD"
-$secretSources["quality_patrimonio_token"] = "QUALITY_PATRIMONIO_TOKEN"
 $secretSources["quality_patrimonio_integration_token"] = "QUALITY_PATRIMONIO_INTEGRATION_TOKEN"
 
 # Faça toda a validação de destino antes da primeira escrita. Sem este

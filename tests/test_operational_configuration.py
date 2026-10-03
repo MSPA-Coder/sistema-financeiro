@@ -286,11 +286,11 @@ def test_token_v4_tem_segredo_independente_no_web_e_no_quality():
     web = servicos["web"]
     quality = servicos["quality"]
 
-    assert web["environment"]["PATRIMONIO_TOKEN_FILE"] == "/run/secrets/patrimonio_token"
+    assert "PATRIMONIO_TOKEN_FILE" not in web["environment"]
     assert web["environment"]["PATRIMONIO_INTEGRATION_TOKEN_FILE"] == (
         "/run/secrets/patrimonio_integration_token"
     )
-    assert "patrimonio_token" in web["secrets"]
+    assert "patrimonio_token" not in web["secrets"]
     assert "patrimonio_integration_token" in web["secrets"]
     assert quality["environment"]["PATRIMONIO_INTEGRATION_TOKEN_FILE"] == (
         "/run/secrets/quality_patrimonio_integration_token"

@@ -41,10 +41,10 @@ FIM = date(2026, 6, 30)
 
 @pytest.fixture
 def com_token(monkeypatch, tmp_path):
-    arquivo = tmp_path / "patrimonio_token"
+    arquivo = tmp_path / "patrimonio_integration_token"
     arquivo.write_text(TOKEN, encoding="utf-8")
-    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO, raising=False)
-    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO}_FILE", str(arquivo))
+    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO_V4, raising=False)
+    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", str(arquivo))
     return TOKEN
 
 
