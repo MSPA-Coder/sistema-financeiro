@@ -235,6 +235,15 @@ categoria publica `group` (nome do grupo ou `null`), como acréscimos opcionais
 que não mudam a versão do contrato; quem não os conhece os ignora. Renomear um
 grupo toca as categorias dele, para o feed de mudanças pedir um novo snapshot.
 
+Desde 03/10/2026 o lançamento (`cash_entry`) publica também `effective_status`:
+o status que vale em `snapshot_as_of`, derivado da data. `realizado` continua
+`realizado`; em aberto com vencimento anterior a `snapshot_as_of` é `vencidos`,
+e o resto é `a_vencer`, qualquer que seja o `status` gravado (que só se
+normaliza quando alguém grava o lançamento). É a mesma regra que as telas
+aplicam na leitura, publicada para que nenhum consumidor a recalcule. Ele muda
+com o dia sem que o lançamento mude, então um consumidor que guarda a foto pelo
+`high_watermark` precisa pedir uma nova a cada dia.
+
 `GET /patrimonio/v4/metadata`, `GET /patrimonio/v4/snapshot` e
 `GET /patrimonio/v4/changes` iniciam a
 integração com o Wealthfolio sem alterar os contratos v1-v3. Usam o Bearer

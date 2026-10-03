@@ -849,7 +849,21 @@ def _categoria_v4(categoria: CashFlowCategory) -> dict:
     }
 
 
-def _lancamento_v4(entry: CashFlowEntry) -> dict:
+def status_efetivo(entry: CashFlowEntry, referencia: date) -> str:
+    """O status que vale em `referencia`, derivado da data e não do gravado.
+
+    O `status` gravado só é normalizado quando alguém grava o lançamento: em
+    aberto com vencimento passado continua `a_vencer` até lá. As telas
+    compensam na leitura (`_balance_status_q`: projetado vencido conta como
+    vencido), e cada consumidor que lê o contrato tinha de repetir a conta. Aqui
+    ela sai pronta, pela mesma regra.
+    """
+    if entry.status == STATUS_REALIZED:
+        return STATUS_REALIZED
+    return STATUS_PENDING if entry.due_date < referencia else STATUS_PROJECTED
+
+
+def _lancamento_v4(entry: CashFlowEntry, referencia: date) -> dict:
     return {
         "source_id": _source_id_v4("cash-entry", entry.id),
         "account_id": _source_id_v4("account", entry.account_id),
@@ -862,6 +876,10 @@ def _lancamento_v4(entry: CashFlowEntry) -> dict:
         "description": entry.description,
         "entry_type": entry.entry_type,
         "status": entry.status,
+        # Acréscimo opcional (03/10/2026): o status que vale em `snapshot_as_of`.
+        # Muda com o dia sem que o lançamento mude, então quem guarda a foto por
+        # `high_watermark` precisa pedir uma nova a cada dia.
+        "effective_status": status_efetivo(entry, referencia),
         "category_kind": entry.category.kind,
         "currency": entry.account.currency,
         "planned_amount": str(entry.entry_amount.quantize(MONEY_QUANT)),
@@ -1031,7 +1049,7 @@ def snapshot_v4_view(request):
             for categoria in categorias
         )
         items.extend(
-            {"resource": "cash_entry", "source_id": _source_id_v4("cash-entry", entry.id), "payload": _lancamento_v4(entry)}
+            {"resource": "cash_entry", "source_id": _source_id_v4("cash-entry", entry.id), "payload": _lancamento_v4(entry, referencia)}
             for entry in lancamentos
         )
         for operacao in operacoes:

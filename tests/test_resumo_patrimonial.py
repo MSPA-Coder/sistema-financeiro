@@ -16,13 +16,14 @@ sobre isso, não sobre formalidade.
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.test import Client
+from django.utils import timezone
 
 from accounts.models import AccountOwner
 from banking.models import FinancialAccount, FinancialInstitution
@@ -688,3 +689,50 @@ def test_v3_filtra_por_id_opaco_e_recusa_referencia_desconhecida(contas, com_tok
     assert resposta.status_code == 200
     assert all(item["conta"]["id"] == conta_id for item in resposta.json()["itens"])
     assert pedir_v3(ROTA_V3_ATIVIDADES, conta="controle-bancario:conta:desconhecida").status_code == 400
+
+
+@pytest.mark.django_db(transaction=True)
+def test_v4_publica_o_status_efetivo_derivado_da_data_e_nao_do_gravado(
+    contas, monkeypatch, tmp_path
+):
+    """O status gravado envelhece: em aberto com vencimento passado segue `a_vencer`
+    até alguém gravar o lançamento. O contrato publica o que vale hoje, para que
+    nenhum consumidor repita a conta (o FinancasMCP a repetia em SQL)."""
+    hoje = timezone.localdate()
+    categoria = CashFlowCategory.objects.create(category_name="Contas do mês")
+    conta = contas["em_reais"]
+
+    def lancar(descricao, dias, status, realizado=False):
+        vencimento = hoje + timedelta(days=dias)
+        return CashFlowEntry.objects.create(
+            account=conta, category=categoria, entry_type=ENTRY_TYPE_EXPENSE,
+            description=descricao, entry_amount=Decimal("10.00"), due_date=vencimento,
+            status=status,
+            realized_date=vencimento if realizado else None,
+            realized_amount=Decimal("10.00") if realizado else None,
+        )
+
+    lancar("vencido que o banco ainda chama de a vencer", -1, STATUS_PROJECTED)
+    lancar("vence hoje", 0, STATUS_PROJECTED)
+    lancar("vence amanha", 1, STATUS_PROJECTED)
+    lancar("vencido gravado como vencido", -5, patrimonio.STATUS_PENDING)
+    lancar("gravado como vencido mas com prazo ainda por vir", 3, patrimonio.STATUS_PENDING)
+    lancar("pago ha 30 dias", -30, STATUS_REALIZED, realizado=True)
+
+    token_v4 = configurar_token_v4(monkeypatch, tmp_path)
+    resposta = Client().get("/patrimonio/v4/snapshot", HTTP_AUTHORIZATION=f"Bearer {token_v4}")
+
+    assert resposta.status_code == 200
+    efetivo = {
+        item["payload"]["description"]: (item["payload"]["status"], item["payload"]["effective_status"])
+        for item in resposta.json()["items"]
+        if item["resource"] == "cash_entry"
+    }
+    assert efetivo["vencido que o banco ainda chama de a vencer"] == (STATUS_PROJECTED, "vencidos")
+    assert efetivo["vence hoje"] == (STATUS_PROJECTED, "a_vencer")
+    assert efetivo["vence amanha"] == (STATUS_PROJECTED, "a_vencer")
+    assert efetivo["vencido gravado como vencido"] == ("vencidos", "vencidos")
+    assert efetivo["gravado como vencido mas com prazo ainda por vir"] == ("vencidos", "a_vencer")
+    assert efetivo["pago ha 30 dias"] == (STATUS_REALIZED, "realizado")
+    # Os lançamentos da fixture são realizados e continuam realizados.
+    assert efetivo["Salário"] == (STATUS_REALIZED, "realizado")
