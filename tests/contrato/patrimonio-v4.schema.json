@@ -79,7 +79,7 @@
     },
 
     "cb_changes": {
-      "allOf": [{ "$ref": "#/$defs/changes" }, { "properties": { "sistema": { "const": "controle-bancario" } } }]
+      "allOf": [{ "$ref": "#/$defs/changes" }, { "type": "object", "properties": { "sistema": { "const": "controle-bancario" } } }]
     },
 
     "cb_conta": {
@@ -212,6 +212,12 @@
         "resources": {
           "type": "object",
           "required": ["account", "cash_entry", "category", "transfer"],
+          "properties": {
+            "account": { "type": "boolean" },
+            "cash_entry": { "type": "boolean" },
+            "category": { "type": "boolean" },
+            "transfer": { "type": "boolean" }
+          },
           "additionalProperties": { "type": "boolean" }
         },
         "decimal_strings": { "const": true },
@@ -297,7 +303,7 @@
     },
 
     "crv_changes": {
-      "allOf": [{ "$ref": "#/$defs/changes" }, { "properties": { "sistema": { "const": "controle-renda-variavel" } } }]
+      "allOf": [{ "$ref": "#/$defs/changes" }, { "type": "object", "properties": { "sistema": { "const": "controle-renda-variavel" } } }]
     },
     "crv_capacidades": {
       "type": "object",
@@ -469,6 +475,11 @@
         "exclusions": {
           "type": "object",
           "required": ["unpriced_holdings", "excluded_simulated", "excluded_options"],
+          "properties": {
+            "unpriced_holdings": { "$ref": "#/$defs/inteiro_nao_negativo" },
+            "excluded_simulated": { "$ref": "#/$defs/inteiro_nao_negativo" },
+            "excluded_options": { "$ref": "#/$defs/inteiro_nao_negativo" }
+          },
           "additionalProperties": { "$ref": "#/$defs/inteiro_nao_negativo" }
         },
         "changes": {
