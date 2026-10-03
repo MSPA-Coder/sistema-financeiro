@@ -1057,7 +1057,12 @@ def _balance_status_q(view_mode: str, today: date) -> Q:
     if view_mode == VIEW_PROJECTED:
         return realized | projected_future
     if view_mode == VIEW_ALL:
-        return realized | pending_overdue | projected_future
+        # "Todos" é a união das outras visões. Faltava `projected_overdue`: o
+        # lançamento com status gravado `a_vencer` e vencimento já passado (o status
+        # só é normalizado quando alguém grava) sumia do saldo de abertura, embora
+        # entrasse na conta do próprio mês e a v3/projection o contasse como vencido.
+        # Ver `tests/test_equivalencia_das_projecoes.py`.
+        return realized | pending_overdue | projected_overdue | projected_future
     return realized
 
 
