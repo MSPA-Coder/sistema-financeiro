@@ -201,10 +201,10 @@ def test_banco_recusa_conta_comum_com_dados_de_cartao(titular, banco):
 
 @pytest.fixture
 def com_token(monkeypatch, tmp_path):
-    arquivo = tmp_path / "patrimonio_token"
+    arquivo = tmp_path / "patrimonio_integration_token"
     arquivo.write_text(TOKEN, encoding="utf-8")
-    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO, raising=False)
-    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO}_FILE", str(arquivo))
+    monkeypatch.delenv(patrimonio.NOME_DO_SEGREDO_V4, raising=False)
+    monkeypatch.setenv(f"{patrimonio.NOME_DO_SEGREDO_V4}_FILE", str(arquivo))
     return TOKEN
 
 
@@ -219,25 +219,17 @@ def contas(usuario, titular, banco, corrente):
     return {"corrente": corrente, "cartao": cartao}
 
 
-def _tipos(itens):
-    return {item["nome"]: item["tipo"] for item in itens}
-
-
 @pytest.mark.django_db(transaction=True)
-def test_resumo_v1_publica_o_tipo_da_conta(contas, com_token):
-    resposta = Client().get(
-        "/patrimonio/v1/resumo", {"data": timezone.localdate().isoformat()}, HTTP_AUTHORIZATION=f"Bearer {TOKEN}"
-    )
+def test_snapshot_v4_publica_o_tipo_da_conta(contas, com_token):
+    resposta = Client().get("/patrimonio/v4/snapshot", HTTP_AUTHORIZATION=f"Bearer {TOKEN}")
 
     assert resposta.status_code == 200
-    assert _tipos(resposta.json()["contas"]) == {"Conta corrente": "conta", "Cartão C6": "cartao_credito"}
-
-
-@pytest.mark.django_db(transaction=True)
-def test_metadata_v3_publica_o_tipo_da_conta(contas, com_token):
-    resposta = Client().get("/patrimonio/v3/metadata", HTTP_AUTHORIZATION=f"Bearer {TOKEN}")
-
-    assert _tipos(resposta.json()["contas"])["Cartão C6"] == "cartao_credito"
+    tipos = {
+        item["payload"]["name"]: item["payload"]["account_type"]
+        for item in resposta.json()["items"]
+        if item["resource"] == "account"
+    }
+    assert tipos == {"Conta corrente": "conta", "Cartão C6": "cartao_credito"}
 
 
 def test_projecao_publica_o_tipo_e_o_saldo_negativo_do_cartao(contas):

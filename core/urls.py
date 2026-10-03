@@ -11,12 +11,9 @@ urlpatterns = [
 
     # Versão no caminho, e não em cabeçalho: o consolidador é outro deployable,
     # com outro ciclo de vida, e uma mudança incompatível aqui precisa poder
-    # conviver com a versão antiga enquanto ele não é atualizado.
-    path("patrimonio/v1/resumo", patrimonio.resumo_view, name="resumo_patrimonial"),
-    path("patrimonio/v2/resumo", patrimonio.resumo_v2_view, name="resumo_patrimonial_v2"),
-    path("patrimonio/v3/activities", patrimonio.atividades_v3_view, name="atividades_patrimoniais_v3"),
-    path("patrimonio/v3/categories", patrimonio.categorias_v3_view, name="categorias_patrimoniais_v3"),
-    path("patrimonio/v3/metadata", patrimonio.metadata_v3_view, name="metadata_patrimonial_v3"),
+    # conviver com a versão antiga enquanto ele não é atualizado. O v1 a v3
+    # (resumo, fluxos, atividades, categorias e metadata) foi retirado em
+    # 03/10/2026; só a projeção v3 fica, reservada para a projeção consolidada.
     path("patrimonio/v3/projection", patrimonio.projecao_v3_view, name="projecao_patrimonial_v3"),
     path("patrimonio/v4/metadata", patrimonio.metadata_v4_view, name="metadata_patrimonial_v4"),
     path("patrimonio/v4/changes", patrimonio.changes_v4_view, name="changes_patrimonial_v4"),
