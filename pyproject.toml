@@ -47,6 +47,9 @@ dev = [
   # Os testes de configuração carregam o compose e conferem a propriedade, em
   # vez de procurar um trecho do texto (docs/TESTES.md, T4).
   "pyyaml>=6,<7",
+  # O contrato patrimonio/v4 tem um JSON Schema (tests/contrato/); os testes
+  # validam a saída real das rotas contra ele.
+  "jsonschema>=4.23,<5",
 ]
 
 # Ao contrario dos irmaos Flask, que tem um unico pacote `app`, aqui a

@@ -28,7 +28,7 @@ x-app-environment: &app-environment
   DB_EXIGIR_PAPEL_RESTRITO: "1"
   POSTGRES_DB: ${POSTGRES_DB:-controle_bancario}
   DJANGO_SECRET_KEY_FILE: /run/secrets/django_secret_key
-  # Token da rota /patrimonio/v1/resumo, lida pelo consolidador. A integração é
+  # Token da rota /patrimonio/v3/projection (a projeção de caixa). A integração é
   # opcional: sem um token utilizável a rota responde 503 e nada mais muda.
   PATRIMONIO_TOKEN_FILE: /run/secrets/patrimonio_token
   REQUIRE_FILE_SECRETS: "true"

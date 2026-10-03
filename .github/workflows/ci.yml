@@ -34,6 +34,15 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # O contrato patrimonio/v4 tem uma cópia canônica em
+      # manutencao/docs/contratos/, e a daqui (tests/contrato/) tem de ser
+      # idêntica. Só na rodada semanal: depende da rede, e uma indisponibilidade do
+      # GitHub não deve travar um PR nem o portão do deploy (que usa o dispatch).
+      - name: Conferir que o schema do v4 é igual ao canônico
+        if: github.event_name == 'schedule'
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/MSPA-Coder/manutencao/main/docs/contratos/patrimonio-v4.schema.json" -o "$RUNNER_TEMP/canonico.json"
+          diff -u "$RUNNER_TEMP/canonico.json" tests/contrato/patrimonio-v4.schema.json
       - name: Criar CA efêmera para o build
         run: |
           mkdir -p .certs
