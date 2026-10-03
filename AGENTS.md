@@ -142,6 +142,9 @@ as mesmas verificações e o mesmo isolamento.
 
 PostgreSQL é a fonte de verdade relacional. Bancos novos nascem por
 `manage.py migrate`, e toda alteração de schema exige migration Django revisada.
+Colunas lidas pelo esquema `leitura` (ver `docs/architecture.md`) não podem ser
+removidas nem ter o tipo trocado sem recriar a view na mesma migração: o
+PostgreSQL recusa, de propósito.
 
 Antes de mudança destrutiva, conversão de dados ou manutenção de dados reais,
 faça backup validado pelo BackupRestore:
