@@ -183,9 +183,10 @@ def test_dashboard_por_grupo_abre_e_informa_o_modo(cenario):
     assert resposta.status_code == 200
     assert resposta.context["chart_data"]["catMode"] == "grupo"
     assert "Saúde" in resposta.context["chart_data"]["catLabels"]
-    assert "Distribuição por Grupo" in resposta.content.decode()
     padrao = client.get(reverse("dashboard:dashboard"), {"mode": "realizado"})
-    assert padrao.context["chart_data"]["catMode"] == "categoria"
+    assert padrao.context["chart_data"]["catMode"] == "grupo"
+    por_categoria = client.get(reverse("dashboard:dashboard"), {"categorias": "categoria", "mode": "realizado"})
+    assert por_categoria.context["chart_data"]["catMode"] == "categoria"
 
 
 def test_planejamento_anual_agrupado_mostra_a_linha_do_grupo(cenario):

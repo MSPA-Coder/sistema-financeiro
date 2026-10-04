@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% load static %}
+{% load money_filters %}
+
+{% block title %}Banking • Extrato{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/bank-imports.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>📄 Extrato da conta</h1>
+        <p>{{ conta.owner.name }} / {{ conta.institution.institution_name }} / {{ conta.account_name }} · {{ lote.source_filename }}</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="chart-card u-mb-1">
+    <h3>Resumo do arquivo</h3>
+    <table class="tx-table">
+        <tbody>
+            <tr><td>Importado em</td><td>{{ lote.created_at|date:"d/m/Y H:i" }}</td></tr>
+            <tr><td>Linhas</td><td>{{ importado.total }}: {{ importado.conciliadas }} conciliada{{ importado.conciliadas|pluralize }},
+                {{ importado.ignoradas }} ignorada{{ importado.ignoradas|pluralize }}, {{ importado.novas }} pendente{{ importado.novas|pluralize }}</td></tr>
+            <tr><td>Saldo do extrato × CB</td><td>
+                {% if importado.conferencia %}
+                    {% if importado.conferencia.bate %}
+                    <strong class="amount amount-positive">Bate em {{ importado.conferencia.data|date:"d/m/Y" }}: {{ importado.conferencia.saldo_do_extrato|money:conta.currency }}</strong>
+                    {% else %}
+                    <strong class="amount amount-negative">Extrato {{ importado.conferencia.saldo_do_extrato|money:conta.currency }} · CB {{ importado.conferencia.saldo_no_cb|money:conta.currency }} em {{ importado.conferencia.data|date:"d/m/Y" }} · diferença {{ importado.conferencia.diferenca|money:conta.currency }}</strong>
+                    {% endif %}
+                {% else %}
+                <span class="empty-state">O arquivo não informa saldo</span>
+                {% endif %}
+            </td></tr>
+        </tbody>
+    </table>
+    {% if importado.novas %}
+    <p class="help-text">{{ importado.novas }} linha(s) pendente(s): concilie em
+        <a href="{% url 'bank_statements:reconciliation_view' %}">Conciliação</a>.</p>
+    {% endif %}
+</div>
+
+<div class="table-container u-mb-1">
+    <h3 class="u-mb-075">Linhas do extrato</h3>
+    {% if linhas %}
+    <table class="tx-table">
+        <thead>
+            <tr><th>Data</th><th>Descrição</th><th>Valor</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+        {% for linha in linhas %}
+            <tr>
+                <td>{{ linha.statement_date|date:"d/m/Y" }}</td>
+                <td>{{ linha.description }}</td>
+                <td class="amount {{ linha.amount|amount_class }}">{{ linha.amount|money_signed:conta.currency }}</td>
+                <td>{{ linha.get_status_display }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% if importado.total > limite %}
+    <p class="help-text">Mostrando as primeiras {{ limite }} de {{ importado.total }} linhas.</p>
+    {% endif %}
+    {% else %}
+    <p class="empty-state">Este extrato não tem linhas.</p>
+    {% endif %}
+    <p><a href="{% url 'bank_statements:extratos' %}">Ver todos os extratos</a> · <a href="{% url 'bank_statements:imports_view' %}">Voltar para a importação</a></p>
+</div>
+{% endblock %}

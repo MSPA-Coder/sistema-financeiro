@@ -20,10 +20,12 @@ from . import (
     extrato,
     fatura,
     fatura_projetada,
+    painel_de_extratos,
     pending_imports,
     reclassificacao,
     reconciliation,
     saldo,
+    situacao,
 )
 from .attachments import (
     attachment_download_path,
@@ -199,8 +201,75 @@ def fatura_view(request, batch_id):
 @login_required
 @permission_required('banking.view')
 def faturas_view(request):
-    """Banking › Faturas: cada cartão com saldo, faturas importadas e projeção."""
+    """Faturas e projeção: cada cartão com saldo, faturas importadas e projeção."""
     return render(request, 'banking/faturas.html', {"paineis": fatura_projetada.paineis(request.user)})
+
+
+@login_required
+@permission_required('banking.view')
+def extratos_view(request):
+    """Extratos importados: cada conta (fora cartão) com saldo e extratos importados."""
+    return render(request, 'banking/extratos.html', {"paineis": painel_de_extratos.paineis(request.user)})
+
+
+@login_required
+@permission_required('banking.view')
+def extrato_view(request, batch_id):
+    """Um extrato importado: as linhas do lote e o status de cada uma."""
+    try:
+        importado = painel_de_extratos.extrato_do_lote(request.user, batch_id)
+    except ValueError as exc:
+        messages.warning(request, str(exc))
+        return redirect('bank_statements:extratos')
+    lote = importado.lote
+    return render(request, 'banking/extrato.html', {
+        "importado": importado,
+        "lote": lote,
+        "conta": lote.account,
+        "linhas": painel_de_extratos.linhas_do_extrato(lote),
+        "limite": painel_de_extratos.LIMITE_DE_LINHAS,
+    })
+
+
+def _mes_do_get(valor) -> date | None:
+    try:
+        ano, mes = str(valor).split('-')
+        return date(int(ano), int(mes), 1)
+    except ValueError:
+        return None
+
+
+def _destino_da_celula(conta, celula) -> str:
+    """Onde resolver a célula: importar o que falta, conciliar o pendente, ver o que já está feito."""
+    if celula.estado == situacao.SEM_IMPORTACAO:
+        return reverse('bank_statements:imports_view')
+    if celula.estado == situacao.SALDO_INFORMADO and not celula.lote_id:
+        return reverse('bank_statements:atualizar_saldo')
+    if celula.estado == situacao.COM_PENDENCIAS and not conta.is_credit_card:
+        return reverse('bank_statements:reconciliation_view')  # linha de cartão só se resolve na fatura
+    if celula.lote_id:
+        return reverse('bank_statements:fatura' if conta.is_credit_card else 'bank_statements:extrato', args=[celula.lote_id])
+    return ""
+
+
+@login_required
+@permission_required('banking.view')
+def situacao_das_contas_view(request):
+    """Situação das Contas: conta × mês, importado e conciliado."""
+    try:
+        quantos = int(request.GET.get('meses', situacao.MESES_PADRAO))
+    except ValueError:
+        quantos = situacao.MESES_PADRAO
+    matriz = situacao.montar(request.user, quantos=quantos, referencia=_mes_do_get(request.GET.get('ref')))
+    for linha in matriz.linhas:
+        for celula in linha.celulas:
+            celula.url = _destino_da_celula(linha.conta, celula)
+    return render(request, 'banking/situacao_das_contas.html', {
+        "matriz": matriz,
+        "quantos": len(matriz.meses),
+        "opcoes_de_meses": situacao.MESES_PERMITIDOS,
+        "legenda": [(e, *situacao.ROTULOS[e]) for e in situacao.ESTADOS_EM_ORDEM],
+    })
 
 
 @login_required

@@ -238,7 +238,7 @@ de um portador, o nome de quem comprou vai para a descrição.
 
 ### Reclassificação em lote
 
-Banking > Reclassificação (`bank_statements/reclassificacao.py`, permissão
+Movimentação > Reclassificação (`bank_statements/reclassificacao.py`, permissão
 `banking.reclassify`) troca a categoria de vários lançamentos gerenciais de uma
 vez; transferência e movimentação ficam de fora. A prévia mostra tudo antes de
 gravar:
@@ -286,9 +286,29 @@ uma fatura, ao salvar o cartão ou os Parâmetros e a cada execução da projeç
 de recorrências. Marcado como realizado, o lançamento projetado deixa de ser
 projeção: a chave ganha o prefixo `realizado-` e ele fica.
 
-Banking › Faturas (`/banking/cards/`) reúne, por cartão, o saldo realizado, as
+Faturas e projeção (Movimentação › Importação, `/banking/cards/`) reúne, por cartão, o saldo realizado, as
 últimas faturas importadas (com o link para cada uma) e as próximas faturas
 projetadas.
+
+Extratos importados (Movimentação › Importação, `/banking/statements/`) é o equivalente para as contas que não
+são cartão: por conta, o saldo realizado e os últimos extratos importados, cada um
+com as linhas por status (conciliadas, ignoradas, pendentes) e a conferência do
+saldo do arquivo contra o do CB. O detalhe (`/banking/import/<id>/extrato/`) lista
+as linhas do lote. Não há extrato projetado, e o lote de cartão é recusado: ele
+vive em Faturas e projeção. É só leitura; quem importa e concilia são Importar
+extratos e faturas e Conciliação.
+
+Situação das Contas (Movimentação › Importação, `/banking/status/`) é a matriz conta × mês do que
+já foi importado e conciliado (`bank_statements/situacao.py`). O mês da célula é o
+da data da linha do extrato ou da fatura, não o da importação. Estados: *sem
+importação* (nenhuma linha no mês), *com pendências* (alguma linha ainda "nova"),
+*conciliado* (linhas, nenhuma pendente), *saldo informado* (sem linhas, mas com
+lançamento de Saldo Aplicações no mês, o que resta de uma aplicação sem extrato
+linha a linha) e *não se aplica* (sem linhas e mês que termina antes do saldo
+inicial da conta). O resumo conta as contas a que o mês de referência se aplica;
+por padrão ele é o mês anterior, porque o corrente ainda está em andamento. Cada
+célula leva ao que a resolve: Importar extratos e faturas, Conciliação (conta), a fatura
+(cartão) ou o extrato. Ambas as telas exigem `banking.view`.
 
 ## Fechamento mensal
 
@@ -351,11 +371,11 @@ o aluguel de ações de "Rendimentos"). A regra explícita (`StatementRule`,
 sinal, nunca por id.
 
 O arquivo pode informar o saldo (`LEDGERBAL` do OFX, "Saldo final" da Genial e do
-Mercado Pago). Ele é guardado no lote e conferido, na tela de Importações, com o
+Mercado Pago). Ele é guardado no lote e conferido, nas telas Importar extratos e faturas e Extratos importados, com o
 saldo realizado do CB na mesma data; a diferença aponta linha faltando ou sobrando
 em qualquer ponto do histórico. Não entra no hash da linha.
 
-### Atualizar saldo
+### Saldo Aplicações (antes "Atualizar saldo")
 
 Para o que o extrato não mostra linha a linha (rendimento de CDB, cofrinho,
 conta remunerada), o usuário informa o saldo real de uma conta numa data e a

@@ -2,7 +2,7 @@
 {% load static %}
 {% load money_filters %}
 
-{% block title %}Banking • Faturas{% endblock %}
+{% block title %}Banking • Faturas e projeção{% endblock %}
 
 {% block styles %}
 <link rel="stylesheet" href="{% static 'css/pages/bank-imports.css' %}">
@@ -11,7 +11,7 @@
 {% block page_header %}
 <div class="page-header-title">
     <div>
-        <h1>💳 Faturas</h1>
+        <h1>💳 Faturas e projeção</h1>
         <p>Cartões de crédito: saldo em aberto, faturas importadas e as próximas faturas projetadas.</p>
     </div>
 </div>
@@ -46,7 +46,7 @@
     </table>
     {% else %}
     <p class="empty-state">Nenhuma fatura importada. Envie o CSV em
-        <a href="{% url 'bank_statements:imports_view' %}">Importação de extrato</a>.</p>
+        <a href="{% url 'bank_statements:imports_view' %}">Importar extratos e faturas</a>.</p>
     {% endif %}
 
     {% if projetadas %}

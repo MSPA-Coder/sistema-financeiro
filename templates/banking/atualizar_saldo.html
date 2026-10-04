@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static contas %}
 {% load money_filters %}
 
-{% block title %}Banking • Atualizar saldo{% endblock %}
+{% block title %}Banking • Saldo Aplicações{% endblock %}
 
 {% block styles %}
 <link rel="stylesheet" href="{% static 'css/pages/bank-imports.css' %}">
@@ -11,7 +11,7 @@
 {% block page_header %}
 <div class="page-header-title">
     <div>
-        <h1>💰 Atualizar saldo</h1>
+        <h1>💰 Saldo Aplicações</h1>
         <p>Informe o saldo real de uma conta numa data. A diferença para o saldo do CB vira um lançamento realizado,
             com destino explícito (rendimento, IR/IOF, perda ou ajuste assumido), em vez de mexer no saldo inicial.</p>
     </div>
@@ -27,8 +27,12 @@
         <label>Conta
             <select name="conta" required>
                 <option value="">Selecione…</option>
-                {% for conta in contas %}
-                <option value="{{ conta.id }}" {% if escolhas.conta == conta.id|stringformat:"s" %}selected{% endif %}>{{ conta.owner.name }} / {{ conta.institution.institution_name }} / {{ conta.account_name }}</option>
+                {% for titular, contas_do_titular in contas|por_titular %}
+                <optgroup label="{{ titular }}">
+                    {% for conta in contas_do_titular %}
+                    <option value="{{ conta.id }}" {% if escolhas.conta == conta.id|stringformat:"s" %}selected{% endif %}>{{ conta.institution.institution_name }} / {{ conta.account_name }}</option>
+                    {% endfor %}
+                </optgroup>
                 {% endfor %}
             </select>
         </label>

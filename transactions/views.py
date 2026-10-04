@@ -559,7 +559,7 @@ def _respond_categories(request):
 @permission_required('operations.view')
 @recusa_moedas_misturadas
 def operations_view(request):
-    """Movimentação > Lançamentos n+1: agrupa parcelas, recorrências e
+    """Movimentação > Parcelas e Recorrências: agrupa parcelas, recorrências e
     pares de transferência interna por operation_id, com suporte a HTMX."""
     operation_type = request.GET.get('operation_type', '')
     status = request.GET.get('status', '')

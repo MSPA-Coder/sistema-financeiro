@@ -941,10 +941,12 @@ html[data-values-hidden="true"] .health-metric-value:not([data-sensitive-value="
     padding: 1rem;
     border-radius: var(--radius);
     box-shadow: var(--shadow-sm);
-    min-height: 280px;
     display: flex;
     flex-direction: column;
 }
+/* Altura mínima só onde há gráfico: o card de formulário, tabela ou aviso
+   encolhe ao conteúdo, em vez de reservar espaço que nunca terá dados. */
+.chart-card:has(canvas) { min-height: 280px; }
 .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.65rem; }
 .chart-header h4 { margin: 0; color: var(--muted); font-size: 0.88rem; font-weight: 700; }
 

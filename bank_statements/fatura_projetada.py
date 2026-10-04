@@ -383,7 +383,7 @@ def atualizar_todos(*, hoje: date | None = None, fim: date | None = None) -> int
 
 @dataclass
 class PainelDoCartao:
-    """O que Banking › Faturas mostra de um cartão."""
+    """O que Faturas e projeção mostra de um cartão."""
 
     conta: FinancialAccount
     saldo: Decimal

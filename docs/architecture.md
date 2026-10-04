@@ -72,6 +72,20 @@ URL atual para links, formulários GET e requisições HTMX, completando só o q
 o destino não traz. O menu lateral e a faixa "Mostrando só..." ficam fora de
 `#appMain`, porque os filtros globais trocam de página e não de fragmento.
 
+### Menu lateral
+
+A árvore sai de `_build_menu_items()` em `core/context_processors.py`, e cada item
+carrega a permissão que o libera. Três regras, todas guardadas por teste:
+
+- um grupo é só um botão que abre os filhos, mas a rota dele precisa existir
+  (`test_permissoes_por_rota`); por convenção ele aponta para o primeiro filho;
+- um grupo sem nenhum filho permitido some, em vez de virar um link morto;
+- o destaque vem de `active_prefix` (ou igualdade exata, `exact_match`) e de
+  `active_patterns`, expressões para as telas de detalhe cujo endereço não
+  começa pelo prefixo do item, como `/banking/import/<id>/fatura/`. Um grupo
+  não usa um prefixo que outros itens fora dele também usam: ficaria aceso em
+  telas que não são dele.
+
 ### Dashboard
 
 O painel não tem cálculo próprio: meses, receitas, despesas, geração e saldo
@@ -94,8 +108,9 @@ urls -> views -> services -> models -> PostgreSQL
   comprovantes. `classificacao.py` aprende a categoria pelo histórico (usado
   também pela fatura), `extrato.py` decide o que cada linha pendente vira
   (conciliar, criar, transferência pareada), `regras.py` aplica as regras
-  explícitas, `saldo.py` é o Atualizar saldo, e `pares_proprios.py` e
-  `familias.py` são as manutenções de dados com simulação;
+  explícitas, `saldo.py` é o Saldo Aplicações (antes Atualizar saldo), `painel_de_extratos.py`
+  e `situacao.py` são as telas só de leitura Extratos e Situação das Contas, e
+  `pares_proprios.py` e `familias.py` são as manutenções de dados com simulação;
 - `management/`: tags, projetos e orçamentos;
 - `reports/` e `dashboard/`: consultas e apresentação analítica;
 - `core/`: configuração da aplicação, auditoria, segurança e serviços comuns;
