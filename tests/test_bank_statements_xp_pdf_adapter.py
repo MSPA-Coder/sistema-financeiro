@@ -200,6 +200,7 @@ TEXTO_XP = (
 )
 
 
+@pytest.mark.django_db
 def test_a_conta_e_detectada_pelo_numero_mesmo_com_o_nome_antigo_da_instituicao(conta_scp, monkeypatch):
     from bank_statements import pending_imports
 
@@ -214,6 +215,7 @@ def test_a_conta_e_detectada_pelo_numero_mesmo_com_o_nome_antigo_da_instituicao(
     assert rotulo == "SCP XP Investimestos · conta 323220"
 
 
+@pytest.mark.django_db
 def test_importar_o_pdf_grava_as_linhas_com_o_sinal_certo_e_reimportar_nao_duplica(conta_scp, monkeypatch):
     from bank_statements.models import BankStatementLine
     from bank_statements.services import import_statement_file
