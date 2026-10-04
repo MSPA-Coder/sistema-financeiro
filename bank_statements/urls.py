@@ -8,12 +8,15 @@ app_name = 'bank_statements'
 urlpatterns = [
     path('banking/imports/', views.imports_view, name='imports_view'),
     path('banking/cards/', views.faturas_view, name='faturas'),
+    path('banking/statements/', views.extratos_view, name='extratos'),
+    path('banking/status/', views.situacao_das_contas_view, name='situacao_das_contas'),
     path('banking/imports/stage/', views.stage_imports_view, name='stage_imports'),
     path('banking/imports/confirm/', views.confirm_imports_view, name='confirm_imports'),
     path('banking/imports/confirm/process/', views.process_imports_view, name='process_imports'),
     path('banking/import/status/<int:batch_id>/', views.import_status_view, name='import_status'),
     path('banking/import/<int:batch_id>/undo/', views.undo_import_view, name='undo_import'),
     path('banking/import/<int:batch_id>/fatura/', views.fatura_view, name='fatura'),
+    path('banking/import/<int:batch_id>/extrato/', views.extrato_view, name='extrato'),
     path('banking/import/<int:batch_id>/fatura/processar/', views.processar_fatura_view, name='processar_fatura'),
 
     path('banking/reconciliation/', views.reconciliation_view, name='reconciliation_view'),

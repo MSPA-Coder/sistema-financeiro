@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% load static %}
+{% load money_filters %}
+
+{% block title %}Banking • Extratos importados{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/bank-imports.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>📄 Extratos importados</h1>
+        <p>Contas correntes e aplicações: saldo realizado, extratos importados e quanto de cada um já foi conciliado.</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% for painel in paineis %}
+{% with conta=painel.conta %}
+<div class="chart-card u-mb-1">
+    <h2>{{ conta.account_name }}</h2>
+    <p class="help-text">{{ conta.owner.name }} / {{ conta.institution.institution_name }}
+        {% if conta.statement_identifier %}· identificador do extrato {{ conta.statement_identifier }}{% endif %}</p>
+    <p>Saldo realizado hoje: <strong class="{{ painel.saldo|amount_class }}">{% if painel.saldo %}{{ painel.saldo|money_signed:conta.currency }}{% else %}zerado{% endif %}</strong></p>
+
+    <h3>Extratos importados</h3>
+    {% if painel.extratos %}
+    <table class="tx-table u-mb-1">
+        <thead>
+            <tr><th>Importado em</th><th>Arquivo</th><th>Linhas</th><th>Conciliação</th><th>Saldo do extrato × CB</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for extrato in painel.extratos %}
+            <tr>
+                <td>{{ extrato.lote.created_at|date:"d/m/Y" }}</td>
+                <td>{{ extrato.lote.source_filename }}</td>
+                <td>{{ extrato.total }}</td>
+                <td>
+                    {% if extrato.em_dia %}<span class="amount amount-positive">✔ Conciliado</span>
+                    {% elif extrato.novas %}<span class="amount amount-negative">⚠ {{ extrato.novas }} pendente{{ extrato.novas|pluralize }}</span>
+                    {% else %}<span class="empty-state">Sem linhas</span>{% endif %}
+                </td>
+                <td>
+                    {% if extrato.conferencia %}
+                        {% if extrato.conferencia.bate %}
+                        <span class="amount amount-positive">Bate em {{ extrato.conferencia.data|date:"d/m/Y" }}: {{ extrato.conferencia.saldo_do_extrato|money:conta.currency }}</span>
+                        {% else %}
+                        <span class="amount amount-negative">Extrato {{ extrato.conferencia.saldo_do_extrato|money:conta.currency }} · CB {{ extrato.conferencia.saldo_no_cb|money:conta.currency }} em {{ extrato.conferencia.data|date:"d/m/Y" }} · diferença {{ extrato.conferencia.diferenca|money:conta.currency }}</span>
+                        {% endif %}
+                    {% else %}
+                    <span class="empty-state">O arquivo não informa saldo</span>
+                    {% endif %}
+                </td>
+                <td><a href="{% url 'bank_statements:extrato' extrato.lote.id %}">Ver extrato</a></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">Nenhum extrato importado. Envie o arquivo em
+        <a href="{% url 'bank_statements:imports_view' %}">Importar extratos e faturas</a>.</p>
+    {% endif %}
+</div>
+{% endwith %}
+{% empty %}
+<div class="chart-card">
+    <p class="empty-state">Nenhuma conta corrente ou aplicação cadastrada. Os cartões de crédito ficam em
+        <a href="{% url 'bank_statements:faturas' %}">Faturas</a>.</p>
+</div>
+{% endfor %}
+{% endblock %}

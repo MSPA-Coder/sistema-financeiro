@@ -11,16 +11,14 @@
         {% if current_owner_id %}<input type="hidden" name="owner_id" value="{{ current_owner_id }}">{% endif %}
         {% if current_institution_id %}<input type="hidden" name="institution_id" value="{{ current_institution_id }}">{% endif %}
         {% if current_account_id %}<input type="hidden" name="account_id" value="{{ current_account_id }}">{% endif %}
-        <span data-ui="filter-type-label">Tipo:</span>
-        <select name="filter_type" class="filter-select" aria-label="Tipo">
+        <select name="filter_type" class="filter-select" aria-label="Tipo: receita ou despesa">
             <option value="receita" {% if filter_type == 'receita' %}selected{% endif %}>Receita</option>
             <option value="despesa" {% if filter_type == 'despesa' %}selected{% endif %}>Despesa</option>
         </select>
         {% if show_group_choice %}
-        <span data-ui="filter-type-label">Ver por:</span>
-        <select name="categorias" class="filter-select" aria-label="Agrupar a distribuição">
-            <option value="categoria" {% if categorias_modo != 'grupo' %}selected{% endif %}>Categoria</option>
+        <select name="categorias" class="filter-select" aria-label="Ver por categoria ou grupo">
             <option value="grupo" {% if categorias_modo == 'grupo' %}selected{% endif %}>Grupo</option>
+            <option value="categoria" {% if categorias_modo != 'grupo' %}selected{% endif %}>Categoria</option>
         </select>
         {% endif %}
     </form>

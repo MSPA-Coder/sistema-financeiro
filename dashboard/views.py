@@ -267,7 +267,8 @@ def dashboard_view(request):
 		if month_start <= entry_date_for_view_mode(entry, view_mode) < next_month
 	]
 
-	por_grupo = (request.GET.get("categorias") or "").strip().lower() == "grupo"
+	# O padrão é por grupo: dezenas de categorias não cabem numa rosca.
+	por_grupo = (request.GET.get("categorias") or "grupo").strip().lower() != "categoria"
 	categorias = _categorias(month_entries, view_mode, filter_type, por_grupo)
 	saldo_diario = _saldo_diario(account_ids, month_start, next_month, view_mode, month_entries)
 

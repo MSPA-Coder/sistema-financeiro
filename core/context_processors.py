@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -25,6 +26,9 @@ class MenuItem:
     required_permission: str = ""
     requires_staff: bool = False
     exact_match: bool = False
+    # Expressões (re.match no caminho) que também realçam o item: telas de detalhe cujo
+    # endereço não começa pelo prefixo do item, como /banking/import/<id>/fatura/.
+    active_patterns: tuple[str, ...] = ()
     children: tuple[MenuItem, ...] = ()
 
 
@@ -45,31 +49,25 @@ def _build_menu_items() -> list[MenuItem]:
                     required_permission="transactions.view",
                 ),
                 MenuItem(
-                    "Lançamentos n+1",
-                    "/operations/",
-                    "\U0001F9E9",
-                    "/operations/",
-                    required_permission="operations.view",
+                    "Saldo Aplicações",
+                    "/banking/balance/",
+                    "\U0001F4B0",
+                    "/banking/balance/",
+                    required_permission="banking.reconcile",
                 ),
                 MenuItem(
-                    "Banking",
-                    "/banking/attachments/",
+                    "Importação",
+                    "/banking/imports/",
                     "\U0001F3E6",
-                    "/banking/",
+                    "/banking/imports/",
+                    exact_match=True,
                     children=(
                         MenuItem(
-                            "Importação de extrato",
+                            "Importar extratos e faturas",
                             "/banking/imports/",
                             "\U0001F4E5",
                             "/banking/imports/",
                             required_permission="banking.import",
-                        ),
-                        MenuItem(
-                            "Faturas",
-                            "/banking/cards/",
-                            "\U0001F4B3",
-                            "/banking/cards/",
-                            required_permission="banking.view",
                         ),
                         MenuItem(
                             "Conciliação",
@@ -79,34 +77,57 @@ def _build_menu_items() -> list[MenuItem]:
                             required_permission="banking.reconcile",
                         ),
                         MenuItem(
-                            "Atualizar saldo",
-                            "/banking/balance/",
-                            "\U0001F4B0",
-                            "/banking/balance/",
-                            required_permission="banking.reconcile",
+                            "Extratos importados",
+                            "/banking/statements/",
+                            "\U0001F4C4",
+                            "/banking/statements/",
+                            required_permission="banking.view",
+                            active_patterns=(r"^/banking/import/\d+/extrato/",),
                         ),
                         MenuItem(
-                            "Reclassificação",
-                            "/banking/reclassification/",
-                            "\U0001F3F7",
-                            "/banking/reclassification/",
-                            required_permission="banking.reclassify",
+                            "Faturas e projeção",
+                            "/banking/cards/",
+                            "\U0001F4B3",
+                            "/banking/cards/",
+                            required_permission="banking.view",
+                            active_patterns=(r"^/banking/import/\d+/fatura/",),
                         ),
                         MenuItem(
-                            "Comprovantes",
-                            "/banking/attachments/",
-                            "\U0001F4CE",
-                            "/banking/attachments/",
-                            required_permission="banking.attachments.manage",
-                        ),
-                        MenuItem(
-                            "Fechamento mensal",
-                            "/settings/monthly-close/",
-                            "\U0001F4C5",
-                            "/settings/monthly-close/",
-                            required_permission="settings.monthly_close.manage",
+                            "Situação das Contas",
+                            "/banking/status/",
+                            "\U0001F6A6",
+                            "/banking/status/",
+                            required_permission="banking.view",
                         ),
                     ),
+                ),
+                MenuItem(
+                    "Reclassificação",
+                    "/banking/reclassification/",
+                    "\U0001F3F7",
+                    "/banking/reclassification/",
+                    required_permission="banking.reclassify",
+                ),
+                MenuItem(
+                    "Fechamento Mensal",
+                    "/settings/monthly-close/",
+                    "\U0001F4C5",
+                    "/settings/monthly-close/",
+                    required_permission="settings.monthly_close.manage",
+                ),
+                MenuItem(
+                    "Parcelas e Recorrências",
+                    "/operations/",
+                    "\U0001F9E9",
+                    "/operations/",
+                    required_permission="operations.view",
+                ),
+                MenuItem(
+                    "Comprovantes",
+                    "/banking/attachments/",
+                    "\U0001F4CE",
+                    "/banking/attachments/",
+                    required_permission="banking.attachments.manage",
                 ),
             ),
         ),
@@ -230,7 +251,13 @@ def _serialize_menu_item(item: MenuItem, user, path: str, level: int = 0):
         if serialized is not None:
             child_items.append(serialized)
 
+    # Grupo sem nenhum filho permitido some: renderizado sem filhos, viraria um link morto.
+    if item.children and not child_items:
+        return None
+
     is_active = path == item.active_prefix if item.exact_match else path.startswith(item.active_prefix)
+    if not is_active:
+        is_active = any(re.match(padrao, path) for padrao in item.active_patterns)
     if not is_active:
         is_active = any(child.get("active", False) for child in child_items)
 

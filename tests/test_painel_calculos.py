@@ -120,7 +120,7 @@ def _mes(contexto, chave, periodo=PERIODO):
 
 
 def test_transferencia_nao_e_receita_nem_despesa(cenario, painel):
-    contexto = painel()
+    contexto = painel(categorias="categoria")
 
     assert _mes(contexto, "chartIncome") == 3000.0
     assert _mes(contexto, "chartExpense") == 650.0  # 250 + 100 + 300

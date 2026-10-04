@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Banking • Situação das Contas{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'css/pages/bank-imports.css' %}">
+<link rel="stylesheet" href="{% static 'css/pages/situacao-contas.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-title">
+    <div>
+        <h1>🚦 Situação das Contas</h1>
+        <p>Para cada conta e mês: se o extrato (ou a fatura) foi importado e se as linhas já foram conciliadas.</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% with resumo=matriz.resumo %}
+<div class="chart-card u-mb-1">
+    <div class="situacao-resumo-topo">
+        <h3>Resumo de {{ resumo.mes|date:"F/Y" }}</h3>
+        <nav class="situacao-periodo" aria-label="Período da matriz">
+            {% for opcao in opcoes_de_meses %}
+            <a href="?meses={{ opcao }}&amp;ref={{ resumo.mes|date:'Y-m' }}" class="btn btn-sm {% if opcao == quantos %}btn-primary{% else %}btn-ghost{% endif %}"
+               {% if opcao == quantos %}aria-current="true"{% endif %}>{{ opcao }} meses</a>
+            {% endfor %}
+        </nav>
+    </div>
+    {% if resumo.aplicaveis %}
+    <div class="situacao-cartoes">
+        <div class="situacao-cartao situacao-cartao-ok"><strong>{{ resumo.em_dia }}</strong><span>de {{ resumo.aplicaveis }} contas em dia</span></div>
+        <div class="situacao-cartao situacao-cartao-pendente"><strong>{{ resumo.pendentes }}</strong><span>com pendências</span></div>
+        <div class="situacao-cartao situacao-cartao-falta"><strong>{{ resumo.sem_importacao }}</strong><span>sem importação</span></div>
+    </div>
+    <p class="situacao-progresso">
+        <progress max="{{ resumo.aplicaveis }}" value="{{ resumo.em_dia }}" aria-label="Contas em dia">{{ resumo.percentual }}%</progress>
+        <span>{{ resumo.percentual }}% importado e conciliado</span>
+    </p>
+    {% else %}
+    <p class="empty-state">Nenhuma conta a que este mês se aplique.</p>
+    {% endif %}
+    <p class="help-text">Escolha o mês do resumo clicando no título da coluna. O mês corrente está em andamento: os extratos costumam sair depois que ele acaba.</p>
+</div>
+
+<ul class="situacao-legenda" aria-label="Legenda">
+    {% for estado, icone, rotulo in legenda %}
+    <li class="situacao-celula situacao-{{ estado }}"><span aria-hidden="true">{{ icone }}</span> {{ rotulo }}</li>
+    {% endfor %}
+</ul>
+
+<div class="table-container u-mb-1 situacao-rolagem">
+    <table class="tx-table situacao-matriz">
+        <thead>
+            <tr>
+                <th scope="col" class="situacao-conta">Conta</th>
+                {% for mes in matriz.meses %}
+                <th scope="col" class="{% if mes == resumo.mes %}situacao-referencia{% endif %}">
+                    <a href="?meses={{ quantos }}&amp;ref={{ mes|date:'Y-m' }}" title="Resumir {{ mes|date:'F \d\e Y' }}">{{ mes|date:"M/y" }}</a>
+                    {% if mes.year == matriz.hoje.year and mes.month == matriz.hoje.month %}<small>em andamento</small>{% endif %}
+                </th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+        {% regroup matriz.linhas by conta.owner as por_titular %}
+        {% for grupo in por_titular %}
+            <tr class="situacao-titular"><th colspan="{{ quantos|add:1 }}" scope="colgroup">{{ grupo.grouper.name }}</th></tr>
+            {% for linha in grupo.list %}
+            {% with conta=linha.conta %}
+            <tr>
+                <th scope="row" class="situacao-conta">{{ conta.account_name }}<small>{{ conta.institution.institution_name }}{% if conta.is_credit_card %} · cartão{% endif %}</small></th>
+                {% for c in linha.celulas %}
+                <td class="{% if c.mes == resumo.mes %}situacao-referencia{% endif %}">
+                    {% if c.url %}<a class="situacao-celula situacao-{{ c.estado }}" href="{{ c.url }}" title="{{ c.descricao }}" aria-label="{{ conta.account_name }}, {{ c.mes|date:'F Y' }}: {{ c.descricao }}">
+                    {% else %}<span class="situacao-celula situacao-{{ c.estado }}" title="{{ c.descricao }}" aria-label="{{ conta.account_name }}, {{ c.mes|date:'F Y' }}: {{ c.descricao }}">{% endif %}
+                        <span aria-hidden="true">{{ c.icone }}</span>
+                        {% if c.detalhe %}<small>{{ c.detalhe }}</small>{% endif %}
+                    {% if c.url %}</a>{% else %}</span>{% endif %}
+                </td>
+                {% endfor %}
+            </tr>
+            {% endwith %}
+            {% endfor %}
+        {% empty %}
+            <tr><td colspan="{{ quantos|add:1 }}" class="empty-state">Nenhuma conta ao seu alcance.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endwith %}
+{% endblock %}

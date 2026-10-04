@@ -1,4 +1,4 @@
-"""Movimentação > Lançamentos n+1 (Operações): agrupa lançamentos compostos
+"""Movimentação > Parcelas e Recorrências (Operações): agrupa lançamentos compostos
 (parcelados, recorrentes ou pares de transferência interna) por operação.
 
 O agrupamento é feito por `bank_operation_id`: `BankOperation` é uma entidade
