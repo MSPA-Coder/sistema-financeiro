@@ -434,13 +434,21 @@ def reconcile_view(request):
     """Concilia uma linha de extrato com um lançamento."""
     line_id = request.POST.get('line_id')
     try:
-        reconciliation.reconcile_line_with_entry(
+        # Escolher o movimento e clicar em Conciliar é a autorização para corrigir
+        # a realização pela linha do extrato, mesmo em mês fechado (com o saldo
+        # de fechamento conferido; ver `_conciliar_corrigindo_realizacao`).
+        linha = reconciliation.reconcile_line_with_entry(
             request.user,
             line_id=line_id,
             entry_id=request.POST.get('entry_id'),
             audit_context=audit_request_context(request),
+            autorizar_meses=True,
         )
-        messages.success(request, "Linha conciliada e movimento marcado como realizado.")
+        correcao = getattr(linha, "correcao", "")
+        if correcao:
+            messages.success(request, f"Linha conciliada; realização corrigida pelo extrato ({correcao}).")
+        else:
+            messages.success(request, "Linha conciliada e movimento marcado como realizado.")
     except ValueError as exc:
         messages.error(request, str(exc))
 

@@ -140,6 +140,16 @@ class Plano:
         if self.acao == CRIA and self.sugestao is not None and self.sugestao.categoria is not None:
             return f"{texto}: {self.sugestao.categoria.category_name} ({self.sugestao.rotulo})"
         if self.acao == CONCILIA and self.lancamento is not None:
+            if self.lancamento.status == STATUS_REALIZED:
+                correcao = reconciliation.correcao_da_realizacao(
+                    entry_antes=(
+                        self.lancamento.realized_date,
+                        self.lancamento.realized_amount or self.lancamento.entry_amount,
+                    ),
+                    line=self.linha,
+                )
+                if correcao:
+                    return f"{texto} #{self.lancamento.id}; corrige a realização: {correcao}"
             return f"{texto} #{self.lancamento.id}"
         if self.acao == CONCILIA_APROXIMADA and self.lancamento is not None:
             return (
