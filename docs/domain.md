@@ -331,12 +331,28 @@ já está realizado, na mesma data e valor, não muda saldo nem lançamento e po
 isso vale em mês fechado (é o caso do histórico digitado à mão); realizar ou
 mudar o lançamento continua exigindo o mês aberto.
 
+Lançamento já realizado em outra data ou por outro valor também concilia: o
+extrato é o fato, e escolher o lançamento é a autorização para trocar a data e o
+valor realizados pelos da linha (o previsto fica). Numa transferência só a ponta
+da conta do extrato muda de data; valor diferente numa transferência na mesma
+moeda é recusado, porque as pontas são espelhadas. O botão Conciliar da linha
+pode reabrir o mês fechado para isso, desde que o saldo de fechamento não mude
+(na prática, só a data dentro do mesmo mês); "Conciliar selecionadas" e
+"Aplicar sugestões" recusam e mandam usar o botão da linha.
+
 Os PDFs com adapter são o da Genial, o do Mercado Pago e o da conta de
 investimento da XP (`XpPdfStatementAdapter`). O da XP lê a geometria da tabela
 (a descrição quebra em até três linhas, antes e depois da data), valida a cadeia
 de saldos de linha a linha e informa como saldo o da linha mais recente na data
 final do período. A instituição cadastrada como "SCP XP Investimestos" (sic) usa
 o mesmo adapter, e a conta é reconhecida pelo número do rótulo "Conta:" do PDF.
+
+O do Itaú (`ItauPdfStatementAdapter`) lê o "extrato conta / lançamentos": uma
+linha por lançamento, com o sinal no valor. As linhas "SALDO DO DIA" não viram
+lançamento; elas conferem, dia a dia, saldo anterior + lançamentos do dia =
+saldo do dia, porque a ordem dentro do dia não é confiável. O formato é
+reconhecido por "itau.com.br" e não pelo nome, que aparece em Pix e TED para o
+Itaú no extrato de qualquer banco; a conta vem de "agência: ... conta: ...".
 
 ### Plano do extrato de conta
 
@@ -371,7 +387,7 @@ o aluguel de ações de "Rendimentos"). A regra explícita (`StatementRule`,
 sinal, nunca por id.
 
 O arquivo pode informar o saldo (`LEDGERBAL` do OFX, "Saldo final" da Genial e do
-Mercado Pago). Ele é guardado no lote e conferido, nas telas Importar extratos e faturas e Extratos importados, com o
+Mercado Pago, último "SALDO DO DIA" do período no Itaú). Ele é guardado no lote e conferido, nas telas Importar extratos e faturas e Extratos importados, com o
 saldo realizado do CB na mesma data; a diferença aponta linha faltando ou sobrando
 em qualquer ponto do histórico. Não entra no hash da linha.
 

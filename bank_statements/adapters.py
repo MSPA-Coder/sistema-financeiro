@@ -403,16 +403,19 @@ def extract_pdf_text(raw: bytes) -> str:
 
 
 _RE_CONTA_LABEL = re.compile(r"Conta:\s*([\d.\-/]+)")
+# Itaú: "agência: 1234 conta: 012345-6", em minúsculas.
+_RE_CONTA_APOS_AGENCIA = re.compile(r"ag[eê]ncia:\s*\d+\s+conta:\s*([\d.\-/]+)", re.IGNORECASE)
 
 
 def extract_conta_label(text: str) -> str | None:
     """Número de conta do rótulo "Conta: ..." do cabeçalho/rodapé do PDF.
 
-    Mesmo rótulo nos dois layouts conhecidos (Genial: "Conta: 1234567-8";
-    Mercado Pago: "Conta: 11111111111") - usado só para sugerir a conta na
-    importação em lote, nunca na leitura das linhas de cada parser.
+    Mesmo rótulo na Genial ("Conta: 1234567-8") e no Mercado Pago ("Conta:
+    11111111111"); o Itaú escreve em minúsculas logo depois da agência. Usado
+    só para sugerir a conta na importação em lote, nunca na leitura das linhas
+    de cada parser.
     """
-    match = _RE_CONTA_LABEL.search(text)
+    match = _RE_CONTA_LABEL.search(text) or _RE_CONTA_APOS_AGENCIA.search(text)
     return match.group(1).strip() if match else None
 
 
@@ -422,7 +425,7 @@ def sniff_pdf_format(text: str) -> str | None:
     saber a conta (e portanto a instituição) na importação em lote.
     """
     lowered = text.lower()
-    found = [key for key in _PDF_ADAPTERS if key in lowered]
+    found = [key for key in _PDF_ADAPTERS if _PDF_MARCAS.get(key, key) in lowered]
     return found[0] if len(found) == 1 else None
 
 
@@ -619,6 +622,126 @@ class MercadoPagoPdfStatementAdapter:
         raw = read_statement_upload(file, label="PDF")
         text = extract_pdf_text(raw)
         return _parse_mercadopago_lines(text, account_id)
+
+
+# --- PDF do Itaú ---
+#
+# O "extrato conta / lançamentos" do Itaú sai do pdfplumber uma linha por
+# lançamento, "<dd/mm/aaaa> <lançamento> <valor>", o mais recente primeiro e com
+# o sinal no próprio valor ("-9.410,00"). As linhas "SALDO DO DIA" trazem o saldo
+# no fim de cada dia com movimento: não viram lançamento, mas fecham a
+# conferência - saldo do dia anterior + lançamentos do dia = saldo do dia. A
+# ordem dentro do dia não é confiável (o saldo às vezes vem no meio dos
+# lançamentos do dia), por isso a conferência é por dia, não por linha. A
+# primeira linha de saldo é a de hoje, que pode cair depois do fim do período:
+# só contam os saldos até o fim do período de visualização.
+
+_RE_ITAU_LINHA = re.compile(r"^(\d{2})/(\d{2})/(\d{4})\s+(.+?)\s+(-?[\d.]+,\d{2})$")
+_RE_ITAU_PERIODO = re.compile(
+    r"per[ií]odo de visualiza[cç][aã]o:\s*\d{2}/\d{2}/\d{4}\s+at[ée]\s+(\d{2})/(\d{2})/(\d{4})",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class _LeituraItau:
+    lancamentos: list[tuple[date, str, Decimal]]
+    saldos: dict[date, Decimal]
+
+
+def _itau_ler(text: str) -> _LeituraItau:
+    periodo = _RE_ITAU_PERIODO.search(text)
+    if periodo is None:
+        raise ValueError("Não encontrei o período de visualização no extrato Itaú.")
+    fim = date(int(periodo.group(3)), int(periodo.group(2)), int(periodo.group(1)))
+    lancamentos: list[tuple[date, str, Decimal]] = []
+    saldos: dict[date, Decimal] = {}
+    for raw_line in text.splitlines():
+        match = _RE_ITAU_LINHA.match(raw_line.strip())
+        if not match:
+            continue  # cabeçalho, títulos de coluna, aviso do rodapé
+        day, month, year, descricao, valor_raw = match.groups()
+        dia = date(int(year), int(month), int(day))
+        valor = _to_decimal(valor_raw.replace(".", "").replace(",", "."))
+        if descricao.strip().upper().startswith("SALDO"):
+            if dia <= fim:
+                saldos[dia] = valor
+            continue
+        if dia > fim:
+            raise ValueError(f"Lançamento de {dia:%d/%m/%Y} fora do período do extrato Itaú.")
+        lancamentos.append((dia, descricao.strip(), valor))
+    return _LeituraItau(lancamentos=lancamentos, saldos=saldos)
+
+
+def _itau_conferir_saldos(leitura: _LeituraItau) -> None:
+    if not leitura.saldos:
+        raise ValueError("O extrato Itaú não trouxe nenhuma linha de saldo; o layout pode ter mudado.")
+    por_dia: dict[date, Decimal] = {}
+    for dia, _descricao, valor in leitura.lancamentos:
+        por_dia[dia] = por_dia.get(dia, Decimal("0")) + valor
+    corrente: Decimal | None = None
+    for dia in sorted(set(por_dia) | set(leitura.saldos)):
+        if corrente is None:
+            # O primeiro saldo do arquivo é o ponto de partida; lançamentos
+            # anteriores a ele não têm como ser conferidos e são recusados.
+            if dia not in leitura.saldos:
+                raise ValueError(
+                    f"Lançamento de {dia:%d/%m/%Y} antes do primeiro saldo do extrato Itaú."
+                )
+            corrente = leitura.saldos[dia]
+            continue
+        corrente += por_dia.get(dia, Decimal("0"))
+        if dia in leitura.saldos:
+            if abs(corrente - leitura.saldos[dia]) > Decimal("0.01"):
+                raise ValueError(
+                    f"Inconsistência no extrato Itaú em {dia:%d/%m/%Y}: os lançamentos do dia "
+                    f"não fecham com o saldo do dia ({leitura.saldos[dia]})."
+                )
+            corrente = leitura.saldos[dia]
+
+
+def _parse_itau_lines(text: str, account_id: int) -> list[ParsedStatementLine]:
+    """Interpreta o texto extraído (via pdfplumber) do extrato de conta do Itaú."""
+    leitura = _itau_ler(text)
+    if not leitura.lancamentos:
+        raise ValueError("Nenhum lançamento encontrado no extrato Itaú (PDF).")
+    _itau_conferir_saldos(leitura)
+    max_rows = max_statement_rows()
+    if len(leitura.lancamentos) > max_rows:
+        raise ValueError(f"Extrato Itaú excede o limite de {max_rows} linha(s).")
+    parsed = []
+    # Do mais antigo para o mais recente; dentro do dia, na ordem do arquivo.
+    for dia, descricao, valor in sorted(leitura.lancamentos, key=lambda item: item[0]):
+        if valor == 0:
+            raise ValueError("Valor zerado no extrato não é aceito.")
+        descricao = descricao[:255]
+        parsed.append(
+            ParsedStatementLine(
+                statement_date=dia,
+                description=descricao,
+                amount=valor,
+                line_hash=line_hash(account_id, dia, descricao, valor),
+            )
+        )
+    return numerar_repeticoes(parsed, account_id)
+
+
+class ItauPdfStatementAdapter:
+    """Adapter para o extrato de conta em PDF do Itaú."""
+
+    def parse(self, file: UploadedFile, account_id: int) -> list[ParsedStatementLine]:
+        raw = read_statement_upload(file, label="PDF")
+        text = extract_pdf_text(raw)
+        return _parse_itau_lines(text, account_id)
+
+
+def _saldo_do_itau(text: str) -> tuple[Decimal, date] | None:
+    """O saldo do último dia com saldo dentro do período."""
+    leitura = _itau_ler(text)
+    if not leitura.saldos:
+        return None
+    dia = max(leitura.saldos)
+    return leitura.saldos[dia], dia
 
 
 # --- PDF da XP Investimentos ---
@@ -848,6 +971,13 @@ _PDF_ADAPTERS = {
     "genial": GenialPdfStatementAdapter,
     "mercado pago": MercadoPagoPdfStatementAdapter,
     "xp investimentos": XpPdfStatementAdapter,
+    "itaú": ItauPdfStatementAdapter,
+}
+# Texto que identifica o formato no PDF quando o nome da instituição sozinho é
+# arriscado: "Itaú" aparece no extrato de qualquer banco que tenha um Pix ou TED
+# para o Itaú, e duas instituições no mesmo texto deixam o PDF sem formato.
+_PDF_MARCAS = {
+    "itaú": "itau.com.br",
 }
 # Outros nomes sob os quais a mesma instituição pode estar cadastrada. O "SCP XP
 # Investimestos" (sic) é como a conta de investimento da XP foi cadastrada.
@@ -948,6 +1078,8 @@ def _saldo_do_pdf(text: str) -> tuple[Decimal, date] | None:
         if saldo and periodo:
             dia = date(int(periodo.group(3)), int(periodo.group(2)), int(periodo.group(1)))
             return _brl(saldo.group(1), saldo.group(2), saldo.group(3)), dia
+    if formato == "itaú":
+        return _saldo_do_itau(text)
     return None
 
 
@@ -982,6 +1114,7 @@ __all__ = [
     "pdf_institution_names",
     "CsvStatementAdapter",
     "GenialPdfStatementAdapter",
+    "ItauPdfStatementAdapter",
     "MercadoPagoPdfStatementAdapter",
     "OfxStatementAdapter",
     "ParsedStatementLine",

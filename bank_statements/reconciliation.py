@@ -8,7 +8,9 @@ para um status inferido. Ignorar só é permitido para linhas ainda novas.
 Quando o lançamento já está realizado com a mesma data e valor da linha, a
 conciliação apenas vincula os dois: não tenta realizá-lo de novo, porque
 `mark_transaction_realized` recusa lançamentos já realizados e a operação
-falharia sempre.
+falharia sempre. Realizado em outra data ou por outro valor, a conciliação
+corrige a realização pela linha: o extrato é o fato, e conciliar é a
+autorização (ver `_conciliar_corrigindo_realizacao`).
 
 Períodos fechados bloqueiam conciliação que realiza ou altera o lançamento,
 e conciliar uma ponta de transferência interna realiza a contraparte junto —
@@ -27,6 +29,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.db import transaction as db_transaction
+from django.db.models import Q
 
 from banking.services import accessible_account_ids, can_access_account
 from core.domain.finance import ENTRY_TYPE_EXPENSE, ENTRY_TYPE_INCOME, STATUS_REALIZED
@@ -109,6 +112,15 @@ def reconciled_statement_batches_for_user(user, limit: int = 20) -> list[BankSta
     return batches
 
 
+def _mesmo_valor(value) -> Q:
+    """O valor previsto ou, se realizado, o valor realizado igual ao da linha.
+
+    Realizado por outro valor (reembolso previsto em 495,00 e pago 495,34), o
+    lançamento vale pelo realizado: buscar só pelo previsto o deixava sem
+    candidato, e a linha virava um lançamento duplicado."""
+    return Q(entry_amount=value) | Q(status=STATUS_REALIZED, realized_amount=value)
+
+
 def candidate_entries_for_line(line: BankStatementLine, limit: int = _CANDIDATE_LIMIT):
     """Lançamentos candidatos a conciliar com `line`: mesma conta, mesmo
     sinal (receita se valor > 0, despesa se < 0), mesmo valor absoluto, com
@@ -131,9 +143,9 @@ def candidate_entries_for_line(line: BankStatementLine, limit: int = _CANDIDATE_
     month_end_exclusive = add_months(month_start, 1)
     return (
         CashFlowEntry.objects.filter(
+            _mesmo_valor(value),
             account_id=line.account_id,
             entry_type=entry_type,
-            entry_amount=value,
             due_date__gte=month_start,
             due_date__lt=month_end_exclusive,
         )
@@ -175,9 +187,9 @@ def candidate_entries_for_lines(
         )
         pool = list(
             CashFlowEntry.objects.filter(
+                _mesmo_valor(value),
                 account_id=account_id,
                 entry_type=entry_type,
-                entry_amount=value,
                 due_date__gte=earliest_month_start,
                 due_date__lt=latest_month_end_exclusive,
             )
@@ -405,7 +417,8 @@ def reconciliation_view_data(user, target_line_id: int | None = None) -> dict:
 
 @db_transaction.atomic
 def reconcile_line_with_entry(
-    user, *, line_id, entry_id, audit_context=None, aceitar_valor_diferente: bool = False
+    user, *, line_id, entry_id, audit_context=None, aceitar_valor_diferente: bool = False,
+    autorizar_meses: bool = False,
 ) -> BankStatementLine:
     """Concilia uma linha de extrato com um lançamento existente.
 
@@ -417,6 +430,10 @@ def reconcile_line_with_entry(
     `aceitar_valor_diferente` vale só para recorrência ainda aberta (ver
     `candidatos_aproximados`): o lançamento é realizado pelo valor do extrato e
     o valor previsto fica como estava, para comparar previsto e realizado.
+
+    Lançamento já realizado em outra data ou por outro valor tem a realização
+    corrigida para a da linha (ver `_conciliar_corrigindo_realizacao`);
+    `autorizar_meses` deixa essa correção reabrir mês fechado.
     """
     line = _get_line_in_scope(user, line_id, "update", for_update=True)
     if not entry_id:
@@ -456,20 +473,21 @@ def reconcile_line_with_entry(
         raise ValueError("Tipo do movimento incompatível com o sinal da linha de extrato.")
 
     line_value = abs(line.amount)
-    if entry.entry_amount != line_value:
+    realizado_pelo_valor = entry.status == STATUS_REALIZED and entry.realized_amount == line_value
+    if entry.entry_amount != line_value and not realizado_pelo_valor:
         variavel = aceitar_valor_diferente and entry.is_recurring and entry.status != STATUS_REALIZED
         if not variavel:
             raise ValueError("Valor do movimento incompatível com a linha de extrato.")
 
     already_realized_matching = False
     if entry.status == STATUS_REALIZED:
-        matches = (
-            entry.realized_date == line.statement_date
-            and (entry.realized_amount or entry.entry_amount) == line_value
-        )
-        if not matches:
-            raise ValueError("Movimento já realizado com data ou valor diferente da linha de extrato.")
-        already_realized_matching = True
+        realizado = entry.realized_amount or entry.entry_amount
+        if entry.realized_date == line.statement_date and realizado == line_value:
+            already_realized_matching = True
+        else:
+            return _conciliar_corrigindo_realizacao(
+                user, line, entry, line_value, audit_context=audit_context, autorizar_meses=autorizar_meses
+            )
 
     # Vincular um lançamento que já está realizado, na mesma data e valor da
     # linha, não muda nenhum saldo nem nenhum lançamento: é só dizer que o
@@ -498,6 +516,71 @@ def reconcile_line_with_entry(
         )
 
     return line
+
+
+MOTIVO_DA_CORRECAO = "Conciliação: realização corrigida pela data e valor do extrato"
+
+
+def _conciliar_corrigindo_realizacao(
+    user, line: BankStatementLine, entry: CashFlowEntry, line_value: Decimal, *, audit_context, autorizar_meses: bool
+) -> BankStatementLine:
+    """Concilia um lançamento já realizado em outra data ou por outro valor.
+
+    O extrato é o fato: escolher o lançamento e conciliar é a autorização para
+    trocar a data e o valor realizados pelos da linha (o previsto não muda).
+    Numa transferência só a ponta desta conta muda de data, porque cada ponta
+    tem a sua; o valor, espelhado entre as duas na mesma moeda, não é corrigido
+    por aqui. Mês fechado só com `autorizar_meses`, e o saldo de fechamento tem
+    de ficar igual (`meses_reabertos`): na prática, só a data muda dentro do mês.
+    """
+    from core.services import log_audit_event
+    from transactions.services import transfer_counterparty
+
+    from .meses import meses_fechados, meses_reabertos
+
+    antes_data = entry.realized_date
+    antes_valor = entry.realized_amount or entry.entry_amount
+    if entry.operation_type == "internal_transfer" and antes_valor != line_value:
+        contraparte = transfer_counterparty(entry)
+        if contraparte is not None and contraparte.account.currency == entry.account.currency:
+            raise ValueError(
+                "A transferência foi realizada por outro valor: corrija a transferência antes de conciliar."
+            )
+    meses = {
+        (entry.account_id, dia.year, dia.month) for dia in (antes_data, line.statement_date) if dia is not None
+    }
+    if not autorizar_meses and meses_fechados(meses):
+        raise ValueError(
+            "Corrigir a data ou o valor realizado mexe em mês fechado: use o botão Conciliar da própria linha."
+        )
+    with meses_reabertos(
+        user, meses, autorizar=autorizar_meses, motivo=MOTIVO_DA_CORRECAO, audit_context=audit_context
+    ):
+        entry.realized_date = line.statement_date
+        entry.realized_amount = line_value
+        entry.save(update_fields=["realized_date", "realized_amount", "updated_at"])
+        line.matched_entry = entry
+        line.status = LINE_STATUS_RECONCILED
+        line.save(update_fields=["matched_entry", "status", "updated_at"])
+    log_audit_event(
+        "cash_flow_entry", entry.id, "update",
+        old_values={"realized_date": antes_data.isoformat() if antes_data else None, "realized_amount": str(antes_valor)},
+        new_values={"realized_date": line.statement_date.isoformat(), "realized_amount": str(line_value)},
+        user=user, request_context=audit_context, summary=MOTIVO_DA_CORRECAO + ".",
+    )
+    line.correcao = correcao_da_realizacao(entry_antes=(antes_data, antes_valor), line=line)
+    return line
+
+
+def correcao_da_realizacao(*, entry_antes: tuple, line: BankStatementLine) -> str:
+    """Texto do que a conciliação corrige na realização, para a tela."""
+    data, valor = entry_antes
+    partes = []
+    if data != line.statement_date:
+        partes.append(f"data de {data:%d/%m/%Y} para {line.statement_date:%d/%m/%Y}")
+    if valor != abs(line.amount):
+        partes.append(f"valor de {valor} para {abs(line.amount)}")
+    return " e ".join(partes)
 
 
 @db_transaction.atomic
