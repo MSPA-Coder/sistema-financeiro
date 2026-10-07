@@ -118,8 +118,8 @@ def _decimal(valor, rotulo: str) -> Decimal:
 def pendencia_da_movimentacao(conta: FinancialAccount, data: date) -> str:
     """O que falta na conta de movimento para o saldo da aplicação valer, ou "".
 
-    Falta o extrato do mês (nenhuma linha nem saldo de extrato desde o dia 1º)
-    ou falta conciliar alguma linha até a data."""
+    Falta o extrato do mês (nenhuma linha, saldo de extrato ou fim de período
+    do arquivo desde o dia 1º) ou falta conciliar alguma linha até a data."""
     movimento = conta.movement_account
     if movimento is None:
         return ""
@@ -133,8 +133,10 @@ def pendencia_da_movimentacao(conta: FinancialAccount, data: date) -> str:
             f"{data:%d/%m/%Y}: concilie antes, ou uma transferência que falta vira rendimento."
         )
     ultima_linha = BankStatementLine.objects.filter(account=movimento).aggregate(d=Max("statement_date"))["d"]
-    ultimo_saldo = BankStatementImport.objects.filter(account=movimento).aggregate(d=Max("statement_balance_date"))["d"]
-    coberto = max((d for d in (ultima_linha, ultimo_saldo) if d is not None), default=None)
+    lotes = BankStatementImport.objects.filter(account=movimento).aggregate(
+        saldo=Max("statement_balance_date"), periodo=Max("statement_period_end")
+    )
+    coberto = max((d for d in (ultima_linha, lotes["saldo"], lotes["periodo"]) if d is not None), default=None)
     if coberto is None or coberto < data.replace(day=1):
         return (
             f"O extrato de {data:%m/%Y} da conta de movimento {rotulo} ainda não foi importado: "

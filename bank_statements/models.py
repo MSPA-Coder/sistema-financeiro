@@ -40,6 +40,9 @@ class BankStatementImport(models.Model):
     # do CB; não entra no hash nem muda nenhuma linha.
     statement_balance = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     statement_balance_date = models.DateField(null=True, blank=True)
+    # Fim do período que o arquivo diz cobrir (DTEND do OFX), mesmo sem linha
+    # nos últimos dias. Usado pela trava do Saldo Aplicações (`saldo.py`).
+    statement_period_end = models.DateField(null=True, blank=True)
     status = models.CharField(
         max_length=20,
         choices=[

@@ -300,3 +300,29 @@ def test_ajustes_criam_aplicacao_e_convertem_avulso_em_transferencia_com_mes_fec
     assert fechamento.active and fechamento.closing_balance == saldo_antes
     saldos = decimal_balances_before_by_account([rende.id], date(2026, 9, 1), VIEW_REALIZED)
     assert saldos[rende.id] == Decimal("64.00")
+
+
+def test_fim_do_periodo_do_extrato_cobre_dias_sem_movimento(c):
+    """O OFX vai até hoje, mas o último movimento foi em setembro: o saldo de
+    hoje da aplicação vale, porque o arquivo diz cobrir a conta até hoje."""
+    lote = BankStatementImport.objects.create(
+        account=c.corrente, source_filename="c6.ofx", row_count=1, statement_period_end=date(2026, 10, 7),
+    )
+    BankStatementLine.objects.create(
+        import_batch=lote, account=c.corrente, statement_date=date(2026, 9, 24), description="PIX",
+        amount=Decimal("-10.00"), line_hash="fim-do-periodo", status=LINE_STATUS_RECONCILED,
+    )
+    assert saldo.pendencia_da_movimentacao(c.cofrinho, date(2026, 10, 7)) == ""
+    lote.statement_period_end = None
+    lote.save()
+    assert "ainda não foi importado" in saldo.pendencia_da_movimentacao(c.cofrinho, date(2026, 10, 7))
+
+
+def test_fim_do_periodo_vem_do_dtend_do_ofx():
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from bank_statements.adapters import extract_statement_period_end
+
+    ofx = b"<OFX><BANKTRANLIST><DTSTART>20260101<DTEND>20261007074917[-3:BRT]</BANKTRANLIST></OFX>"
+    assert extract_statement_period_end(SimpleUploadedFile("x.ofx", ofx)) == date(2026, 10, 7)
+    assert extract_statement_period_end(SimpleUploadedFile("x.pdf", b"%PDF")) is None

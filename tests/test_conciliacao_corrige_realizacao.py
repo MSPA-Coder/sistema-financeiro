@@ -182,4 +182,20 @@ def test_dois_candidatos_iguais_no_mes_desempatam_pela_data_da_linha(cenario):
 
     assert planos[linha_19.id].lancamento == dia_19
     assert planos[linha_23.id].lancamento == dia_23
-    assert planos[linha_25.id].acao == extrato.AMBIGUA  # nenhum no dia: continua manual
+    # Os dois já ficaram com as linhas dos seus dias: a de 25 não tem candidato livre.
+    assert planos[linha_25.id].acao != extrato.CONCILIA
+    # Sozinha, sem nenhum candidato no dia dela, continua escolha manual.
+    [sozinha] = extrato.planejar(user, [linha_25])
+    assert sozinha.acao == extrato.AMBIGUA
+
+
+def test_um_lancamento_nao_vai_para_duas_linhas(cenario):
+    user, conta, categoria = cenario
+    dia_25 = _despesa_realizada(user, conta, categoria, vencimento=date(2026, 6, 25), realizado_em=date(2026, 6, 25))
+    linha_25 = _linha(conta, data=date(2026, 6, 25), valor=Decimal("-100.00"))
+    linha_26 = _linha(conta, data=date(2026, 6, 26), valor=Decimal("-100.00"))
+
+    planos = {plano.linha.id: plano for plano in extrato.planejar(user, [linha_26, linha_25])}
+
+    assert planos[linha_25.id].lancamento == dia_25
+    assert planos[linha_26.id].acao != extrato.CONCILIA  # sem candidato livre: vira lançamento novo
