@@ -8,7 +8,7 @@ O que uma linha vira, na ordem em que é decidido:
 
 - **ignorar**: uma regra explícita manda ignorar;
 - **concilia**: há um (e só um) lançamento candidato, da mesma conta, sinal e
-  valor. Vários candidatos pedem escolha manual;
+  valor. Vários candidatos: vale o único na data da linha; sem ele, escolha manual;
 - **concilia com valor diferente**: não há candidato de valor exato, mas há uma
   (e só uma) recorrência aberta da conta, do mesmo sinal, com valor até 25% acima
   ou abaixo do previsto e vencimento a até 5 dias (energia, condomínio). O
@@ -64,6 +64,7 @@ from .models import (
     LINE_STATUS_RECONCILED,
     RULE_ACTION_CATEGORY,
     RULE_ACTION_IGNORE,
+    RULE_ACTION_LINKED,
     RULE_ACTION_TRANSFER,
     BankStatementLine,
 )
@@ -335,7 +336,7 @@ def planejar(user, linhas) -> list[Plano]:
     com_lancamento = _lancamentos_para_par(
         user, [linha for linha in linhas if linha.id not in pares], padroes
     )
-    candidatos = reconciliation.candidate_entries_for_lines(linhas, limit=2)
+    candidatos = reconciliation.candidate_entries_for_lines(linhas)
 
     planos: list[Plano] = []
     for linha in sorted(linhas, key=lambda item: (item.statement_date, item.id)):
@@ -346,7 +347,7 @@ def planejar(user, linhas) -> list[Plano]:
         if regra is not None and regra.action == RULE_ACTION_IGNORE:
             planos.append(Plano(linha, IGNORA, regra=regra))
             continue
-        achados = candidatos.get(linha.id, [])
+        achados = reconciliation.desempatar_pelo_dia(linha, candidatos.get(linha.id, []))
         if len(achados) == 1:
             planos.append(Plano(linha, CONCILIA, lancamento=achados[0], regra=regra))
             continue
@@ -362,15 +363,16 @@ def planejar(user, linhas) -> list[Plano]:
             else:
                 planos.append(Plano(linha, TRANSFERENCIA_PAR, par=par, regra=regra))
             continue
-        if regra is not None and regra.action == RULE_ACTION_TRANSFER:
+        if regra is not None and regra.action in (RULE_ACTION_TRANSFER, RULE_ACTION_LINKED):
             destino = conta_de_destino(regra, linha.account)
             if destino is None:
-                planos.append(
-                    Plano(
-                        linha, MANUAL, regra=regra,
-                        motivo=f"A conta \"{regra.destination_account_name}\" da regra \"{regra.name}\" não existe para este titular.",
-                    )
+                motivo = (
+                    f"A regra \"{regra.name}\" pede a aplicação vinculada a esta conta, e não há "
+                    "exatamente uma: confira a conta de movimento das aplicações."
+                    if regra.action == RULE_ACTION_LINKED else
+                    f"A conta \"{regra.destination_account_name}\" da regra \"{regra.name}\" não existe para este titular."
                 )
+                planos.append(Plano(linha, MANUAL, regra=regra, motivo=motivo))
                 continue
             quem_recebe = destino if linha.amount < 0 else linha.account
             if not can_use_transfer_destination(user, quem_recebe.id):

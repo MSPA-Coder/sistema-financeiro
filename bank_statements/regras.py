@@ -11,6 +11,7 @@ import unicodedata
 from banking.models import FinancialAccount
 
 from .models import (
+    RULE_ACTION_LINKED,
     RULE_ACTION_TRANSFER,
     RULE_SIGN_ANY,
     RULE_SIGN_CREDIT,
@@ -52,7 +53,17 @@ class Regras:
 def conta_de_destino(regra: StatementRule, conta: FinancialAccount) -> FinancialAccount | None:
     """A conta de destino da regra de transferência: mesmo titular, a instituição
     da regra (ou a da linha, se a regra não diz) e o nome informado. `None`
-    quando a regra não é de transferência ou a conta ainda não existe."""
+    quando a regra não é de transferência ou a conta ainda não existe.
+
+    Na regra de aplicação vinculada, é a única aplicação cuja conta de movimento
+    é a da linha (filtrada pelo nome, se a regra tiver um); nenhuma ou mais de
+    uma também dá `None`, e a linha fica para decisão manual."""
+    if regra.action == RULE_ACTION_LINKED:
+        vinculadas = conta.linked_investments.all()
+        if regra.destination_account_name.strip():
+            vinculadas = vinculadas.filter(account_name__iexact=regra.destination_account_name.strip())
+        vinculadas = list(vinculadas[:2])
+        return vinculadas[0] if len(vinculadas) == 1 else None
     if regra.action != RULE_ACTION_TRANSFER:
         return None
     return (

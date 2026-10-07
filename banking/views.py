@@ -13,6 +13,7 @@ from django.views.decorators.http import require_POST
 from accounts.services import accessible_owner_ids
 from core.domain.finance import (
     ACCOUNT_KIND_OPTIONS,
+    ACCOUNT_KIND_REGULAR,
     ACCOUNT_PURPOSE_OPTIONS,
     CURRENCY_OPTIONS,
     VIEW_PROJECTED,
@@ -221,6 +222,12 @@ def accounts_view(request):
             account for account in list_accounts_for_user(request.user)
             if not account.is_credit_card
         ],
+        # Candidatas a conta de movimento de uma aplicação: conta comum. O
+        # service confere titular e moeda.
+        "movement_accounts": [
+            account for account in list_accounts_for_user(request.user)
+            if account.account_kind == ACCOUNT_KIND_REGULAR
+        ],
         "current_filter_owner_id": int(current_filter_owner_id) if current_filter_owner_id else None,
         "current_filter_institution_id": int(current_filter_institution_id) if current_filter_institution_id else None,
         "can_view_account_details": request.user.has_perm("transactions.view"),
@@ -238,6 +245,7 @@ def _card_fields_from_post(request) -> dict[str, str]:
         "card_due_day": request.POST.get("card_due_day", ""),
         "card_payment_account_id": request.POST.get("card_payment_account_id", ""),
         "card_estimated_spend": request.POST.get("card_estimated_spend", ""),
+        "movement_account_id": request.POST.get("movement_account_id", ""),
     }
 
 

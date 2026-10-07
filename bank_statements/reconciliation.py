@@ -154,6 +154,18 @@ def candidate_entries_for_line(line: BankStatementLine, limit: int = _CANDIDATE_
     )
 
 
+def desempatar_pelo_dia(line: BankStatementLine, candidates: list[CashFlowEntry]) -> list[CashFlowEntry]:
+    """Entre vários candidatos, o único na data da linha (realizado nela, ou
+    vencendo nela se ainda aberto), se houver; senão, todos.
+
+    Duas compras iguais no mesmo mês (o mesmo Pix de 5.420,00 nos dias 19 e 23)
+    empatavam por mês e valor, e as duas linhas ficavam para escolha manual."""
+    if len(candidates) < 2:
+        return candidates
+    mesmo_dia = [entry for entry in candidates if (entry.realized_date or entry.due_date) == line.statement_date]
+    return mesmo_dia if len(mesmo_dia) == 1 else candidates
+
+
 def candidate_entries_for_lines(
     lines: Iterable[BankStatementLine], limit: int = _CANDIDATE_LIMIT
 ) -> dict[int, list[CashFlowEntry]]:
@@ -757,7 +769,7 @@ def bulk_reconcile_lines(user, *, line_ids: Iterable, audit_context=None) -> tup
     for line_id in line_ids:
         try:
             line = _get_line_in_scope(user, line_id, "update")
-            candidates = list(candidate_entries_for_line(line, limit=2))
+            candidates = desempatar_pelo_dia(line, list(candidate_entries_for_line(line)))
             if not candidates:
                 raise ValueError("Nenhum movimento candidato para conciliar.")
             if len(candidates) > 1:

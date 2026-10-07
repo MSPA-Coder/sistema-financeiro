@@ -182,6 +182,19 @@ def test_detect_account_pdf_institution_recognized_without_matching_account(cena
 
 
 @pytest.mark.django_db
+def test_detect_account_pdf_institution_breaks_tie_between_accounts_with_same_number(cenario, monkeypatch):
+    # A conta digital e a de investimento da XP têm o mesmo número: no PDF, a
+    # instituição reconhecida no arquivo decide.
+    FinancialAccount.objects.filter(id=cenario["conta_ofx"].id).update(statement_identifier="1234567-8")
+    _stub_pdf_text(monkeypatch, GENIAL_TEXT)
+    conta, _rotulo, erro = detect_account(
+        cenario["usuario"], filename="extrato.pdf", content_type="application/pdf", raw=b"%PDF-fake"
+    )
+    assert conta == cenario["conta_genial"]
+    assert erro == ""
+
+
+@pytest.mark.django_db
 def test_detect_account_matches_mercadopago_pdf(cenario, monkeypatch):
     mercadopago = FinancialInstitution.objects.create(
         institution_name="Mercado Pago", institution_type="Corretora", homologada=True

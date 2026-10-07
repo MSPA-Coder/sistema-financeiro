@@ -141,6 +141,10 @@ def detect_account(
                 return None, label, str(exc)
         digits = _only_digits(conta) if conta else ""
         matches = lookup.get(digits, []) if digits else []
+        if len(matches) > 1 and institution is not None:
+            # O mesmo número em duas contas (a conta digital e a de investimento
+            # da XP são ambas 323220): a instituição do PDF desempata.
+            matches = [m for m in matches if m.institution_id == institution.id]
         return (matches[0] if len(matches) == 1 else None), label, ""
 
     is_ofx = lowered_name.endswith((".ofx", ".ofc", ".qfx")) or any(

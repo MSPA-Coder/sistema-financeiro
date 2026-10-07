@@ -5,7 +5,7 @@
     <tr>
         <td>{{ account.owner.name }}</td>
         <td>{{ account.institution.institution_name }}</td>
-        <td>{{ account.account_name }}{% if account.is_credit_card %}<br><small class="text-muted">Cartão de crédito · fecha dia {{ account.card_closing_day }} · vence dia {{ account.card_due_day }}{% if account.card_payment_account %} · paga por {{ account.card_payment_account.account_name }}{% endif %}{% if account.card_estimated_spend is not None %} · gasto fixado em {{ account.card_estimated_spend|money:account.currency }}/mês{% endif %}</small>{% elif account.account_kind == 'aplicacao' %}<br><small class="text-muted">Aplicação{% if account.purpose == 'administrada' %} · administrada{% endif %}</small>{% elif account.purpose == 'administrada' %}<br><small class="text-muted">Administrada</small>{% endif %}</td>
+        <td>{{ account.account_name }}{% if account.is_credit_card %}<br><small class="text-muted">Cartão de crédito · fecha dia {{ account.card_closing_day }} · vence dia {{ account.card_due_day }}{% if account.card_payment_account %} · paga por {{ account.card_payment_account.account_name }}{% endif %}{% if account.card_estimated_spend is not None %} · gasto fixado em {{ account.card_estimated_spend|money:account.currency }}/mês{% endif %}</small>{% elif account.account_kind == 'aplicacao' %}<br><small class="text-muted">Aplicação{% if account.movement_account %} · movimenta por {{ account.movement_account.institution.institution_name }} / {{ account.movement_account.account_name }}{% endif %}{% if account.purpose == 'administrada' %} · administrada{% endif %}</small>{% elif account.purpose == 'administrada' %}<br><small class="text-muted">Administrada</small>{% endif %}</td>
         <td>{{ account.get_currency_display }}</td>
         <td class="amount {{ account.initial_balance|amount_class }}">{{ account.initial_balance|money:account.currency }}</td>
         <td>{{ account.initial_balance_date|date:'d/m/Y' }}</td>
@@ -71,6 +71,16 @@ enviado pelo navegador.
                     <optgroup label="{{ titular }}">
                         {% for payment in contas %}{% if payment.id != account.id %}
                         <option value="{{ payment.id }}" {% if payment.id == account.card_payment_account_id %}selected{% endif %}>{{ payment.institution.institution_name }} / {{ payment.account_name }}</option>
+                        {% endif %}{% endfor %}
+                    </optgroup>
+                    {% endfor %}
+                </select>
+                <select name="movement_account_id" aria-label="Conta de movimento da aplicação" title="Só para aplicação (cofrinho, CDB, Tesouro): a conta corrente do mesmo titular por onde o dinheiro entra e sai. O extrato dela traz as transferências." data-ui="flex-1">
+                    <option value="">Conta de movimento (aplicação)</option>
+                    {% for titular, contas in movement_accounts|por_titular %}
+                    <optgroup label="{{ titular }}">
+                        {% for movimento in contas %}{% if movimento.id != account.id %}
+                        <option value="{{ movimento.id }}" {% if movimento.id == account.movement_account_id %}selected{% endif %}>{{ movimento.institution.institution_name }} / {{ movimento.account_name }}</option>
                         {% endif %}{% endfor %}
                     </optgroup>
                     {% endfor %}

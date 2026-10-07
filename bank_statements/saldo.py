@@ -18,12 +18,19 @@ escondido e dar para revisar depois.
 
 O saldo comparado é o realizado até a data, inclusive. Mês fechado recusa o
 lançamento, como qualquer outro.
+
+Aplicação com conta de movimento (`FinancialAccount.movement_account`) só aceita
+o saldo depois que o extrato dessa conta foi importado no mês e conciliado até a
+data: a diferença é tudo o que as transferências não explicam, e uma
+transferência que ainda não entrou viraria rendimento.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
+
+from django.db.models import Max
 
 from banking.models import FinancialAccount
 from banking.services import accessible_account_ids, can_access_account
@@ -36,6 +43,8 @@ from core.domain.finance import (
 from reports.services import decimal_balances_before_by_account
 from transactions.models import CashFlowCategory, CashFlowEntry
 from transactions.services import TransactionRequest, create_transaction_batch
+
+from .models import LINE_STATUS_NEW, BankStatementImport, BankStatementLine
 
 CATEGORIA_DE_AJUSTE = "Ajustes de Saldo"
 
@@ -60,6 +69,7 @@ class Previa:
     data: date
     saldo_informado: Decimal
     saldo_no_cb: Decimal
+    pendencia: str = ""
 
     @property
     def diferenca(self) -> Decimal:
@@ -85,7 +95,7 @@ class Previa:
 
 def _conta(user, account_id, acao: str) -> FinancialAccount:
     try:
-        conta = FinancialAccount.objects.select_related("owner", "institution").get(id=int(account_id))
+        conta = FinancialAccount.objects.select_related("owner", "institution", "movement_account__institution").get(id=int(account_id))
     except (FinancialAccount.DoesNotExist, ValueError, TypeError) as exc:
         raise ValueError("Conta não encontrada.") from exc
     if not can_access_account(user, conta.id, acao):
@@ -105,11 +115,42 @@ def _decimal(valor, rotulo: str) -> Decimal:
         raise ValueError(f"{rotulo} inválido.") from exc
 
 
+def pendencia_da_movimentacao(conta: FinancialAccount, data: date) -> str:
+    """O que falta na conta de movimento para o saldo da aplicação valer, ou "".
+
+    Falta o extrato do mês (nenhuma linha nem saldo de extrato desde o dia 1º)
+    ou falta conciliar alguma linha até a data."""
+    movimento = conta.movement_account
+    if movimento is None:
+        return ""
+    rotulo = f"{movimento.institution.institution_name} / {movimento.account_name}"
+    pendentes = BankStatementLine.objects.filter(
+        account=movimento, status=LINE_STATUS_NEW, statement_date__lte=data
+    ).count()
+    if pendentes:
+        return (
+            f"A conta de movimento {rotulo} tem {pendentes} linha(s) de extrato pendente(s) até "
+            f"{data:%d/%m/%Y}: concilie antes, ou uma transferência que falta vira rendimento."
+        )
+    ultima_linha = BankStatementLine.objects.filter(account=movimento).aggregate(d=Max("statement_date"))["d"]
+    ultimo_saldo = BankStatementImport.objects.filter(account=movimento).aggregate(d=Max("statement_balance_date"))["d"]
+    coberto = max((d for d in (ultima_linha, ultimo_saldo) if d is not None), default=None)
+    if coberto is None or coberto < data.replace(day=1):
+        return (
+            f"O extrato de {data:%m/%Y} da conta de movimento {rotulo} ainda não foi importado: "
+            "importe e concilie antes de informar o saldo."
+        )
+    return ""
+
+
 def previa(user, *, account_id, data: date, saldo_informado) -> Previa:
     conta = _conta(user, account_id, "view")
     informado = _decimal(saldo_informado, "Saldo").quantize(_QUANTO)
     saldos = decimal_balances_before_by_account([conta.id], data + timedelta(days=1), VIEW_REALIZED)
-    return Previa(conta=conta, data=data, saldo_informado=informado, saldo_no_cb=saldos.get(conta.id, Decimal("0.00")))
+    return Previa(
+        conta=conta, data=data, saldo_informado=informado, saldo_no_cb=saldos.get(conta.id, Decimal("0.00")),
+        pendencia=pendencia_da_movimentacao(conta, data),
+    )
 
 
 def _categoria(nome: str) -> CashFlowCategory:
@@ -136,6 +177,8 @@ def aplicar(
 
     atual = previa(user, account_id=account_id, data=data, saldo_informado=saldo_informado)
     conta = _conta(user, account_id, "create")
+    if atual.pendencia:
+        raise ValueError(atual.pendencia)
     if atual.diferenca != _decimal(diferenca_esperada, "Diferença").quantize(_QUANTO):
         raise ValueError("O saldo do CB mudou desde a prévia. Confira a nova diferença.")
     if atual.tipo is None:

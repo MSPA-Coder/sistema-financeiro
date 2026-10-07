@@ -354,6 +354,12 @@ saldo do dia, porque a ordem dentro do dia não é confiável. O formato é
 reconhecido por "itau.com.br" e não pelo nome, que aparece em Pix e TED para o
 Itaú no extrato de qualquer banco; a conta vem de "agência: ... conta: ...".
 
+O da Avenue (`AvenuePdfStatementAdapter`) lê a conta brasileira, em reais: por
+onde o dinheiro entra (Pix), sai para a conta em dólar (remessa de câmbio) e sai
+o IOF. A data de cada linha é a da liquidação, quando o saldo muda; a coluna de
+saldo confere linha a linha a partir do saldo inicial do resumo, e o saldo final
+fecha a cadeia. Formato reconhecido por "www.avenue.us"; conta por "Nº conta".
+
 ### Plano do extrato de conta
 
 A tela de Conciliação mostra, por linha pendente, o que ela vai virar, e
@@ -362,7 +368,8 @@ que `fatura.planejar` faz para o cartão). Na ordem em que é decidido:
 
 1. **ignorar**, quando uma regra explícita manda;
 2. **conciliar** com o único lançamento candidato (mesma conta, sinal e valor,
-   no mês do extrato); vários candidatos pedem escolha manual;
+   no mês do extrato); entre vários, o único na data da linha, e sem ele a
+   escolha é manual;
 3. **transferência pareada**: outra linha pendente, em outra conta do usuário,
    de sinal oposto, mesmo valor e até dois dias de distância, com o nome de um
    titular no texto (ou cara de transferência nas duas) e par único dos dois
@@ -387,7 +394,7 @@ o aluguel de ações de "Rendimentos"). A regra explícita (`StatementRule`,
 sinal, nunca por id.
 
 O arquivo pode informar o saldo (`LEDGERBAL` do OFX, "Saldo final" da Genial e do
-Mercado Pago, último "SALDO DO DIA" do período no Itaú). Ele é guardado no lote e conferido, nas telas Importar extratos e faturas e Extratos importados, com o
+Mercado Pago, último "SALDO DO DIA" do período no Itaú, "Saldo final" da Avenue). Ele é guardado no lote e conferido, nas telas Importar extratos e faturas e Extratos importados, com o
 saldo realizado do CB na mesma data; a diferença aponta linha faltando ou sobrando
 em qualquer ponto do histórico. Não entra no hash da linha.
 
@@ -400,6 +407,32 @@ explícito: *Rendimentos* ou *Ajuste assumido* quando o saldo real é maior;
 *IR/IOF*, *Perda* ou *Ajuste assumido* quando é menor. Perda e ajuste assumido
 exigem motivo, usam a categoria "Ajustes de Saldo" e aparecem na lista de
 assunções. Se o saldo do CB mudou entre a prévia e o lançamento, nada é gravado.
+
+### Aplicação movimentada por conta corrente
+
+Cofrinho, CDB, Caixinha, Rende Fácil e Tesouro Direto não têm extrato: o
+dinheiro entra e sai por uma conta corrente do mesmo titular e moeda, a **conta
+de movimento** da aplicação (`FinancialAccount.movement_account`, só para o tipo
+aplicação). O rendimento do mês é saldo informado − (saldo anterior + entradas −
+saídas), que é exatamente a diferença que Saldo Aplicações lança.
+
+- **Transferências**: vêm do extrato da conta de movimento. A regra de ação
+  "aplicação vinculada" (`StatementRule.action = "aplicacao"`) leva a linha para
+  a única aplicação cuja conta de movimento é a da linha (filtrada pelo nome, se a
+  regra tiver um); nenhuma ou mais de uma deixa a linha para decisão manual. É o
+  que permite uma só regra para "EMISSÃO/RESGATE DE CDB" do C6, que é o "CDB" de
+  um titular e a "Caixinha" do outro.
+- **Saldo Aplicações** recusa o saldo de uma aplicação vinculada enquanto o
+  extrato do mês da conta de movimento não foi importado, ou ainda tem linha
+  pendente até a data: a transferência que falta viraria rendimento.
+- **Situação das Contas**: o mês da aplicação vinculada é conciliado quando a
+  conta de movimento está conciliada no mês e o saldo foi informado no último dia
+  do mês, ou quando ela terminou o mês zerada e sem movimento. Senão fica com
+  pendências (dizendo qual falta) ou sem importação.
+- **Fechamento em lote**: `manage.py fechar_meses_conciliados --usuario NOME
+  [--aplicar]` fecha os meses conciliados (por esse critério e pelo das contas
+  com extrato), fora o mês corrente e os já fechados; pula, listando, o mês cujo
+  saldo de extrato diverge do CB.
 
 ### Dados já gravados
 

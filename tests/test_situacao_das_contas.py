@@ -277,3 +277,13 @@ def test_detalhe_do_extrato_recusa_cartao_e_conta_alheia(cenario):
         resposta = c.client_comum.get(f"/banking/import/{lote.id}/extrato/")
         assert resposta.status_code == 302
         assert resposta.url == "/banking/statements/"
+
+
+def test_matriz_nao_mostra_mes_anterior_a_data_inicial_do_sistema(cenario):
+    from core.services import update_system_start_date
+
+    update_system_start_date("2026-08-15")
+    matriz = situacao.montar(cenario.usuario, quantos=6, hoje=date(2026, 10, 6))
+
+    assert matriz.meses == [date(2026, 8, 1), date(2026, 9, 1), date(2026, 10, 1)]
+    assert all(celula.mes >= date(2026, 8, 1) for linha in matriz.linhas for celula in linha.celulas)

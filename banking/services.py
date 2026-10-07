@@ -11,6 +11,7 @@ from django.utils.timezone import localdate
 from accounts.services import accessible_owner_ids, can_access_owner
 from core.domain.finance import (
     ACCOUNT_KIND_CREDIT_CARD,
+    ACCOUNT_KIND_INVESTMENT,
     ACCOUNT_KIND_REGULAR,
     ACCOUNT_PURPOSE_PERSONAL,
     BASE_CURRENCY,
@@ -122,7 +123,7 @@ def list_accounts_for_user(user, owner_id: int | None = None, institution_id: in
     `transactions` sem importar o app de lançamentos.
     """
     owner_ids = accessible_owner_ids(user, "view")
-    queryset = FinancialAccount.objects.select_related('owner', 'institution', 'card_payment_account').filter(
+    queryset = FinancialAccount.objects.select_related('owner', 'institution', 'card_payment_account', 'movement_account').filter(
         owner_id__in=owner_ids
     ).annotate(
         has_entries=Exists(
@@ -354,6 +355,34 @@ def _clean_card_fields(
     }
 
 
+def _clean_movement_account(
+    user, *, account_kind: str, movement_account_id: str, owner_id: int, currency: str, account_id: int | None = None
+) -> FinancialAccount | None:
+    """A conta de movimento de uma aplicação, validada. Outros tipos saem sem.
+
+    É a conta corrente do mesmo titular e da mesma moeda por onde o dinheiro da
+    aplicação entra e sai: é o extrato dela que traz as transferências."""
+    raw = (movement_account_id or "").strip()
+    if (account_kind or "").strip() != ACCOUNT_KIND_INVESTMENT or not raw:
+        return None
+    try:
+        movement_id = int(raw)
+    except ValueError as exc:
+        raise ValueError("Conta de movimento inválida.") from exc
+    movement = FinancialAccount.objects.filter(id=movement_id).first()
+    if movement is None or not can_access_account(user, movement_id):
+        raise ValueError("Conta de movimento não encontrada.")
+    if movement.id == account_id:
+        raise ValueError("A aplicação não pode ser a própria conta de movimento.")
+    if movement.account_kind != ACCOUNT_KIND_REGULAR:
+        raise ValueError("A conta de movimento tem de ser uma conta comum, não cartão nem outra aplicação.")
+    if movement.owner_id != int(owner_id):
+        raise ValueError("A conta de movimento tem de ser do mesmo titular da aplicação.")
+    if movement.currency != currency:
+        raise ValueError("A conta de movimento tem de estar na mesma moeda da aplicação.")
+    return movement
+
+
 def _clean_purpose(raw: str | None) -> str:
     purpose = (raw or ACCOUNT_PURPOSE_PERSONAL).strip()
     if purpose not in VALID_ACCOUNT_PURPOSES:
@@ -377,6 +406,7 @@ def create_account(
     card_payment_account_id: str = "",
     card_estimated_spend: str = "",
     statement_identifier: str = "",
+    movement_account_id: str = "",
 ) -> FinancialAccount:
     clean_owner_id, clean_institution_id, clean_name, balance = _clean_account_fields(
         owner_id, institution_id, account_name, initial_balance
@@ -396,6 +426,10 @@ def create_account(
         card_estimated_spend=card_estimated_spend,
         currency=clean_currency,
     )
+    movement = _clean_movement_account(
+        user, account_kind=card["account_kind"], movement_account_id=movement_account_id,
+        owner_id=clean_owner_id, currency=clean_currency,
+    )
 
     return FinancialAccount.objects.create(
         owner_id=clean_owner_id,
@@ -406,6 +440,7 @@ def create_account(
         initial_balance_date=clean_balance_date,
         statement_identifier=(statement_identifier or "").strip()[:40],
         purpose=_clean_purpose(purpose),
+        movement_account=movement,
         **card,
     )
 
@@ -427,6 +462,7 @@ def update_account(
     card_payment_account_id: str = "",
     card_estimated_spend: str = "",
     statement_identifier: str = "",
+    movement_account_id: str = "",
 ) -> FinancialAccount:
     clean_owner_id, clean_institution_id, clean_name, balance = _clean_account_fields(
         owner_id, institution_id, account_name, initial_balance
@@ -467,6 +503,16 @@ def update_account(
             "Esta conta é a conta de pagamento de um cartão e não pode virar cartão. "
             "Troque antes a conta de pagamento desse cartão."
         )
+    # Idem para a conta de movimento de uma aplicação: ela tem de continuar conta comum.
+    if card["account_kind"] != ACCOUNT_KIND_REGULAR and account.linked_investments.exists():
+        raise ValueError(
+            "Esta conta é a conta de movimento de uma aplicação e tem de continuar conta comum. "
+            "Troque antes a conta de movimento dessa aplicação."
+        )
+    movement = _clean_movement_account(
+        user, account_kind=card["account_kind"], movement_account_id=movement_account_id,
+        owner_id=clean_owner_id, currency=clean_currency, account_id=account.id,
+    )
 
     account.owner_id = clean_owner_id
     account.institution_id = clean_institution_id
@@ -476,11 +522,12 @@ def update_account(
     account.initial_balance_date = clean_balance_date
     account.statement_identifier = (statement_identifier or "").strip()[:40]
     account.purpose = _clean_purpose(purpose)
+    account.movement_account = movement
     for field, value in card.items():
         setattr(account, field, value)
     account.save(update_fields=[
         "owner", "institution", "account_name", "initial_balance",
-        "currency", "initial_balance_date", "statement_identifier", "purpose", *card, "updated_at",
+        "currency", "initial_balance_date", "statement_identifier", "purpose", "movement_account", *card, "updated_at",
     ])
     return account
 
