@@ -369,7 +369,8 @@ que `fatura.planejar` faz para o cartão). Na ordem em que é decidido:
 1. **ignorar**, quando uma regra explícita manda;
 2. **conciliar** com o único lançamento candidato (mesma conta, sinal e valor,
    no mês do extrato); entre vários, o único na data da linha, e sem ele a
-   escolha é manual;
+   escolha é manual. Um lançamento nunca é dado a duas linhas: o da data da
+   linha fica com ela, e a outra segue sem candidato;
 3. **transferência pareada**: outra linha pendente, em outra conta do usuário,
    de sinal oposto, mesmo valor e até dois dias de distância, com o nome de um
    titular no texto (ou cara de transferência nas duas) e par único dos dois
@@ -424,7 +425,9 @@ saídas), que é exatamente a diferença que Saldo Aplicações lança.
   um titular e a "Caixinha" do outro.
 - **Saldo Aplicações** recusa o saldo de uma aplicação vinculada enquanto o
   extrato do mês da conta de movimento não foi importado, ou ainda tem linha
-  pendente até a data: a transferência que falta viraria rendimento.
+  pendente até a data: a transferência que falta viraria rendimento. Conta como
+  importado até o fim do período que o arquivo declara (o `DTEND` do OFX), mesmo
+  sem linha nos últimos dias.
 - **Situação das Contas**: o mês da aplicação vinculada é conciliado quando a
   conta de movimento está conciliada no mês e o saldo foi informado no último dia
   do mês, ou quando ela terminou o mês zerada e sem movimento. Senão fica com

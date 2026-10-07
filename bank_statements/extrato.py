@@ -325,6 +325,28 @@ def _lancamentos_para_par(user, linhas, padroes) -> dict[int, CashFlowEntry]:
     }
 
 
+def _candidatos_sem_repetir(linhas, por_linha: dict) -> dict:
+    """Os candidatos de cada linha, sem dar o mesmo lançamento a duas linhas.
+
+    Duas linhas iguais no mês (o Pix de 1.500,00 nos dias 25 e 26) e um só
+    lançamento: o da data da linha fica com a linha daquele dia, e a outra
+    segue sem ele -- vira lançamento novo, em vez de colidir na hora de
+    conciliar. Primeiro reserva quem casa pelo dia, depois o resto, pela data."""
+    desempatados = {linha.id: reconciliation.desempatar_pelo_dia(linha, por_linha.get(linha.id, [])) for linha in linhas}
+    reservado: dict[int, int] = {}  # lançamento -> linha
+    for linha in linhas:
+        achados = desempatados[linha.id]
+        if len(achados) == 1 and (achados[0].realized_date or achados[0].due_date) == linha.statement_date:
+            reservado.setdefault(achados[0].id, linha.id)
+    resultado = {}
+    for linha in sorted(linhas, key=lambda item: (item.statement_date, item.id)):
+        livres = [e for e in desempatados[linha.id] if reservado.get(e.id, linha.id) == linha.id]
+        if len(livres) == 1:
+            reservado.setdefault(livres[0].id, linha.id)
+        resultado[linha.id] = livres
+    return resultado
+
+
 def planejar(user, linhas) -> list[Plano]:
     """Decide o destino de cada linha nova, sem gravar nada."""
     linhas = [linha for linha in linhas if linha.status == LINE_STATUS_NEW]
@@ -336,7 +358,7 @@ def planejar(user, linhas) -> list[Plano]:
     com_lancamento = _lancamentos_para_par(
         user, [linha for linha in linhas if linha.id not in pares], padroes
     )
-    candidatos = reconciliation.candidate_entries_for_lines(linhas)
+    candidatos = _candidatos_sem_repetir(linhas, reconciliation.candidate_entries_for_lines(linhas))
 
     planos: list[Plano] = []
     for linha in sorted(linhas, key=lambda item: (item.statement_date, item.id)):
@@ -347,7 +369,7 @@ def planejar(user, linhas) -> list[Plano]:
         if regra is not None and regra.action == RULE_ACTION_IGNORE:
             planos.append(Plano(linha, IGNORA, regra=regra))
             continue
-        achados = reconciliation.desempatar_pelo_dia(linha, candidatos.get(linha.id, []))
+        achados = candidatos.get(linha.id, [])
         if len(achados) == 1:
             planos.append(Plano(linha, CONCILIA, lancamento=achados[0], regra=regra))
             continue

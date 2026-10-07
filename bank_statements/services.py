@@ -20,7 +20,12 @@ from django.db import transaction
 from banking.models import FinancialAccount
 from banking.services import accessible_account_ids, can_access_account
 
-from .adapters import extract_statement_balance, get_statement_adapter, read_statement_upload
+from .adapters import (
+    extract_statement_balance,
+    extract_statement_period_end,
+    get_statement_adapter,
+    read_statement_upload,
+)
 from .fatura_csv import CartaoCsvAdapter, formato_da_fatura
 from .models import BankStatementImport, BankStatementLine
 
@@ -121,6 +126,7 @@ def import_statement_file(
             row_count=0,
             statement_balance=saldo[0] if saldo else None,
             statement_balance_date=saldo[1] if saldo else None,
+            statement_period_end=None if account.is_credit_card else extract_statement_period_end(uploaded_file),
         )
         existing_hashes = _existing_line_hashes(
             clean_account_id, {line.line_hash for line in parsed}

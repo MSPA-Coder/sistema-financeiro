@@ -1203,8 +1203,34 @@ def extract_statement_balance(file: UploadedFile) -> tuple[Decimal, date] | None
     return None
 
 
+_RE_OFX_DTEND = re.compile(r"<DTEND>\s*(\d{8})", re.IGNORECASE)
+
+
+def extract_statement_period_end(file: UploadedFile) -> date | None:
+    """Até que dia o arquivo diz cobrir a conta (o `DTEND` do OFX), ou `None`.
+
+    Um extrato sem movimento nos últimos dias continua cobrindo esses dias: é
+    o que deixa informar o saldo de uma aplicação vinculada numa data em que a
+    conta corrente não teve linha nenhuma. Nunca levanta."""
+    try:
+        filename = (getattr(file, "name", "") or "").lower()
+        mimetype = (getattr(file, "content_type", "") or "").lower()
+        if not (any(filename.endswith(ext) for ext in _OFX_EXTENSIONS) or any(m in mimetype for m in _OFX_MIMETYPES)):
+            return None
+        raw = read_statement_upload(file, label="de extrato")
+        try:
+            content = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            content = raw.decode("latin-1")
+        achado = _RE_OFX_DTEND.search(content)
+        return _parse_ofx_date(achado.group(1)) if achado else None
+    except (ValueError, ArithmeticError):
+        return None
+
+
 __all__ = [
     "AvenuePdfStatementAdapter",
+    "extract_statement_period_end",
     "XpPdfStatementAdapter",
     "extract_statement_balance",
     "pdf_institution_names",
