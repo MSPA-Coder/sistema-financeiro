@@ -168,3 +168,18 @@ def test_realizado_por_outro_valor_e_candidato_pelo_valor_realizado(cenario):
     linha.refresh_from_db()
     assert linha.status == LINE_STATUS_RECONCILED
     assert (lancamento.entry_amount, lancamento.realized_amount) == (Decimal("495.00"), Decimal("495.34"))
+
+
+def test_dois_candidatos_iguais_no_mes_desempatam_pela_data_da_linha(cenario):
+    user, conta, categoria = cenario
+    dia_19 = _despesa_realizada(user, conta, categoria, vencimento=date(2026, 3, 19), realizado_em=date(2026, 3, 19))
+    dia_23 = _despesa_realizada(user, conta, categoria, vencimento=date(2026, 3, 23), realizado_em=date(2026, 3, 23))
+    linha_19 = _linha(conta, data=date(2026, 3, 19), valor=Decimal("-100.00"))
+    linha_23 = _linha(conta, data=date(2026, 3, 23), valor=Decimal("-100.00"))
+    linha_25 = _linha(conta, data=date(2026, 3, 25), valor=Decimal("-100.00"))
+
+    planos = {plano.linha.id: plano for plano in extrato.planejar(user, [linha_19, linha_23, linha_25])}
+
+    assert planos[linha_19.id].lancamento == dia_19
+    assert planos[linha_23.id].lancamento == dia_23
+    assert planos[linha_25.id].acao == extrato.AMBIGUA  # nenhum no dia: continua manual

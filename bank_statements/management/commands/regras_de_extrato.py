@@ -18,6 +18,7 @@ from django.core.management.base import BaseCommand
 
 from bank_statements.models import (
     RULE_ACTION_CATEGORY,
+    RULE_ACTION_LINKED,
     RULE_ACTION_TRANSFER,
     RULE_SIGN_ANY,
     RULE_SIGN_CREDIT,
@@ -46,6 +47,16 @@ REGRAS_PADRAO = (
     Regra(
         "Rende Fácil do BB é transferência para a conta Rende Fácil", "Rende Facil",
         ("Banco do Brasil",), RULE_SIGN_ANY, RULE_ACTION_TRANSFER, conta_de_destino="Rende Fácil",
+    ),
+    # O C6 chama de CDB tanto o "CDB" do Maridito quanto a "Caixinha" da Esposita:
+    # a regra vai para a aplicação vinculada à conta da linha, não para um nome.
+    Regra(
+        "Emissão de CDB no C6 é transferência para a aplicação vinculada", "EMISSAO DE CDB",
+        ("C6",), RULE_SIGN_DEBIT, RULE_ACTION_LINKED,
+    ),
+    Regra(
+        "Resgate de CDB no C6 é transferência da aplicação vinculada", "RESGATE DE CDB",
+        ("C6",), RULE_SIGN_CREDIT, RULE_ACTION_LINKED,
     ),
     Regra(
         "Liberação de dinheiro do Mercado Pago é prêmio de loteria", "Liberacao de dinheiro",

@@ -241,6 +241,8 @@ def _mes_do_get(valor) -> date | None:
 
 def _destino_da_celula(conta, celula) -> str:
     """Onde resolver a célula: importar o que falta, conciliar o pendente, ver o que já está feito."""
+    if conta.movement_account_id and celula.motivo.startswith("falta informar"):
+        return reverse('bank_statements:atualizar_saldo')
     if celula.estado == situacao.SEM_IMPORTACAO:
         return reverse('bank_statements:imports_view')
     if celula.estado == situacao.SALDO_INFORMADO and not celula.lote_id:

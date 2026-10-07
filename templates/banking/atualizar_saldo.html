@@ -56,7 +56,9 @@
         saldo no CB <strong>{{ previa.saldo_no_cb|money:previa.conta.currency }}</strong>,
         diferença <strong class="amount {{ previa.diferenca|amount_class }}">{{ previa.diferenca|money_signed:previa.conta.currency }}</strong>.
     </p>
-    {% if previa.tipo %}
+    {% if previa.pendencia %}
+    <p class="fatura-aviso">{{ previa.pendencia }}</p>
+    {% elif previa.tipo %}
     <form method="post" action="{% url 'bank_statements:atualizar_saldo' %}" class="top-filter-row">
         {% csrf_token %}
         <input type="hidden" name="acao" value="aplicar">

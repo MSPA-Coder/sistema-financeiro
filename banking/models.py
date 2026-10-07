@@ -118,6 +118,17 @@ class FinancialAccount(models.Model):
     # Gasto novo por fatura fixado à mão. Vazio, a fatura projetada usa a
     # mediana das últimas faturas importadas (`bank_statements/fatura_projetada.py`).
     card_estimated_spend = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    # Aplicação sem extrato próprio (cofrinho, CDB, Tesouro Direto): o dinheiro
+    # só entra e sai por esta conta corrente, e é o extrato dela que traz as
+    # transferências. Ver `bank_statements.saldo` e `bank_statements.situacao`.
+    movement_account = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='linked_investments',
+        help_text='Só para aplicação: a conta corrente por onde o dinheiro entra e sai.',
+    )
     statement_identifier = models.CharField(
         max_length=40,
         blank=True,

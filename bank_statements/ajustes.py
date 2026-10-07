@@ -6,11 +6,21 @@ o extrato passou a mostrar em várias linhas. O plano **não** mora no repositó
 (descreve dinheiro real); só estas operações moram, cada uma conferindo o que
 espera achar e recusando tudo se não achar.
 
-Operações:
+Operações, nesta ordem:
 
-- `contas`: define o identificador no extrato e/ou o saldo inicial de uma conta;
+- `criar_contas`: cria uma conta (ex.: a aplicação Rende Fácil), com tipo, saldo
+  inicial e, se aplicação, a conta de movimento. `liberar_destino` concede a
+  quem roda o plano a permissão de transferir para ela, que nenhuma conta nova
+  tem (nem para administrador);
+- `contas`: define o identificador no extrato, o saldo inicial e/ou a conta de
+  movimento (`conta_de_movimento`, só para aplicação) de uma conta;
 - `mover_pontas`: troca a conta de um lançamento (uma ponta de transferência
   ou um avulso), refazendo o texto das duas pontas;
+- `converter_em_transferencia`: transforma um lançamento avulso gerencial
+  (receita ou despesa) em ponta de transferência com `outra_conta`, criando a
+  ponta que falta lá. O saldo da conta do lançamento não muda, por isso o mês
+  fechado dela é reaberto e fechado de novo com o mesmo saldo; o mês da outra
+  conta precisa estar aberto, porque ela ganha um lançamento;
 - `excluir`: exclui um lançamento (a transferência inteira, se for ponta), com a
   linha de extrato ligada a ele voltando para "novo".
 
@@ -101,6 +111,9 @@ def _definir_conta(user, spec: dict, relatorio: Relatorio) -> None:
     novo_identificador = spec.get("identificador", conta.statement_identifier)
     novo_saldo = spec.get("saldo_inicial", conta.initial_balance)
     nova_data = spec.get("data_do_saldo_inicial", conta.initial_balance_date.isoformat())
+    nova_movimentacao = (
+        achar_conta(spec["conta_de_movimento"]).id if spec.get("conta_de_movimento") else conta.movement_account_id
+    )
     update_account(
         user, conta,
         owner_id=str(conta.owner_id), institution_id=str(conta.institution_id), account_name=conta.account_name,
@@ -110,10 +123,12 @@ def _definir_conta(user, spec: dict, relatorio: Relatorio) -> None:
         card_payment_account_id=str(conta.card_payment_account_id or ""),
         card_estimated_spend=str(conta.card_estimated_spend or ""),
         statement_identifier=str(novo_identificador),
+        movement_account_id=str(nova_movimentacao or ""),
     )
     relatorio.ok(
         f"Conta {_account_label(conta)}: identificador \"{novo_identificador}\", "
-        f"saldo inicial {novo_saldo} em {nova_data}."
+        f"saldo inicial {novo_saldo} em {nova_data}"
+        + (f", movimenta por {_account_label(conta.movement_account)}." if conta.movement_account_id else ".")
     )
 
 
@@ -168,6 +183,127 @@ def _mover_ponta(user, spec: dict, relatorio: Relatorio, audit_context) -> None:
     relatorio.ok(f"Lançamento #{entrada.id} ({entrada.entry_amount}) movido de {antes} para {_account_label(destino)}.")
 
 
+def _criar_conta(user, spec: dict, relatorio: Relatorio) -> None:
+    from accounts.models import AccountOwner
+    from banking.models import FinancialInstitution
+    from banking.services import create_account
+
+    titular = AccountOwner.objects.filter(name__iexact=spec["titular"]).first()
+    instituicao = FinancialInstitution.objects.filter(institution_name__iexact=spec["instituicao"]).first()
+    if titular is None or instituicao is None:
+        raise ValueError(f"Titular ou instituição não encontrados: {spec!r}.")
+    if FinancialAccount.objects.filter(
+        owner=titular, institution=instituicao, account_name__iexact=spec["nome"]
+    ).exists():
+        raise ValueError(f"A conta {spec['titular']} / {spec['instituicao']} / {spec['nome']} já existe.")
+    movimento = achar_conta(spec["conta_de_movimento"]).id if spec.get("conta_de_movimento") else ""
+    conta = create_account(
+        user,
+        owner_id=str(titular.id), institution_id=str(instituicao.id), account_name=spec["nome"],
+        initial_balance=str(spec.get("saldo_inicial", "0")), currency=spec.get("moeda", "BRL"),
+        initial_balance_date=str(spec.get("data_do_saldo_inicial", "")),
+        account_kind=spec.get("tipo", "conta"), purpose=spec.get("finalidade", "pessoal"),
+        movement_account_id=str(movimento),
+    )
+    if spec.get("liberar_destino"):
+        from accounts.models import UserTransferDestinationAccess
+
+        UserTransferDestinationAccess.objects.get_or_create(user=user, destination_account=conta)
+    relatorio.ok(
+        f"Conta criada: {_account_label(conta)} ({conta.account_kind}), saldo inicial {conta.initial_balance} "
+        f"em {conta.initial_balance_date}"
+        + (f", movimenta por {_account_label(conta.movement_account)}" if conta.movement_account_id else "")
+        + ("; destino de transferência liberado para " + user.username if spec.get("liberar_destino") else "")
+        + "."
+    )
+
+
+def _converter_em_transferencia(user, spec: dict, relatorio: Relatorio, audit_context) -> None:
+    from uuid import uuid4
+
+    from core.domain.finance import (
+        CATEGORY_KIND_MANAGERIAL,
+        ENTRY_TYPE_EXPENSE,
+        ENTRY_TYPE_INCOME,
+        OPERATION_SINGLE,
+        STATUS_REALIZED,
+    )
+    from core.services import log_audit_event
+    from transactions.models import BankOperation
+
+    from .extrato import _categoria_de_transferencia
+    from .meses import meses_reabertos
+
+    entrada = achar_lancamento(spec["lancamento"])
+    outra = achar_conta(spec["outra_conta"])
+    if (
+        entrada.status != STATUS_REALIZED
+        or entrada.operation_type != OPERATION_SINGLE
+        or entrada.source_entry_id is not None
+        or entrada.category.kind != CATEGORY_KIND_MANAGERIAL
+    ):
+        raise ValueError(f"O lançamento #{entrada.id} não é um avulso gerencial realizado.")
+    if outra.id == entrada.account_id or outra.owner_id != entrada.account.owner_id:
+        raise ValueError("A outra conta tem de ser outra conta do mesmo titular.")
+    if outra.currency != entrada.account.currency:
+        raise ValueError("Transferência entre moedas diferentes é lançada à mão.")
+    if not (can_access_account(user, entrada.account_id, "update") and can_access_account(user, outra.id, "create")):
+        raise ValueError("Acesso negado para converter este lançamento.")
+    dia = entrada.realized_date
+    if is_month_closed(outra, dia.year, dia.month):
+        raise ValueError(f"O mês {dia.month:02d}/{dia.year} está fechado na conta {_account_label(outra)}.")
+    recebe_na_conta = entrada.entry_type == ENTRY_TYPE_INCOME
+    if not can_use_transfer_destination(user, (entrada.account if recebe_na_conta else outra).id):
+        raise ValueError("Sem permissão de destino de transferência para a conta que recebe.")
+
+    categoria = _categoria_de_transferencia()
+    antes = (entrada.category.category_name, entrada.description)
+    meses = {(entrada.account_id, dia.year, dia.month)}
+    with meses_reabertos(user, meses, autorizar=True, motivo="Lançamento convertido em transferência", audit_context=audit_context):
+        operacao = BankOperation.objects.create(
+            operation_key=f"{OPERATION_INTERNAL_TRANSFER}-{uuid4().hex}",
+            operation_type=OPERATION_INTERNAL_TRANSFER, description="", status=STATUS_REALIZED,
+            installment_total=1, responsible_user=user,
+        )
+
+        def nova_ponta(*, tipo, descricao, origem=None):
+            return CashFlowEntry.objects.create(
+                account=outra, category=categoria, entry_type=tipo, description=descricao,
+                entry_amount=entrada.realized_amount, installments=1, current_installment=1,
+                due_date=dia, realized_date=dia, realized_amount=entrada.realized_amount,
+                status=STATUS_REALIZED, operation_type=OPERATION_INTERNAL_TRANSFER,
+                bank_operation=operacao, source_entry=origem,
+            )
+
+        if recebe_na_conta:
+            # O dinheiro sai da outra conta (origem) e entra na do lançamento.
+            nova = nova_ponta(tipo=ENTRY_TYPE_EXPENSE, descricao=f"Conta Destino: {_account_label(entrada.account)}")
+            entrada.source_entry = nova
+            entrada.description = f"Conta Origem: {_account_label(outra)}"
+        else:
+            entrada.description = f"Conta Destino: {_account_label(outra)}"
+        entrada.category = categoria
+        entrada.operation_type = OPERATION_INTERNAL_TRANSFER
+        entrada.bank_operation = operacao
+        entrada.save(update_fields=["category", "operation_type", "bank_operation", "source_entry", "description", "updated_at"])
+        if not recebe_na_conta:
+            nova = nova_ponta(tipo=ENTRY_TYPE_INCOME, descricao=f"Conta Origem: {_account_label(entrada.account)}", origem=entrada)
+    log_audit_event(
+        "cash_flow_entry", entrada.id, "update",
+        old_values={"category": antes[0], "description": antes[1]},
+        new_values={"category": categoria.category_name, "description": entrada.description},
+        user=user, request_context=audit_context, summary="Lançamento convertido em ponta de transferência por ajuste de dados.",
+    )
+    log_audit_event(
+        "cash_flow_entry", nova.id, "create", user=user, request_context=audit_context,
+        summary="Ponta de transferência criada por ajuste de dados.",
+    )
+    relatorio.ok(
+        f"Lançamento #{entrada.id} ({entrada.realized_amount} em {dia:%d/%m/%Y}) virou transferência "
+        f"{'de' if recebe_na_conta else 'para'} {_account_label(outra)} (ponta nova #{nova.id})."
+    )
+
+
 def _excluir(user, spec: dict, relatorio: Relatorio, audit_context) -> None:
     entrada = achar_lancamento(spec["lancamento"])
     descricao = f"#{entrada.id} {entrada.entry_amount} ({_account_label(entrada.account)})"
@@ -181,8 +317,10 @@ def executar(user, plano: dict, *, aplicar: bool = False, audit_context=None) ->
     transação revertida, então ela recusa exatamente o que a aplicação recusaria."""
     relatorio = Relatorio()
     ordem = (
+        ("criar_contas", lambda item: _criar_conta(user, item, relatorio)),
         ("contas", lambda item: _definir_conta(user, item, relatorio)),
         ("mover_pontas", lambda item: _mover_ponta(user, item, relatorio, audit_context)),
+        ("converter_em_transferencia", lambda item: _converter_em_transferencia(user, item, relatorio, audit_context)),
         ("excluir", lambda item: _excluir(user, item, relatorio, audit_context)),
     )
     desconhecidas = set(plano) - {nome for nome, _ in ordem}

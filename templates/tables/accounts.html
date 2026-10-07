@@ -66,6 +66,16 @@
             </optgroup>
             {% endfor %}
         </select>
+        <select name="movement_account_id" aria-label="Conta de movimento da aplicação" title="Só para aplicação (cofrinho, CDB, Tesouro): a conta corrente do mesmo titular por onde o dinheiro entra e sai. O extrato dela traz as transferências." data-ui="flex-1">
+            <option value="">Conta de movimento (aplicação)</option>
+            {% for titular, contas in movement_accounts|por_titular %}
+            <optgroup label="{{ titular }}">
+                {% for movimento in contas %}
+                <option value="{{ movimento.id }}">{{ movimento.institution.institution_name }} / {{ movimento.account_name }}</option>
+                {% endfor %}
+            </optgroup>
+            {% endfor %}
+        </select>
         <input type="text" name="statement_identifier" aria-label="Identificador no extrato" placeholder="Nº da conta no extrato (opcional)" maxlength="40" title="Número da conta como aparece no extrato do banco. Usado para reconhecer a conta ao importar vários extratos de uma vez." data-ui="w-120">
         <button type="submit" class="btn btn-primary btn-sm"
                 data-sa-confirmar="Cadastrar esta conta financeira?"

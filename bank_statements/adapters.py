@@ -405,6 +405,8 @@ def extract_pdf_text(raw: bytes) -> str:
 _RE_CONTA_LABEL = re.compile(r"Conta:\s*([\d.\-/]+)")
 # Itaú: "agência: 1234 conta: 012345-6", em minúsculas.
 _RE_CONTA_APOS_AGENCIA = re.compile(r"ag[eê]ncia:\s*\d+\s+conta:\s*([\d.\-/]+)", re.IGNORECASE)
+# Avenue: "Nº conta 066583148".
+_RE_NUMERO_DA_CONTA = re.compile(r"N[º°o]\s*conta\s+([\d.\-/]+)")
 
 
 def extract_conta_label(text: str) -> str | None:
@@ -415,7 +417,7 @@ def extract_conta_label(text: str) -> str | None:
     só para sugerir a conta na importação em lote, nunca na leitura das linhas
     de cada parser.
     """
-    match = _RE_CONTA_LABEL.search(text) or _RE_CONTA_APOS_AGENCIA.search(text)
+    match = _RE_CONTA_LABEL.search(text) or _RE_CONTA_APOS_AGENCIA.search(text) or _RE_NUMERO_DA_CONTA.search(text)
     return match.group(1).strip() if match else None
 
 
@@ -735,6 +737,95 @@ class ItauPdfStatementAdapter:
         return _parse_itau_lines(text, account_id)
 
 
+# --- PDF da Avenue (conta brasileira, em reais) ---
+#
+# Cada lançamento sai em três linhas de texto: a descrição, depois "<data da
+# liquidação> <data da transação> <+|-> <valor> <saldo>" e por fim "ID <uuid>".
+# A data que vale é a da liquidação, que é quando o saldo muda (a remessa de
+# câmbio liquida no dia útil seguinte ao pedido). A coluna de saldo confere cada
+# linha a partir do "Saldo inicial" do resumo, e o "Saldo final" confere a cadeia.
+
+_RE_AVENUE_LINHA = re.compile(
+    r"^(\d{2})/(\d{2})/(\d{4})\s+\d{2}/\d{2}/\d{4}\s+([+-])\s*([\d.]+,\d{2})\s+(-?[\d.]+,\d{2})$"
+)
+_RE_AVENUE_SALDO_INICIAL = re.compile(r"Saldo inicial\s+R\$\s*(-?[\d.]+,\d{2})")
+_RE_AVENUE_SALDO_FINAL = re.compile(r"Saldo final\s+R\$\s*(-?[\d.]+,\d{2})")
+_RE_AVENUE_PERIODO = re.compile(r"Per[ií]odo\s*\(\s*\d{2}/\d{2}/\d{4}\s*-\s*(\d{2})/(\d{2})/(\d{4})\s*\)")
+# Cabeçalho repetido no topo de cada página e da tabela: nunca é descrição.
+_AVENUE_CABECALHO = ("Descrição", "liquidação transação", "Data da Data da", "CPF ", "Nº conta")
+
+
+def _avenue_valor(bruto: str) -> Decimal:
+    return _to_decimal(bruto.replace(".", "").replace(",", "."))
+
+
+def _parse_avenue_lines(text: str, account_id: int) -> list[ParsedStatementLine]:
+    """Interpreta o texto extraído (via pdfplumber) do extrato da conta brasileira da Avenue."""
+    inicial, final = _RE_AVENUE_SALDO_INICIAL.search(text), _RE_AVENUE_SALDO_FINAL.search(text)
+    if inicial is None or final is None:
+        raise ValueError("Não encontrei o saldo inicial/final no extrato Avenue.")
+    saldo = _avenue_valor(inicial.group(1))
+    parsed: list[ParsedStatementLine] = []
+    anterior = ""
+    for raw_line in text.splitlines():
+        linha = raw_line.strip()
+        if not linha:
+            continue
+        match = _RE_AVENUE_LINHA.match(linha)
+        if match is None:
+            anterior = linha
+            continue
+        day, month, year, sinal, valor_raw, saldo_raw = match.groups()
+        dia = date(int(year), int(month), int(day))
+        descricao = anterior
+        if not descricao or descricao.startswith("ID ") or descricao.startswith(_AVENUE_CABECALHO):
+            raise ValueError(f"Não achei a descrição do lançamento de {dia:%d/%m/%Y} no extrato Avenue.")
+        valor = _avenue_valor(valor_raw)
+        valor = -valor if sinal == "-" else valor
+        if valor == 0:
+            raise ValueError("Valor zerado no extrato não é aceito.")
+        saldo += valor
+        if abs(saldo - _avenue_valor(saldo_raw)) > Decimal("0.01"):
+            raise ValueError(
+                f"Inconsistência no extrato Avenue em {dia:%d/%m/%Y}: o saldo depois do lançamento "
+                f"não bate ({saldo_raw}). O layout pode ter mudado."
+            )
+        descricao = descricao[:255]
+        parsed.append(
+            ParsedStatementLine(
+                statement_date=dia, description=descricao, amount=valor,
+                line_hash=line_hash(account_id, dia, descricao, valor),
+            )
+        )
+        anterior = ""
+    if not parsed:
+        raise ValueError("Nenhum lançamento encontrado no extrato Avenue (PDF).")
+    if abs(saldo - _avenue_valor(final.group(1))) > Decimal("0.01"):
+        raise ValueError(
+            f"Inconsistência no extrato Avenue: os lançamentos não fecham com o saldo final ({final.group(1)})."
+        )
+    max_rows = max_statement_rows()
+    if len(parsed) > max_rows:
+        raise ValueError(f"Extrato Avenue excede o limite de {max_rows} linha(s).")
+    return numerar_repeticoes(parsed, account_id)
+
+
+class AvenuePdfStatementAdapter:
+    """Adapter para o extrato em PDF da conta brasileira (R$) da Avenue."""
+
+    def parse(self, file: UploadedFile, account_id: int) -> list[ParsedStatementLine]:
+        raw = read_statement_upload(file, label="PDF")
+        text = extract_pdf_text(raw)
+        return _parse_avenue_lines(text, account_id)
+
+
+def _saldo_da_avenue(text: str) -> tuple[Decimal, date] | None:
+    final, periodo = _RE_AVENUE_SALDO_FINAL.search(text), _RE_AVENUE_PERIODO.search(text)
+    if final is None or periodo is None:
+        return None
+    return _avenue_valor(final.group(1)), date(int(periodo.group(3)), int(periodo.group(2)), int(periodo.group(1)))
+
+
 def _saldo_do_itau(text: str) -> tuple[Decimal, date] | None:
     """O saldo do último dia com saldo dentro do período."""
     leitura = _itau_ler(text)
@@ -972,12 +1063,14 @@ _PDF_ADAPTERS = {
     "mercado pago": MercadoPagoPdfStatementAdapter,
     "xp investimentos": XpPdfStatementAdapter,
     "itaú": ItauPdfStatementAdapter,
+    "avenue": AvenuePdfStatementAdapter,
 }
 # Texto que identifica o formato no PDF quando o nome da instituição sozinho é
 # arriscado: "Itaú" aparece no extrato de qualquer banco que tenha um Pix ou TED
 # para o Itaú, e duas instituições no mesmo texto deixam o PDF sem formato.
 _PDF_MARCAS = {
     "itaú": "itau.com.br",
+    "avenue": "www.avenue.us",
 }
 # Outros nomes sob os quais a mesma instituição pode estar cadastrada. O "SCP XP
 # Investimestos" (sic) é como a conta de investimento da XP foi cadastrada.
@@ -1080,6 +1173,8 @@ def _saldo_do_pdf(text: str) -> tuple[Decimal, date] | None:
             return _brl(saldo.group(1), saldo.group(2), saldo.group(3)), dia
     if formato == "itaú":
         return _saldo_do_itau(text)
+    if formato == "avenue":
+        return _saldo_da_avenue(text)
     return None
 
 
@@ -1109,6 +1204,7 @@ def extract_statement_balance(file: UploadedFile) -> tuple[Decimal, date] | None
 
 
 __all__ = [
+    "AvenuePdfStatementAdapter",
     "XpPdfStatementAdapter",
     "extract_statement_balance",
     "pdf_institution_names",

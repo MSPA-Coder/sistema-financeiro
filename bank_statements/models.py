@@ -169,7 +169,10 @@ class PendingStatementUpload(models.Model):
 RULE_ACTION_CATEGORY = "categoria"
 RULE_ACTION_TRANSFER = "transferencia"
 RULE_ACTION_IGNORE = "ignorar"
-VALID_RULE_ACTIONS = (RULE_ACTION_CATEGORY, RULE_ACTION_TRANSFER, RULE_ACTION_IGNORE)
+# Transferência para a aplicação vinculada à conta da linha (`movement_account`):
+# a mesma regra serve a todos os titulares, sem depender do nome da conta.
+RULE_ACTION_LINKED = "aplicacao"
+VALID_RULE_ACTIONS = (RULE_ACTION_CATEGORY, RULE_ACTION_TRANSFER, RULE_ACTION_IGNORE, RULE_ACTION_LINKED)
 
 RULE_SIGN_ANY = "qualquer"
 RULE_SIGN_CREDIT = "credito"
@@ -215,6 +218,7 @@ class StatementRule(models.Model):
             (RULE_ACTION_CATEGORY, "Categorizar"),
             (RULE_ACTION_TRANSFER, "Transferência para conta do mesmo titular"),
             (RULE_ACTION_IGNORE, "Ignorar a linha"),
+            (RULE_ACTION_LINKED, "Transferência para a aplicação vinculada à conta"),
         ],
     )
     category = models.ForeignKey(
@@ -262,6 +266,7 @@ class StatementRule(models.Model):
                     Q(action=RULE_ACTION_CATEGORY, category__isnull=False)
                     | Q(action=RULE_ACTION_TRANSFER, destination_account_name__regex=r"^\s*.+\s*$")
                     | Q(action=RULE_ACTION_IGNORE)
+                    | Q(action=RULE_ACTION_LINKED)
                 ),
                 name="ck_statement_rule_action_fields",
             ),
