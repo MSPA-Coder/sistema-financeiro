@@ -114,3 +114,41 @@ def test_extract_conta_label_reads_account_number_from_header():
 
 def test_sniff_pdf_format_recognizes_mercado_pago_by_name_in_text():
     assert sniff_pdf_format(SAMPLE_TEXT) == "mercado pago"
+
+
+# Layout do extrato com saídas: a descrição quebra em várias linhas de texto,
+# centradas na linha dos valores (às vezes sem descrição nenhuma nela), e o
+# valor da saída vem com "-".
+MULTILINHA_TEXT = """
+EXTRATO DE CONTA
+Fulana de Tal
+CPF/CNPJ: 00000000000 Agência: 1 Conta: 22222222222
+Periodo: De 01-05-2026 al 31-05-2026
+Entradas: R$ 90,66
+Saldo inicial: R$ 1.000,00 Saldo final: R$ 199,06
+Saidas: R$ -891,60
+DETALHE DOS MOVIMENTOS
+DDaattaa DDeessccrriiççããoo IIDD ddaa ooppeerraaççããoo VVaalloorr SSaallddoo
+Reembolso de compra
+02-05-2026 157267801546 R$ 88,02 R$ 1.088,02
+Mercado Libre
+04-05-2026 Rendimentos 1743183900198 R$ 2,64 R$ 1.090,66
+Pagamento de conta
+11-05-2026 PREVENT SENIOR PRIVATE 158748864860 R$ -890,61 R$ 200,05
+OPERADORA DE SAUD
+1/2
+Pix enviado Fulano
+26-05-2026 161105795202 R$ -0,99 R$ 199,06
+de Tal
+Data de geração: 07-10-2026
+"""
+
+
+def test_descricao_em_varias_linhas_e_saida_com_sinal():
+    lines = _parse_mercadopago_lines(MULTILINHA_TEXT, account_id=1)
+    assert [(line.statement_date, line.amount, line.description) for line in lines] == [
+        (date(2026, 5, 2), Decimal("88.02"), "Reembolso de compra Mercado Libre"),
+        (date(2026, 5, 4), Decimal("2.64"), "Rendimentos"),
+        (date(2026, 5, 11), Decimal("-890.61"), "Pagamento de conta PREVENT SENIOR PRIVATE OPERADORA DE SAUD"),
+        (date(2026, 5, 26), Decimal("-0.99"), "Pix enviado Fulano de Tal"),
+    ]

@@ -121,9 +121,11 @@
        se mexe em quantas quiser e o botão Aplicar grava tudo de uma vez.
 
        Cada caixa só mantém o campo escondido em dia. A última marcada não
-       desmarca -- seleção vazia seria uma tela sempre zerada. Todas marcadas
-       viram o valor de "todas": `ALL` na moeda (`data-all-value`), e campo
-       desligado nos grupos, para o endereço voltar a não ter `grupos`. */
+       desmarca -- seleção vazia seria uma tela sempre zerada. Na moeda, todas
+       marcadas viram `ALL` (`data-all-value`). Nos grupos, o campo só se
+       desliga quando a seleção é a padrão (`data-default-value`, que o
+       servidor manda): o padrão é "todas menos Administradas", então "todas"
+       precisa ir explícito no endereço, senão volta ao padrão sem elas. */
     document.addEventListener('change', function (event) {
         var box = event.target;
         if (!box.matches || !box.matches('[data-global-choice-box]')) return;
@@ -135,11 +137,16 @@
         var field = fieldset.querySelector('[data-global-choice-value]');
         var all = checked.length === boxes.length;
         var allValue = field.getAttribute('data-all-value');
+        var defaultValue = field.getAttribute('data-default-value');
+        var value = checked.map(function (item) { return item.value; }).join(',');
         if (all && allValue) {
             field.value = allValue;
             field.disabled = false;
+        } else if (defaultValue !== null) {
+            field.value = value === defaultValue ? '' : value;
+            field.disabled = value === defaultValue;
         } else {
-            field.value = all ? '' : checked.map(function (item) { return item.value; }).join(',');
+            field.value = all ? '' : value;
             field.disabled = all;
         }
     });

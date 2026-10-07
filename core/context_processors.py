@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from core.account_group_filter import (
     ACCOUNT_GROUP_OPTIONS,
     ALL_ACCOUNT_GROUPS,
+    DEFAULT_ACCOUNT_GROUPS,
     GROUPS_PARAM,
     account_group,
     is_filtering,
@@ -321,6 +322,11 @@ def _global_account_groups(request, user) -> dict:
         "global_account_groups_active": filtering,
         "global_account_groups_param": (
             ",".join(code for code, _label in ACCOUNT_GROUP_OPTIONS if code in groups) if filtering else ""
+        ),
+        # A seleção que vale sem `grupos` na URL; o menu só omite o parâmetro
+        # quando a escolha é exatamente esta (ver application.js).
+        "global_account_groups_default_param": ",".join(
+            code for code, _label in ACCOUNT_GROUP_OPTIONS if code in DEFAULT_ACCOUNT_GROUPS
         ),
         "global_account_groups_labels": selected_labels,
         "global_account_group_options": options,
