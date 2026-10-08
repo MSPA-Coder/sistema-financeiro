@@ -243,6 +243,14 @@ O VPS e seus volumes são independentes do ambiente local. O código no servidor
 edite, faça commit ou merge no VPS. Consulte `docs/operations.md` antes de
 qualquer operação de produção.
 
+O `main` é protegido no GitHub (regra "Proteção do main"): **push direto é
+recusado**. Toda mudança entra por branch própria (`feat/`, `fix/`, `docs/`,
+`chore/`) e pull request com squash merge, depois das verificações obrigatórias
+`Qualidade` e `CodeQL` verdes e com a branch atualizada em relação ao `main`
+(atrás dele, atualize com merge do `main`, nunca rebase nem push forçado). O
+deploy (`~/deploy.sh bancario`) só começa com a CI do commit de merge no `main`
+verde: são duas esperas de CI por mudança, a do PR e a do `main`.
+
 As versões suportadas são Python 3.14, PostgreSQL 17 e **Django 6.1**; faixas
 completas ficam em `pyproject.toml` e as versões exatas em `uv.lock`.
 
