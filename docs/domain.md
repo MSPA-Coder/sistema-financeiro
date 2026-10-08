@@ -302,7 +302,8 @@ Situação das Contas (Movimentação › Importação, `/banking/status/`) é a
 já foi importado e conciliado (`bank_statements/situacao.py`). O mês da célula é o
 da data da linha do extrato ou da fatura, não o da importação. Estados: *sem
 importação* (nenhuma linha no mês), *com pendências* (alguma linha ainda "nova"),
-*conciliado* (linhas, nenhuma pendente), *saldo informado* (sem linhas, mas com
+*conciliado* (linhas, nenhuma pendente; ou nenhuma linha, mas um extrato importado
+informa o saldo num dia do mês: o mês sem movimentação), *saldo informado* (sem linhas, mas com
 lançamento de Saldo Aplicações no mês, o que resta de uma aplicação sem extrato
 linha a linha) e *não se aplica* (sem linhas e mês que termina antes do saldo
 inicial da conta). O resumo conta as contas a que o mês de referência se aplica;
@@ -398,6 +399,13 @@ O arquivo pode informar o saldo (`LEDGERBAL` do OFX, "Saldo final" da Genial e d
 Mercado Pago, último "SALDO DO DIA" do período no Itaú, "Saldo final" da Avenue). Ele é guardado no lote e conferido, nas telas Importar extratos e faturas e Extratos importados, com o
 saldo realizado do CB na mesma data; a diferença aponta linha faltando ou sobrando
 em qualquer ponto do histórico. Não entra no hash da linha.
+
+Arquivo sem movimento mas com saldo é uma importação: o mês não teve
+movimentação (o BB exporta assim o OFX do mês parado). O lote entra sem linhas,
+com o saldo conferido como o de qualquer outro, e o mês do saldo fica
+*conciliado* na Situação das Contas, podendo ser fechado. Sem movimento e sem
+saldo, o arquivo é recusado: não há o que importar. Fatura de cartão sempre
+exige linhas.
 
 ### Saldo Aplicações (antes "Atualizar saldo")
 

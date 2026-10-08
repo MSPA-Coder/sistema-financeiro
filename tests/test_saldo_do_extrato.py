@@ -149,3 +149,43 @@ def test_arquivo_sem_saldo_importa_e_nao_tem_conferencia():
     lote, _, _ = import_statement_file(user, account_id=conta.id, uploaded_file=arquivo)
     assert lote.statement_balance is None
     assert conferencia_de_saldo(lote) is None
+
+
+# Mês sem movimentação: o BB exporta o OFX só com o saldo (janeiro/2026 do BB
+# Conta 06). Com saldo, isso é uma importação; sem saldo, não há o que importar.
+OFX_SO_COM_SALDO = """OFXHEADER:100
+DATA:OFXSGML
+<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS>
+<BANKTRANLIST><DTSTART>20260101000000[-3:BRT]<DTEND>20260131000000[-3:BRT]</BANKTRANLIST>
+<LEDGERBAL><BALAMT>0.00<DTASOF>20260131000000[-3:BRT]</LEDGERBAL>
+</STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>
+"""
+
+
+def _conta_para_importar(nome):
+    user = AppUser.objects.create_user(username=nome, password="senha-segura")
+    titular = AccountOwner.objects.create(name="Titular")
+    UserOwnerAccess.objects.create(
+        user=user, owner=titular, can_view=True, can_create=True, can_update=True, can_delete=True
+    )
+    banco = FinancialInstitution.objects.create(institution_name="Banco do Brasil", institution_type="Banco")
+    return user, FinancialAccount.objects.create(owner=titular, institution=banco, account_name="Conta 06")
+
+
+@pytest.mark.django_db
+def test_extrato_sem_movimento_mas_com_saldo_importa_um_lote_sem_linhas():
+    user, conta = _conta_para_importar("operador-mes-parado")
+    arquivo = SimpleUploadedFile("jan.ofx", OFX_SO_COM_SALDO.encode(), content_type="application/x-ofx")
+    lote, inseridas, duplicadas = import_statement_file(user, account_id=conta.id, uploaded_file=arquivo)
+    assert (inseridas, duplicadas, lote.row_count) == (0, 0, 0)
+    assert (lote.statement_balance, lote.statement_balance_date) == (Decimal("0.00"), date(2026, 1, 31))
+    assert conferencia_de_saldo(lote).bate
+
+
+@pytest.mark.django_db
+def test_extrato_sem_movimento_e_sem_saldo_nao_importa():
+    user, conta = _conta_para_importar("operador-mes-vazio")
+    sem_nada = OFX_SO_COM_SALDO.replace("<LEDGERBAL><BALAMT>0.00<DTASOF>20260131000000[-3:BRT]</LEDGERBAL>", "")
+    arquivo = SimpleUploadedFile("jan.ofx", sem_nada.encode(), content_type="application/x-ofx")
+    with pytest.raises(ValueError, match="nem saldo"):
+        import_statement_file(user, account_id=conta.id, uploaded_file=arquivo)

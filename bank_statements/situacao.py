@@ -9,7 +9,9 @@ Estados de cada célula, do pior ao melhor:
 - **sem importação**: nenhuma linha de extrato ou fatura no mês;
 - **com pendências**: há linhas, e alguma ainda está "nova" (nem conciliada nem
   ignorada);
-- **conciliado**: há linhas e nenhuma está pendente;
+- **conciliado**: há linhas e nenhuma está pendente; ou não há linha, mas um
+  extrato importado informa o saldo num dia do mês (o banco exporta o mês sem
+  movimento só com o saldo, e esse saldo é conferido com o do CB);
 - **saldo informado**: sem linhas, mas o saldo foi atualizado em Saldo Aplicações
   no mês. É o que resta de uma aplicação (CDB, cofrinho) cujo extrato não traz
   linha a linha;
@@ -42,7 +44,7 @@ from core.domain.finance import ACCOUNT_KIND_INVESTMENT, STATUS_REALIZED, VIEW_R
 from reports.services import decimal_balances_before_by_account
 from transactions.models import CashFlowEntry
 
-from .models import LINE_STATUS_NEW, BankStatementLine
+from .models import LINE_STATUS_NEW, BankStatementImport, BankStatementLine
 
 SEM_IMPORTACAO = "sem_importacao"
 COM_PENDENCIAS = "com_pendencias"
@@ -67,9 +69,13 @@ MESES_PERMITIDOS = (3, 6, 12)
 MESES_PADRAO = 6
 
 
-def classificar(*, linhas: int, novas: int, saldo_informado: bool, antes_do_saldo_inicial: bool) -> str:
+def classificar(
+    *, linhas: int, novas: int, saldo_informado: bool, antes_do_saldo_inicial: bool, saldo_do_extrato: bool = False
+) -> str:
     if linhas:
         return COM_PENDENCIAS if novas else CONCILIADO
+    if saldo_do_extrato:
+        return CONCILIADO
     if antes_do_saldo_inicial:
         return NAO_SE_APLICA
     return SALDO_INFORMADO if saldo_informado else SEM_IMPORTACAO
@@ -184,6 +190,22 @@ def _linhas_por_conta_e_mes(ids: list[int], inicio: date, fim: date) -> dict[tup
     return celulas
 
 
+def _saldos_de_extrato(ids: list[int], inicio: date, fim: date) -> dict[tuple[int, date], tuple[int, date]]:
+    """(conta, mês) -> (lote, dia) do saldo informado por um extrato importado
+    naquele mês; havendo vários, o do dia mais tardio."""
+    saldos: dict[tuple[int, date], tuple[int, date]] = {}
+    for lote_id, conta_id, dia in (
+        BankStatementImport.objects.filter(
+            account_id__in=ids, statement_balance__isnull=False,
+            statement_balance_date__gte=inicio, statement_balance_date__lt=fim,
+        )
+        .order_by("statement_balance_date", "id")
+        .values_list("id", "account_id", "statement_balance_date")
+    ):
+        saldos[(conta_id, dia.replace(day=1))] = (lote_id, dia)
+    return saldos
+
+
 def _saldos_informados(ids: list[int], inicio: date, fim: date) -> set[tuple[int, date]]:
     return {
         (linha["account_id"], linha["mes"])
@@ -267,6 +289,7 @@ def estados(contas: list[FinancialAccount], meses: list[date]) -> dict[tuple[int
     ids = sorted({conta.id for conta in contas} | {conta.movement_account_id for conta in vinculadas})
     inicio, fim = meses[0], primeiro_dia_do_mes_seguinte(meses[-1])
     com_linhas = _linhas_por_conta_e_mes(ids, inicio, fim)
+    de_extrato = _saldos_de_extrato(ids, inicio, fim)
     informados = _saldos_informados(ids, inicio, fim)
     no_fim = _saldos_no_fim_do_mes([conta.id for conta in vinculadas], inicio, fim)
     zeradas = _zeradas_sem_movimento([conta.id for conta in vinculadas], meses)
@@ -276,12 +299,17 @@ def estados(contas: list[FinancialAccount], meses: list[date]) -> dict[tuple[int
 
     def celula_comum(conta, mes) -> Celula:
         dados = com_linhas.get((conta.id, mes))
+        saldo_do_extrato = de_extrato.get((conta.id, mes))
         estado = classificar(
             linhas=dados["linhas"] if dados else 0,
             novas=dados["novas"] if dados else 0,
             saldo_informado=(conta.id, mes) in informados,
             antes_do_saldo_inicial=_ultimo_dia(mes) < conta.initial_balance_date,
+            saldo_do_extrato=saldo_do_extrato is not None,
         )
+        if not dados and estado == CONCILIADO:
+            lote_id, dia = saldo_do_extrato
+            return Celula(mes=mes, estado=estado, lote_id=lote_id, motivo=f"extrato sem movimento; saldo de {dia:%d/%m}")
         return Celula(
             mes=mes, estado=estado,
             linhas=dados["linhas"] if dados else 0,

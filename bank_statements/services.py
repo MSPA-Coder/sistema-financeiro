@@ -112,12 +112,15 @@ def import_statement_file(
         raise ValueError("Conta não encontrada.") from exc
 
     parsed = _adapter_for(account, uploaded_file).parse(uploaded_file, clean_account_id)
-    if not parsed:
-        raise ValueError("Nenhuma linha válida encontrada no extrato.")
-
-    filename = _sanitize_filename(uploaded_file.name)
     # Fatura de cartão não traz saldo; extrato de conta traz, às vezes.
     saldo = None if account.is_credit_card else extract_statement_balance(uploaded_file)
+    if not parsed and saldo is None:
+        raise ValueError("O extrato não tem movimento nem saldo: não há o que importar.")
+    # Sem movimento mas com saldo é um mês sem movimentação de verdade: o lote
+    # entra sem linhas, e o saldo dele cobre o mês (Situação das Contas,
+    # fechamento) e é conferido com o do CB como qualquer outro.
+
+    filename = _sanitize_filename(uploaded_file.name)
 
     with transaction.atomic():
         batch = BankStatementImport.objects.create(
