@@ -170,6 +170,11 @@ nascem na estação de desenvolvimento, seguem para o GitHub e chegam ao VPS por
 `~/deploy.sh bancario`. Não edite nem faça commit no servidor. O script de
 implantação recusa uma árvore suja.
 
+Publique por branch, pull request com checks obrigatórios verdes e squash merge;
+só então o `main` remoto é elegível para o deploy. Não faça push direto ao
+`main` nem aguarde uma segunda rodada de CI manualmente: o script confere o
+commit que vai aplicar.
+
 Configuração esperada em `.env.vps`:
 
 ```dotenv
@@ -185,13 +190,14 @@ Verificações não destrutivas usuais:
 docker compose --env-file .env.vps -f compose.yaml ps
 curl -I http://127.0.0.1:5201/health/
 curl -I https://bancario-mspa.duckdns.org/
-~/deploy.sh bancario --check
 ~/deploy.sh --status
 ```
 
 Uma atualização só deve ocorrer depois dos backups necessários. O comando
-operacional é `~/deploy.sh bancario`; ele atualiza o espelho, reconstrói a
-imagem, aguarda os health checks e valida o endereço público. `.env.vps`,
+operacional é `~/deploy.sh bancario`; ele confere o commit elegível, atualiza
+o espelho, reconstrói a imagem, aguarda os health checks e valida o endereço
+público. `~/deploy.sh --status` é diagnóstico transversal, não pré-requisito
+do deploy. `.env.vps`,
 `.secrets/` e `.certs/` também ficam fora do Git e precisam ser preservados em
 uma reinstalação.
 
