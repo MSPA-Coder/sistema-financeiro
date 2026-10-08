@@ -399,6 +399,8 @@ def atualizar_saldo_view(request):
         "previa": previa,
         "escolhas": request.POST if request.method == 'POST' else {},
         "assuncoes": saldo.assuncoes(request.user),
+        "atualizacoes": saldo.atualizacoes(request.user),
+        "categoria_de_ajuste": saldo.CATEGORIA_DE_AJUSTE,
         "destinos": saldo.DESTINOS,
     })
 

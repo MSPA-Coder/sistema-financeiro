@@ -161,6 +161,8 @@ def test_atualizar_saldo_previa_lanca_e_lista_a_assuncao(cenario):
     assert "Diferença lançada" in " ".join(str(m) for m in resposta.context["messages"])
     assert "extrato ainda não importado" in resposta.content.decode()
     assert len(resposta.context["assuncoes"]) == 1
+    assert len(resposta.context["atualizacoes"]) == 1
+    assert "⚠ Assunção" in resposta.content.decode()
 
 
 def test_categorias_mostra_os_grupos_e_cria_um_grupo(cenario):

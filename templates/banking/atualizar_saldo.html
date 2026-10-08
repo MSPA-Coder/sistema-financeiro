@@ -89,21 +89,23 @@
 {% endif %}
 
 <div class="table-container">
-    <h3 class="u-mb-075">Assunções: tudo o que foi lançado como "Ajustes de Saldo"</h3>
+    <h3 class="u-mb-075">Atualizações de saldo lançadas</h3>
+    <p class="u-mb-075">Rendimentos, IR/IOF, perdas e ajustes assumidos. Assunção ({{ assuncoes|length }}) é o que foi lançado como "{{ categoria_de_ajuste }}": está marcada para revisar.</p>
     <table class="tx-table">
         <thead>
-            <tr><th>Data</th><th>Conta</th><th>Descrição</th><th>Valor</th></tr>
+            <tr><th>Data</th><th>Conta</th><th>Destino</th><th>Descrição</th><th>Valor</th></tr>
         </thead>
         <tbody>
-        {% for entrada in assuncoes %}
+        {% for entrada in atualizacoes %}
             <tr>
                 <td>{{ entrada.due_date|date:"d/m/Y" }}</td>
                 <td>{{ entrada.account.owner.name }} / {{ entrada.account.institution.institution_name }} / {{ entrada.account.account_name }}</td>
+                <td>{% if entrada.category.category_name == categoria_de_ajuste %}<strong>⚠ Assunção</strong>{% else %}{{ entrada.category.category_name }}{% endif %}</td>
                 <td>{{ entrada.description }}</td>
                 <td class="amount {% if entrada.entry_type == 'receita' %}amount-positive{% else %}amount-negative{% endif %}">{{ entrada.entry_amount|money:entrada.account.currency }}</td>
             </tr>
         {% empty %}
-            <tr><td colspan="4" class="empty-state">Nenhuma assunção lançada.</td></tr>
+            <tr><td colspan="5" class="empty-state">Nenhuma atualização de saldo lançada.</td></tr>
         {% endfor %}
         </tbody>
     </table>
