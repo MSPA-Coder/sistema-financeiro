@@ -532,19 +532,27 @@ class GenialPdfStatementAdapter:
 
 # --- PDF do Mercado Pago ---
 #
-# Layout bem mais simples que o da Genial: cada linha da tabela já sai numa
-# única linha de texto extraído, "<data> <descrição> <id da operação> R$
-# <valor> R$ <saldo>". A coluna Valor nunca mostra sinal no único extrato
-# disponível para desenhar este parser (só tinha crédito nele) - então o
-# sinal vem da variação do saldo corrente em vez do texto de Valor, e o
-# valor lido só serve de conferência: se divergir, o layout mudou e é
-# melhor falhar alto do que arriscar importar um débito como crédito.
+# Cada movimento tem uma linha de valores, "<data> [descrição] <id da
+# operação> R$ <valor> R$ <saldo>". A descrição pode quebrar em várias linhas
+# de texto, e o pdfplumber as devolve centradas na linha de valores: tantas
+# acima quanto abaixo ("Pagamento de conta" / "PREVENT SENIOR PRIVATE ..." /
+# "OPERADORA DE SAUD"), às vezes com a linha de valores sem descrição nenhuma
+# ("Reembolso de compra" / "<data> <id> ..." / "Mercado Libre"). Por isso as
+# linhas soltas entre duas linhas de valores se dividem: as primeiras fecham a
+# descrição anterior (quantas ela teve acima) e o resto abre a seguinte.
+#
+# O sinal vem da variação do saldo corrente, não do texto de Valor (o primeiro
+# extrato não mostrava sinal); o valor lido só confere. Se divergir, o layout
+# mudou e é melhor falhar alto do que importar um débito como crédito.
 
-_RE_MP_SALDO_INICIAL = re.compile(r"Saldo inicial:\s*R\$\s*([\d.,]+)", re.IGNORECASE)
-_RE_MP_SALDO_FINAL = re.compile(r"Saldo final:\s*R\$\s*([\d.,]+)", re.IGNORECASE)
+_RE_MP_SALDO_INICIAL = re.compile(r"Saldo inicial:\s*R\$\s*(-?[\d.,]+)", re.IGNORECASE)
+_RE_MP_SALDO_FINAL = re.compile(r"Saldo final:\s*R\$\s*(-?[\d.,]+)", re.IGNORECASE)
 _RE_MP_ROW = re.compile(
-    r"^(\d{2})-(\d{2})-(\d{4})\s+(.+)\s+\d+\s+R\$\s*([\d.,]+)\s+R\$\s*([\d.,]+)\s*$"
+    r"^(\d{2})-(\d{2})-(\d{4})\s+(?:(.*?)\s+)?(\d+)\s+R\$\s*(-?[\d.,]+)\s+R\$\s*(-?[\d.,]+)\s*$"
 )
+# Linhas que não são descrição: cabeçalho da tabela (às vezes com letras
+# duplicadas pelo pdfplumber) e numeração de página.
+_RE_MP_FORA_DA_TABELA = re.compile(r"^(?:\d+/\d+|D+a+t+a+\s+D+e+s+c+r+i+.*)$")
 
 
 def _parse_mp_decimal(raw: str) -> Decimal:
@@ -571,20 +579,41 @@ def _parse_mercadopago_lines(text: str, account_id: int) -> list[ParsedStatement
     saldo_anterior = _parse_mp_decimal(saldo_inicial_match.group(1))
     saldo_final_esperado = _parse_mp_decimal(saldo_final_match.group(1))
 
-    parsed: list[ParsedStatementLine] = []
+    movimentos: list[dict] = []
+    soltas: list[str] = []
+    na_tabela = False
+
+    def fechar_anterior(ate: int) -> None:
+        if movimentos:
+            movimentos[-1]["abaixo"] = soltas[:ate]
+
     for raw_line in text.splitlines():
         stripped_line = raw_line.strip()
         if not stripped_line:
             continue
         if stripped_line.startswith("Data de geração:"):
             break  # rodapé: fim da tabela de movimentos
+        if stripped_line.upper().startswith("DETALHE DOS MOVIMENTOS"):
+            na_tabela = True
+            continue
+        if not na_tabela or _RE_MP_FORA_DA_TABELA.match(stripped_line):
+            continue
         match = _RE_MP_ROW.match(stripped_line)
         if not match:
-            continue  # cabeçalho, título de tabela repetido na página 2, rodapé
-        day, month, year, description, valor_raw, saldo_raw = match.groups()
+            soltas.append(stripped_line)
+            continue
+        acima_do_anterior = len(movimentos[-1]["acima"]) if movimentos else 0
+        fechar_anterior(acima_do_anterior)
+        movimentos.append({"match": match, "acima": soltas[acima_do_anterior:], "abaixo": []})
+        soltas = []
+    fechar_anterior(len(soltas))
+
+    parsed: list[ParsedStatementLine] = []
+    for movimento in movimentos:
+        day, month, year, inline, _id, valor_raw, saldo_raw = movimento["match"].groups()
         statement_date = date(int(year), int(month), int(day))
         saldo_atual = _parse_mp_decimal(saldo_raw)
-        valor = _parse_mp_decimal(valor_raw)
+        valor = abs(_parse_mp_decimal(valor_raw))
         amount = saldo_atual - saldo_anterior
         if abs(abs(amount) - valor) > Decimal("0.01"):
             raise ValueError(
@@ -593,7 +622,10 @@ def _parse_mercadopago_lines(text: str, account_id: int) -> list[ParsedStatement
             )
         if amount == 0:
             raise ValueError("Valor zerado no extrato não é aceito.")
-        description = description.strip()[:255]
+        partes = [*movimento["acima"], inline or "", *movimento["abaixo"]]
+        description = " ".join(parte.strip() for parte in partes if parte and parte.strip())[:255]
+        if not description:
+            raise ValueError(f"Lançamento sem descrição no extrato Mercado Pago em {statement_date:%d/%m/%Y}.")
         parsed.append(
             ParsedStatementLine(
                 statement_date=statement_date,

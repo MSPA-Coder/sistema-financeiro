@@ -50,7 +50,8 @@
                                 </label>
                                 {% endfor %}
                                 <input type="hidden" name="grupos" value="{{ global_account_groups_param }}"
-                                       data-global-choice-value {% if not global_account_groups_active %}disabled{% endif %}>
+                                       data-global-choice-value data-default-value="{{ global_account_groups_default_param }}"
+                                       {% if not global_account_groups_active %}disabled{% endif %}>
                             </fieldset>
                             <button type="submit" class="btn btn-primary btn-sm" data-global-filters-submit>Aplicar</button>
                         </form>
