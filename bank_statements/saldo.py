@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
-from django.db.models import Max
+from django.db.models import Max, Q
 
 from banking.models import FinancialAccount
 from banking.services import accessible_account_ids, can_access_account
@@ -47,6 +47,8 @@ from transactions.services import TransactionRequest, create_transaction_batch
 from .models import LINE_STATUS_NEW, BankStatementImport, BankStatementLine
 
 CATEGORIA_DE_AJUSTE = "Ajustes de Saldo"
+#: Início da descrição de todo lançamento daqui (a Situação das Contas também o reconhece por ele).
+PREFIXO_DA_DESCRICAO = "Atualização de saldo"
 
 DESTINO_RENDIMENTOS = "rendimentos"
 DESTINO_IR_IOF = "ir_iof"
@@ -188,7 +190,7 @@ def aplicar(
     if tipo_fixo is not None and tipo_fixo != atual.tipo:
         raise ValueError(f"\"{rotulo}\" não serve ao sentido desta diferença.")
 
-    descricao = f"Atualização de saldo: {rotulo.lower()}"
+    descricao = f"{PREFIXO_DA_DESCRICAO}: {rotulo.lower()}"
     if motivo:
         descricao = f"{descricao} ({motivo})"
     valor = abs(atual.diferenca)
@@ -208,6 +210,21 @@ def aplicar(
         audit_context=audit_context,
         user=user,
     )[0]
+
+
+def atualizacoes(user, limit: int = 200) -> list[CashFlowEntry]:
+    """Tudo o que entrou por "Atualizar saldo" (rendimento, IR/IOF, perda,
+    ajuste assumido) e qualquer outro lançamento de "Ajustes de Saldo" das
+    contas do usuário, do mais recente ao mais antigo."""
+    contas = accessible_account_ids(user, "view")
+    if not contas:
+        return []
+    return list(
+        CashFlowEntry.objects.filter(account_id__in=contas)
+        .filter(Q(description__startswith=PREFIXO_DA_DESCRICAO) | Q(category__category_name__iexact=CATEGORIA_DE_AJUSTE))
+        .select_related("account__owner", "account__institution", "category")
+        .order_by("-due_date", "-id")[:limit]
+    )
 
 
 def assuncoes(user, limit: int = 200) -> list[CashFlowEntry]:

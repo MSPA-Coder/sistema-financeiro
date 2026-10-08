@@ -85,6 +85,9 @@ def test_rendimento_vira_receita_realizada_e_o_saldo_passa_a_bater(cenario):
     assert entrada.entry_type == ENTRY_TYPE_INCOME and entrada.status == STATUS_REALIZED
     assert entrada.realized_date == date(2026, 9, 30) and entrada.entry_amount == Decimal("10.00")
     assert _previa(user, conta, "160,00").diferenca == Decimal("0.00")
+    # Aparece na lista das atualizações de saldo da tela, mas não é assunção.
+    assert [item.id for item in saldo.atualizacoes(user)] == [entrada.id]
+    assert saldo.assuncoes(user) == []
 
 
 def test_saida_vai_para_ir_iof_e_o_destino_de_entrada_nao_serve(cenario):

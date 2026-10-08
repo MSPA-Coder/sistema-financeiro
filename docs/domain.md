@@ -419,6 +419,9 @@ explícito: *Rendimentos* ou *Ajuste assumido* quando o saldo real é maior;
 *IR/IOF*, *Perda* ou *Ajuste assumido* quando é menor. Perda e ajuste assumido
 exigem motivo, usam a categoria "Ajustes de Saldo" e aparecem na lista de
 assunções. Se o saldo do CB mudou entre a prévia e o lançamento, nada é gravado.
+A tela lista todas as atualizações de saldo lançadas (a descrição começa por
+"Atualização de saldo"), com o destino de cada uma; as assunções aparecem
+marcadas.
 
 ### Aplicação movimentada por conta corrente
 
