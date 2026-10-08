@@ -305,8 +305,11 @@ importação* (nenhuma linha no mês), *com pendências* (alguma linha ainda "no
 *conciliado* (linhas, nenhuma pendente; ou nenhuma linha, mas um extrato importado
 informa o saldo num dia do mês: o mês sem movimentação), *saldo informado* (sem linhas, mas com
 lançamento de Saldo Aplicações no mês, o que resta de uma aplicação sem extrato
-linha a linha) e *não se aplica* (sem linhas e mês que termina antes do saldo
-inicial da conta). O resumo conta as contas a que o mês de referência se aplica;
+linha a linha), *mês fechado* e *não se aplica* (sem linhas e mês que termina antes do saldo
+inicial da conta). Mês fechado conta como em dia: fechar é a conferência do
+usuário, e vale também para o que estaria sem importação ou à espera do saldo
+de fim de mês de uma aplicação; a descrição da célula diz o que faltava. Linha
+de extrato pendente continua sendo pendência, mesmo com o mês fechado. O resumo conta as contas a que o mês de referência se aplica;
 por padrão ele é o mês anterior, porque o corrente ainda está em andamento. Cada
 célula leva ao que a resolve: Importar extratos e faturas, Conciliação (conta), a fatura
 (cartão) ou o extrato. Ambas as telas exigem `banking.view`.
