@@ -17,7 +17,12 @@ Estados de cada célula, do pior ao melhor:
   linha a linha;
 - **não se aplica**: sem linhas e o mês termina antes do saldo inicial da conta.
   Quando há linhas, vale o que elas dizem, mesmo antes do saldo inicial: a fatura
-  de cartão anterior a ele é importada e ignorada.
+  de cartão anterior a ele é importada e ignorada;
+- **fechado**: o mês está fechado, e por isso em dia, mesmo sem o que os
+  estados acima pedem (o saldo informado no último dia de uma aplicação, um
+  extrato). Fechar já é a conferência do usuário. Não vale para quem está
+  conciliado ou com saldo informado (o estado deles diz mais) nem para linha de
+  extrato pendente, que continua aparecendo como pendência.
 
 Aplicação com conta de movimento (cofrinho, CDB, Tesouro) não tem extrato: o
 dinheiro entra e sai pela conta corrente, e o rendimento é a diferença para o
@@ -42,7 +47,7 @@ from banking.models import FinancialAccount
 from banking.services import accessible_account_ids
 from core.domain.finance import ACCOUNT_KIND_INVESTMENT, STATUS_REALIZED, VIEW_REALIZED
 from reports.services import decimal_balances_before_by_account
-from transactions.models import CashFlowEntry
+from transactions.models import AccountMonthClose, CashFlowEntry
 
 from .models import LINE_STATUS_NEW, BankStatementImport, BankStatementLine
 
@@ -51,6 +56,7 @@ COM_PENDENCIAS = "com_pendencias"
 CONCILIADO = "conciliado"
 SALDO_INFORMADO = "saldo_informado"
 NAO_SE_APLICA = "nao_se_aplica"
+FECHADO = "fechado"
 
 #: estado -> (ícone, rótulo). O ícone vai junto da cor: o estado não depende dela.
 ROTULOS = {
@@ -58,11 +64,12 @@ ROTULOS = {
     COM_PENDENCIAS: ("⚠", "Com pendências"),
     CONCILIADO: ("✔", "Conciliado"),
     SALDO_INFORMADO: ("✔", "Saldo informado"),
+    FECHADO: ("✔", "Mês fechado"),
     NAO_SE_APLICA: ("—", "Não se aplica"),
 }
-ESTADOS_EM_ORDEM = (CONCILIADO, SALDO_INFORMADO, COM_PENDENCIAS, SEM_IMPORTACAO, NAO_SE_APLICA)
+ESTADOS_EM_ORDEM = (CONCILIADO, SALDO_INFORMADO, FECHADO, COM_PENDENCIAS, SEM_IMPORTACAO, NAO_SE_APLICA)
 #: Estados que contam como "em dia" no resumo.
-EM_DIA = (CONCILIADO, SALDO_INFORMADO)
+EM_DIA = (CONCILIADO, SALDO_INFORMADO, FECHADO)
 
 PREFIXO_DO_SALDO_INFORMADO = "Atualização de saldo"  # ver `saldo.aplicar`
 MESES_PERMITIDOS = (3, 6, 12)
@@ -329,7 +336,23 @@ def estados(contas: list[FinancialAccount], meses: list[date]) -> dict[tuple[int
                 conta, mes, resultado[(conta.movement_account_id, mes)],
                 informado_no_fim=(conta.id, mes) in no_fim, zerada=(conta.id, mes) in zeradas,
             )
+    fechados = set(
+        AccountMonthClose.objects.filter(account_id__in=ids, active=True, year__gte=inicio.year, year__lte=meses[-1].year)
+        .values_list("account_id", "year", "month")
+    )
+    for (conta_id, mes), celula in resultado.items():
+        if (conta_id, mes.year, mes.month) in fechados and celula.estado in (SEM_IMPORTACAO, COM_PENDENCIAS) and not celula.novas:
+            resultado[(conta_id, mes)] = Celula(mes=mes, estado=FECHADO, lote_id=celula.lote_id, motivo=_motivo_do_fechado(celula))
     return resultado
+
+
+def _motivo_do_fechado(celula: Celula) -> str:
+    """O que faltava ao mês, que o fechamento deu por conferido."""
+    if celula.estado == SEM_IMPORTACAO:
+        return "fechado sem extrato importado"
+    if celula.motivo.startswith("falta informar"):
+        return "fechado sem o saldo do fim do mês informado"
+    return "fechado"
 
 
 def montar(user, *, quantos: int = MESES_PADRAO, referencia: date | None = None, hoje: date | None = None) -> Matriz:

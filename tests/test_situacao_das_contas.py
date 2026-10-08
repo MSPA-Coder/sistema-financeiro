@@ -198,6 +198,39 @@ def test_mes_sem_movimento_com_saldo_do_extrato_fica_conciliado(cenario):
 
 
 @pytest.mark.django_db
+def test_mes_fechado_conta_como_em_dia_menos_com_linha_pendente(cenario):
+    from core.domain.finance import ACCOUNT_KIND_INVESTMENT
+    from transactions.services import close_month
+
+    c = cenario
+    # CDB vinculado à corrente: agosto conciliado na corrente, mas sem o saldo
+    # do fim do mês informado (com pendências), e fechado.
+    FinancialAccount.objects.filter(id=c.cdb.id).update(account_kind=ACCOUNT_KIND_INVESTMENT, movement_account=c.conta)
+    _importar(c.conta, "ago", [(date(2026, 8, 5), LINE_STATUS_RECONCILED)])
+    _importar(c.conta, "set", [(date(2026, 9, 5), LINE_STATUS_NEW)])
+    CashFlowEntry.objects.create(
+        account=c.cdb, category=CashFlowCategory.objects.create(category_name="Rendimentos fechado"),
+        entry_type=ENTRY_TYPE_INCOME, entry_amount=Decimal("5.00"), description="Rendimento",
+        due_date=date(2026, 8, 10), status=STATUS_REALIZED, realized_date=date(2026, 8, 10), realized_amount=Decimal("5.00"),
+    )
+    close_month(c.cdb, 2026, 8, None, c.usuario)
+    close_month(c.nova, 2026, 9, None, c.usuario)  # sem extrato nenhum
+    close_month(c.conta, 2026, 9, None, c.usuario)  # com linha pendente
+
+    matriz = situacao.montar(c.usuario, quantos=3, hoje=HOJE)
+
+    cdb_agosto = _celulas(matriz, c.cdb)[date(2026, 8, 1)]
+    assert cdb_agosto.estado == situacao.FECHADO
+    assert cdb_agosto.descricao == "Mês fechado: fechado sem o saldo do fim do mês informado"
+    nova_setembro = _celulas(matriz, c.nova)[date(2026, 9, 1)]
+    assert nova_setembro.estado == situacao.FECHADO
+    assert nova_setembro.detalhe == "fechado sem extrato importado"
+    assert _celulas(matriz, c.conta)[date(2026, 9, 1)].estado == situacao.COM_PENDENCIAS
+    assert _celulas(matriz, c.conta)[date(2026, 8, 1)].estado == situacao.CONCILIADO
+    assert situacao.FECHADO in situacao.EM_DIA
+
+
+@pytest.mark.django_db
 def test_resumo_nao_conta_o_mes_anterior_ao_saldo_inicial(cenario):
     matriz = situacao.montar(cenario.usuario, quantos=3, referencia=date(2026, 8, 20), hoje=HOJE)
 

@@ -34,7 +34,7 @@
 .situacao-celula small { font-weight:400; font-size:0.7rem; color:var(--muted); }
 a.situacao-celula:hover, a.situacao-celula:focus-visible { border-color:currentColor; }
 
-.situacao-conciliado, .situacao-saldo_informado { background:color-mix(in srgb, var(--success) 18%, transparent); color:var(--success); }
+.situacao-conciliado, .situacao-saldo_informado, .situacao-fechado { background:color-mix(in srgb, var(--success) 18%, transparent); color:var(--success); }
 .situacao-com_pendencias { background:color-mix(in srgb, var(--warning) 20%, transparent); color:var(--warning); }
 .situacao-sem_importacao { background:color-mix(in srgb, var(--danger) 16%, transparent); color:var(--danger); }
 .situacao-nao_se_aplica { background:transparent; color:var(--muted); font-weight:400; }
