@@ -4,7 +4,8 @@
     python manage.py fechar_meses_conciliados --usuario NOME --aplicar
 
 "Conciliado" é o estado da Situação das Contas (`bank_statements.situacao`): o
-mês tem linhas de extrato ou fatura e nenhuma pendente; numa aplicação com conta
+mês tem linhas de extrato ou fatura e nenhuma pendente (ou, sem movimento, o
+saldo de um extrato importado); numa aplicação com conta
 de movimento, essa conta está conciliada e o saldo foi informado no último dia
 do mês. Mês sem nada importado não entra, nem o mês corrente, nem mês já
 fechado, nem mês anterior à data inicial do sistema. Mês cujo saldo de extrato não bate com o do CB na mesma data também
@@ -51,7 +52,12 @@ class Command(BaseCommand):
         except AppUser.DoesNotExist as exc:
             raise CommandError(f"Usuário \"{usuario}\" não existe.") from exc
 
-        primeira = BankStatementLine.objects.order_by("statement_date").values_list("statement_date", flat=True).first()
+        inicios = [
+            BankStatementLine.objects.order_by("statement_date").values_list("statement_date", flat=True).first(),
+            BankStatementImport.objects.exclude(statement_balance_date=None)
+            .order_by("statement_balance_date").values_list("statement_balance_date", flat=True).first(),
+        ]
+        primeira = min((d for d in inicios if d is not None), default=None)
         if primeira is None:
             self.stdout.write("Nenhuma linha de extrato importada.")
             return

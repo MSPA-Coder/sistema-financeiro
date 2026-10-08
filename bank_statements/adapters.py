@@ -333,7 +333,9 @@ class OfxStatementAdapter:
         raw_txs = _extract_transactions_xml(content) if is_xml else _extract_transactions_sgml(content)
 
         if not raw_txs:
-            raise ValueError("Nenhuma transação encontrada no arquivo OFX.")
+            # Mês sem movimento: o banco exporta o OFX só com o saldo. Quem
+            # decide se isso importa (tem saldo) ou não (não tem) é o serviço.
+            return []
         max_rows = max_statement_rows()
         if len(raw_txs) > max_rows:
             raise ValueError(f"OFX excede o limite de {max_rows} transação(ões).")

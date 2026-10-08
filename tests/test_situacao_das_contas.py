@@ -61,6 +61,21 @@ def test_classificar(linhas, novas, saldo, antes, esperado):
     ) == esperado
 
 
+@pytest.mark.parametrize(
+    ("linhas", "novas", "esperado"),
+    [
+        # Mês sem movimento cujo extrato traz o saldo: importado e nada pendente.
+        (0, 0, situacao.CONCILIADO),
+        # Com linhas, valem as linhas.
+        (3, 1, situacao.COM_PENDENCIAS),
+    ],
+)
+def test_classificar_mes_com_saldo_de_extrato(linhas, novas, esperado):
+    assert situacao.classificar(
+        linhas=linhas, novas=novas, saldo_informado=False, antes_do_saldo_inicial=False, saldo_do_extrato=True
+    ) == esperado
+
+
 def test_meses_atravessam_a_virada_do_ano():
     assert situacao.meses_ate(date(2026, 2, 17), 4) == [
         date(2025, 11, 1), date(2025, 12, 1), date(2026, 1, 1), date(2026, 2, 1),
@@ -163,6 +178,23 @@ def test_matriz_mostra_cada_estado_e_o_resumo_do_mes_anterior(cenario):
         situacao.COM_PENDENCIAS: 1, situacao.SEM_IMPORTACAO: 1,
     }
     assert (matriz.resumo.em_dia, matriz.resumo.aplicaveis, matriz.resumo.percentual) == (2, 4, 50)
+
+
+@pytest.mark.django_db
+def test_mes_sem_movimento_com_saldo_do_extrato_fica_conciliado(cenario):
+    c = cenario
+    lote = _importar(c.conta, "ago-sem-movimento", [], saldo=Decimal("0.00"), data_do_saldo=date(2026, 8, 31))
+    # Lote sem saldo não cobre mês nenhum.
+    _importar(c.cdb, "sem-nada", [], saldo=None, data_do_saldo=None)
+
+    matriz = situacao.montar(c.usuario, quantos=3, hoje=HOJE)
+
+    agosto = _celulas(matriz, c.conta)[date(2026, 8, 1)]
+    assert agosto.estado == situacao.CONCILIADO
+    assert agosto.lote_id == lote.id
+    assert agosto.descricao == "Conciliado: extrato sem movimento; saldo de 31/08"
+    assert _celulas(matriz, c.conta)[date(2026, 9, 1)].estado == situacao.SEM_IMPORTACAO
+    assert _celulas(matriz, c.cdb)[date(2026, 8, 1)].estado == situacao.SEM_IMPORTACAO
 
 
 @pytest.mark.django_db

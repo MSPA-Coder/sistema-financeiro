@@ -147,6 +147,38 @@ def test_detect_account_ofx_without_header_has_no_hint_but_still_validates(cenar
     assert erro == ""
 
 
+def _ofx_sem_movimento(acctid: str, *, com_saldo: bool) -> bytes:
+    saldo = "<LEDGERBAL><BALAMT>0.00<DTASOF>20260131</LEDGERBAL>" if com_saldo else ""
+    return f"""OFXHEADER:100
+DATA:OFXSGML
+<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS>
+<BANKACCTFROM><BANKID>001<ACCTID>{acctid}</BANKACCTFROM>
+<BANKTRANLIST><DTSTART>20260101<DTEND>20260131</BANKTRANLIST>
+{saldo}
+</STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>
+""".encode()
+
+
+@pytest.mark.django_db
+def test_detect_account_aceita_ofx_sem_movimento_que_traz_saldo(cenario):
+    conta, _rotulo, erro = detect_account(
+        cenario["usuario"], filename="jan.ofx", content_type="application/x-ofx",
+        raw=_ofx_sem_movimento("41861-7", com_saldo=True),
+    )
+    assert conta == cenario["conta_ofx"]
+    assert erro == ""
+
+
+@pytest.mark.django_db
+def test_detect_account_recusa_ofx_sem_movimento_nem_saldo(cenario):
+    conta, _rotulo, erro = detect_account(
+        cenario["usuario"], filename="jan.ofx", content_type="application/x-ofx",
+        raw=_ofx_sem_movimento("41861-7", com_saldo=False),
+    )
+    assert conta is None
+    assert "nem saldo" in erro
+
+
 @pytest.mark.django_db
 def test_detect_account_reports_error_for_unreadable_ofx(cenario):
     conta, rotulo, erro = detect_account(

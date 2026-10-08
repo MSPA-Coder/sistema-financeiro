@@ -31,6 +31,7 @@ from .adapters import (
     extract_conta_label,
     extract_ofx_account_hint,
     extract_pdf_text,
+    extract_statement_balance,
     get_statement_adapter,
     pdf_institution_names,
     read_statement_upload,
@@ -96,6 +97,20 @@ def _account_lookup(user) -> dict[str, list[FinancialAccount]]:
     return lookup
 
 
+def _erro_de_leitura(file_like: UploadedFile, institution=None) -> str:
+    """O erro que a importação daria ao ler o arquivo, ou "".
+
+    Sem movimento só é erro se o arquivo também não traz saldo: com saldo, é um
+    mês sem movimentação e importa (ver `import_statement_file`)."""
+    try:
+        linhas = get_statement_adapter(file_like, institution=institution).parse(file_like, account_id=0)
+    except ValueError as exc:
+        return str(exc)
+    if not linhas and extract_statement_balance(file_like) is None:
+        return "O extrato não tem movimento nem saldo: não há o que importar."
+    return ""
+
+
 def detect_account(
     user, *, filename: str, content_type: str, raw: bytes
 ) -> tuple[FinancialAccount | None, str, str]:
@@ -105,7 +120,7 @@ def detect_account(
     o texto mostrado na tela de confirmação mesmo sem conta detectada (ex.
     instituição reconhecida mas nenhuma conta com esse identificador no
     cadastro). `erro_de_leitura` só vem preenchido quando o arquivo em si já
-    se mostra ilegível (PDF corrompido, OFX sem transação) - descoberto já no
+    se mostra ilegível (PDF corrompido, OFX sem transação nem saldo) - descoberto já no
     upload, não só depois de confirmar.
     """
     lookup = _account_lookup(user)
@@ -135,10 +150,9 @@ def detect_account(
         if conta:
             label = f"{label} · conta {conta}"
         if institution is not None:
-            try:
-                get_statement_adapter(file_like, institution=institution).parse(file_like, account_id=0)
-            except ValueError as exc:
-                return None, label, str(exc)
+            erro = _erro_de_leitura(file_like, institution)
+            if erro:
+                return None, label, erro
         digits = _only_digits(conta) if conta else ""
         matches = lookup.get(digits, []) if digits else []
         if len(matches) > 1 and institution is not None:
@@ -157,10 +171,9 @@ def detect_account(
             content = raw.decode("latin-1")
         hint = extract_ofx_account_hint(content)
         label = f"OFX · conta {hint}" if hint else "OFX"
-        try:
-            get_statement_adapter(file_like).parse(file_like, account_id=0)
-        except ValueError as exc:
-            return None, label, str(exc)
+        erro = _erro_de_leitura(file_like)
+        if erro:
+            return None, label, erro
         digits = _only_digits(hint) if hint else ""
         matches = lookup.get(digits, []) if digits else []
         return (matches[0] if len(matches) == 1 else None), label, ""
