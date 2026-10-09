@@ -229,3 +229,50 @@ def test_filtro_da_tabela_troca_o_corpo_e_acerta_a_url(pagina):
     for filtro in filtros:
         assert "TableBody" in filtro and 'hx-swap="outerHTML"' in filtro, filtro
         assert 'hx-replace-url="true"' in filtro, filtro
+
+
+# ---------------------------------------------------------------------------
+# Reteste R1 (09/10/2026): o que a primeira rodada de correções deixou passar
+# ---------------------------------------------------------------------------
+
+def test_fechar_mes_volta_com_moeda_e_grupos():
+    """R1.13: o retorno do Fechamento levava só os filtros da própria lista."""
+    from core.views import _monthly_close_redirect
+
+    request = RequestFactory().post(
+        "/settings/month-close/close/",
+        {"filter_account_id": "4", "filter_year": "2026", "volta": "filter_account_id=4&currency=ALL&grupos=cartoes"},
+    )
+    query = _query(_monthly_close_redirect(request)["Location"])
+    assert query == {"filter_account_id": "4", "filter_year": "2026", "currency": "ALL", "grupos": "cartoes"}
+
+
+@pytest.mark.sentinela_front
+def test_painel_global_refaz_os_filtros_da_tela_a_partir_da_url_atual():
+    """Os campos ocultos do painel são da carga da página; a barra lateral não
+    acompanha as trocas por HTMX. Aplicar moeda ou grupos desfazia um filtro de
+    tabela trocado depois -- o envio do painel tem de reler a URL."""
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent.parent
+    template = (raiz / "templates/components/navigation.html").read_text(encoding="utf-8")
+    assert 'data-filtro-da-tela' in template
+    js = (raiz / "static/js/core/application.js").read_text(encoding="utf-8")
+    trecho = js[js.index("[data-global-currency-form]')) {"):][:1600]
+    assert "data-filtro-da-tela" in trecho and "window.location.href" in trecho
+
+
+@pytest.mark.django_db
+def test_filtro_de_coluna_escolhido_continua_entre_as_opcoes_mesmo_sem_linhas(client, admin, lancamento):
+    """R1.1: tipo e categoria juntos sem nenhuma linha faziam o seletor de tipo
+    perder a opção escolhida -- a tela mostrava "Todos" com o filtro valendo."""
+    client.force_login(admin)
+    periodo = lancamento.due_date.strftime("%Y-%m")
+
+    response = client.get(
+        f"/transactions/?period={periodo}&mode=todos&filter_type=receita&filter_category=Inexistente"
+    )
+
+    assert response.status_code == 200
+    seletor = re.search(r'<select data-table-filter name="filter_type".*?</select>', response.content.decode(), re.S)
+    assert seletor and re.search(r'<option value="receita"\s+selected', seletor.group(0)), seletor

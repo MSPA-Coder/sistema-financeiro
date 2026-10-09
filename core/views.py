@@ -68,6 +68,7 @@ from core.services import (
     update_user_table_scroll_rows,
     update_user_ui_theme,
 )
+from core.volta import PARAMETROS_GLOBAIS, query_de_origem
 from transactions.models import AccountMonthClose, BankOperation, CashFlowEntry
 from transactions.recurring_projection import (
     ensure_recurring_projection_horizon,
@@ -494,7 +495,11 @@ def _monthly_close_filters(request, account_ids: list[int]) -> dict[str, int | s
 
 
 def _monthly_close_redirect(request):
-    """Retorna à lista preservando somente os filtros vindos da própria tela."""
+    """Retorna à lista preservando os filtros da própria tela e os globais.
+
+    Moeda e grupos vêm da tela de origem (core/volta.py): sem eles, fechar ou
+    reabrir um mês devolvia a lista em BRL (auditoria de 09/10, reteste R1.13).
+    """
     query = {}
     for name in _MONTHLY_CLOSE_FILTER_NAMES:
         value = request.POST.get(name)
@@ -502,6 +507,10 @@ def _monthly_close_redirect(request):
             value = request.GET.get(name, "")
         if value:
             query[name] = value
+    origem = query_de_origem(request)
+    for name in PARAMETROS_GLOBAIS:
+        if origem.get(name):
+            query[name] = origem[name]
     url = reverse("core:settings_monthly_close")
     return redirect(f"{url}?{urlencode(query)}" if query else url)
 

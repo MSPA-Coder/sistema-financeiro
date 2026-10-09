@@ -2345,11 +2345,17 @@ def build_transactions_view_context(user, get_params, session, *, request=None) 
     current_txs, blocos = compute_statement(scope, view_mode)
     _decorate_rows_for_editing(current_txs)
 
-    available_types = sorted({tx.entry_type for tx in current_txs})
+    # As opções saem das linhas já filtradas, mas o valor ESCOLHIDO fica
+    # sempre entre elas: quando a combinação de filtros não traz linha, o
+    # seletor sumia com o próprio filtro e mostrava "Todos" com o filtro ainda
+    # valendo na URL (auditoria de 09/10/2026, reteste R1.1).
+    available_types = sorted(
+        {tx.entry_type for tx in current_txs} | ({scope.filter_type} if scope.filter_type else set())
+    )
     available_dates = sorted({
         _entry_date_for_view_mode(tx, view_mode).isoformat()
         for tx in current_txs if _entry_date_for_view_mode(tx, view_mode)
-    })
+    } | ({resolved.filter_date_raw} if resolved.filter_date_raw else set()))
     available_categories = list_category_names(include_internal=not scope.exclude_internal)
 
     return {

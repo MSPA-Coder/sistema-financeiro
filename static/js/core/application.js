@@ -167,6 +167,23 @@
         if (form.matches && form.matches('[data-global-currency-form]')) {
             if (form.dataset.submitting === '1') { event.preventDefault(); return; }
             form.dataset.submitting = '1';
+            /* Os campos ocultos com os filtros da tela foram escritos na carga
+               da página, e a barra lateral fica fora das trocas por HTMX: um
+               filtro trocado depois voltava ao valor antigo ao aplicar moeda
+               ou grupos (auditoria de 09/10/2026). Refaz a partir da URL
+               ATUAL, menos o que este próprio formulário decide. */
+            form.querySelectorAll('input[type="hidden"][data-filtro-da-tela]').forEach(function (campo) {
+                campo.remove();
+            });
+            new URL(window.location.href).searchParams.forEach(function (valor, nome) {
+                if (nome === 'currency' || nome === 'grupos') return;
+                var campo = document.createElement('input');
+                campo.type = 'hidden';
+                campo.name = nome;
+                campo.value = valor;
+                campo.setAttribute('data-filtro-da-tela', '');
+                form.appendChild(campo);
+            });
         }
         /* Escrita (POST): leva a query ATUAL da barra no campo `volta`, para
            o servidor voltar à tela com os filtros que ela mostrava (ver
