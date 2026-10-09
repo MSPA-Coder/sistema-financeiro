@@ -1,4 +1,4 @@
-{% load money_filters %}
+{% load money_filters regional_filters %}
     <h3>Próximas faturas (projeção)</h3>
     <table class="tx-table">
         <thead>
@@ -14,8 +14,8 @@
         <tbody>
         {% for fp in projetadas %}
             <tr>
-                <td>{{ fp.fechamento|date:"d/m/Y" }}</td>
-                <td>{{ fp.vencimento|date:"d/m/Y" }}</td>
+                <td>{{ fp.fechamento|udate }}</td>
+                <td>{{ fp.vencimento|udate }}</td>
                 <td class="amount">{{ fp.lancado|money:conta.currency }}</td>
                 <td class="amount">{{ fp.estimativa.valor|money:conta.currency }}</td>
                 <td class="amount"><strong>{{ fp.total|money:conta.currency }}</strong></td>

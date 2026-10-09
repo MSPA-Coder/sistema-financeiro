@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static regional_filters %}
 {% load icons %}
 {% load money_filters %}
 
@@ -22,7 +22,7 @@
 <div class="chart-card u-mb-1">
     {% if tudo_no_saldo_inicial %}
     <p class="fatura-aviso"><strong>Esta fatura é toda anterior ao saldo inicial do cartão
-        ({{ conta.initial_balance_date|date:"d/m/Y" }}).</strong> Nenhuma compra será lançada: só as parcelas
+        ({{ conta.initial_balance_date|udate }}).</strong> Nenhuma compra será lançada: só as parcelas
         que vencem depois dessa data. Para importar o histórico, mude antes a data do saldo inicial do cartão
         (Cadastros › Contas) para antes da primeira fatura.</p>
     {% endif %}
@@ -36,7 +36,7 @@
         </tbody>
     </table>
     <p class="help-text">Confira o total com o da fatura do banco. Saldo inicial do cartão:
-        {{ conta.initial_balance|money_signed:conta.currency }} em {{ conta.initial_balance_date|date:"d/m/Y" }};
+        {{ conta.initial_balance|money_signed:conta.currency }} em {{ conta.initial_balance_date|udate }};
         linhas com data anterior já estão nele e não são lançadas de novo.</p>
 </div>
 
@@ -68,8 +68,8 @@
             <tbody>
             {% for plano in planos %}
                 <tr>
-                    <td>{{ plano.linha.statement_date|date:"d/m/Y" }}
-                        {% if plano.linha.purchase_date and plano.linha.purchase_date != plano.linha.statement_date %}<br><small>compra em {{ plano.linha.purchase_date|date:"d/m/Y" }}</small>{% endif %}
+                    <td>{{ plano.linha.statement_date|udate }}
+                        {% if plano.linha.purchase_date and plano.linha.purchase_date != plano.linha.statement_date %}<br><small>compra em {{ plano.linha.purchase_date|udate }}</small>{% endif %}
                     </td>
                     <td>{{ plano.linha.description }}
                         {% if plano.linha.bank_category %}<br><small>{{ plano.linha.bank_category }}</small>{% endif %}

@@ -1,4 +1,4 @@
-{% load money_filters %}
+{% load money_filters regional_filters %}
 {% comment %}
 Um bloco por moeda (ver `banking.services.currency_blocks`). Com uma moeda só --
 o caso de hoje -- há um bloco e nenhum cabeçalho, e a tela sai idêntica ao que
@@ -26,7 +26,7 @@ sempre foi.
     <div class="decision-card">
         <strong>Menor saldo</strong>
         <div class="decision-value card-value {{ bloco.report.summary.minimum_balance|amount_class }}">{{ bloco.report.summary.minimum_balance|money_signed:bloco.currency }}</div>
-        <div class="decision-note">{{ bloco.report.summary.minimum_balance_date|date:'d/m/Y' }}</div>
+        <div class="decision-note">{{ bloco.report.summary.minimum_balance_date|udate }}</div>
     </div>
     <div class="decision-card">
         <strong>Saldo final</strong>
@@ -62,7 +62,7 @@ sempre foi.
                 <td class="value-col amount-positive">{{ row.income|money_signed:bloco.currency }}</td>
                 <td class="value-col amount-negative">{{ row.expense|neg|money_signed:bloco.currency }}</td>
                 <td class="value-col {{ row.internal_net|amount_class }}">{{ row.internal_net|money_signed:bloco.currency }}</td>
-                <td class="value-col {{ row.minimum_balance|amount_class }}">{{ row.minimum_balance|money_signed:bloco.currency }}<span class="action-message">{{ row.minimum_balance_date|date:'d/m/Y' }}</span></td>
+                <td class="value-col {{ row.minimum_balance|amount_class }}">{{ row.minimum_balance|money_signed:bloco.currency }}<span class="action-message">{{ row.minimum_balance_date|udate }}</span></td>
                 <td class="value-col {{ row.end_balance|amount_class }}">{{ row.end_balance|money_signed:bloco.currency }}</td>
                 <td>
                     <span class="action-pill {{ row.action_level }}">{{ row.action_label }}</span>
@@ -105,7 +105,7 @@ sempre foi.
             {% for line in bloco.report.movement_lines %}
             <tr>
                 <td class="date-col">
-                    <a href="{% url 'transactions:transactions_view' %}?period={{ line.movement_date|date:'Y-m' }}&amp;mode={{ view_mode }}&amp;owner_id={{ current_owner_id|default:'' }}&amp;institution_id={{ current_institution_id|default:'' }}&amp;account_id={{ line.account_id }}">{{ line.movement_date|date:'d/m/Y' }}</a>
+                    <a href="{% url 'transactions:transactions_view' %}?period={{ line.movement_date|date:'Y-m' }}&amp;mode={{ view_mode }}&amp;owner_id={{ current_owner_id|default:'' }}&amp;institution_id={{ current_institution_id|default:'' }}&amp;account_id={{ line.account_id }}">{{ line.movement_date|udate }}</a>
                 </td>
                 <td class="account-col">{{ line.account_name }}</td>
                 <td>{{ line.category_name }}{% if line.is_internal %}<span class="internal-badge">Interna</span>{% endif %}</td>

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static regional_filters %}
 {% load icons contas %}
 {% load money_filters %}
 
@@ -45,7 +45,7 @@
             {% for entrada in plano.parecidas %}
                 <tr>
                     <td><input type="checkbox" name="parecidas" value="{{ entrada.id }}" aria-label="Incluir" {% if entrada.marcada %}checked{% endif %}></td>
-                    <td>{{ entrada.due_date|date:"d/m/Y" }}</td>
+                    <td>{{ entrada.due_date|udate }}</td>
                     <td>{{ entrada.description }}</td>
                     <td>{{ entrada.category.category_name }}</td>
                     <td class="amount">{{ entrada.entry_amount|money:entrada.account.currency }}</td>
@@ -166,7 +166,7 @@
             {% for entrada in lancamentos %}
                 <tr>
                     <td><input type="checkbox" name="entry_ids" value="{{ entrada.id }}" aria-label="Selecionar"></td>
-                    <td>{{ entrada.due_date|date:"d/m/Y" }}</td>
+                    <td>{{ entrada.due_date|udate }}</td>
                     <td>{{ entrada.account.institution.institution_name }} / {{ entrada.account.account_name }}</td>
                     <td>{{ entrada.description }}{% if entrada.installments > 1 %} <small>({{ entrada.installments }}x)</small>{% endif %}</td>
                     <td><small>{{ entrada.categoria_do_banco }}</small></td>

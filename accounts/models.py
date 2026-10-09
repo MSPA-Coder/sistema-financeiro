@@ -11,7 +11,9 @@ from core.domain.identity import (
     VALID_USER_TYPES,
 )
 from core.domain.settings import (
+    REGIONAL_FORMAT_BR,
     UI_THEME_LIGHT,
+    VALID_REGIONAL_FORMATS,
     VALID_UI_THEMES,
 )
 
@@ -37,6 +39,11 @@ class AppUser(AbstractUser):
         default=UI_THEME_LIGHT,
     )
     table_scroll_rows = models.IntegerField(default=15)
+    regional_format = models.CharField(
+        max_length=2,
+        choices=[(fmt, fmt) for fmt in VALID_REGIONAL_FORMATS],
+        default=REGIONAL_FORMAT_BR,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -50,6 +57,10 @@ class AppUser(AbstractUser):
             models.CheckConstraint(
                 condition=models.Q(ui_theme__in=VALID_UI_THEMES),
                 name='ck_app_user_ui_theme_valid',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(regional_format__in=VALID_REGIONAL_FORMATS),
+                name='ck_app_user_regional_format_valid',
             ),
             models.CheckConstraint(
                 condition=models.Q(table_scroll_rows__gte=5, table_scroll_rows__lte=200),

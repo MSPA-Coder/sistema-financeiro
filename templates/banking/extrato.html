@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static regional_filters %}
 {% load money_filters %}
 
 {% block title %}Banking • Extrato{% endblock %}
@@ -22,15 +22,15 @@
     <h3>Resumo do arquivo</h3>
     <table class="tx-table">
         <tbody>
-            <tr><td>Importado em</td><td>{{ lote.created_at|date:"d/m/Y H:i" }}</td></tr>
+            <tr><td>Importado em</td><td>{{ lote.created_at|udatetime }}</td></tr>
             <tr><td>Linhas</td><td>{{ importado.total }}: {{ importado.conciliadas }} conciliada{{ importado.conciliadas|pluralize }},
                 {{ importado.ignoradas }} ignorada{{ importado.ignoradas|pluralize }}, {{ importado.novas }} pendente{{ importado.novas|pluralize }}</td></tr>
             <tr><td>Saldo do extrato × CB</td><td>
                 {% if importado.conferencia %}
                     {% if importado.conferencia.bate %}
-                    <strong class="amount amount-positive">Bate em {{ importado.conferencia.data|date:"d/m/Y" }}: {{ importado.conferencia.saldo_do_extrato|money:conta.currency }}</strong>
+                    <strong class="amount amount-positive">Bate em {{ importado.conferencia.data|udate }}: {{ importado.conferencia.saldo_do_extrato|money:conta.currency }}</strong>
                     {% else %}
-                    <strong class="amount amount-negative">Extrato {{ importado.conferencia.saldo_do_extrato|money:conta.currency }} · CB {{ importado.conferencia.saldo_no_cb|money:conta.currency }} em {{ importado.conferencia.data|date:"d/m/Y" }} · diferença {{ importado.conferencia.diferenca|money:conta.currency }}</strong>
+                    <strong class="amount amount-negative">Extrato {{ importado.conferencia.saldo_do_extrato|money:conta.currency }} · CB {{ importado.conferencia.saldo_no_cb|money:conta.currency }} em {{ importado.conferencia.data|udate }} · diferença {{ importado.conferencia.diferenca|money:conta.currency }}</strong>
                     {% endif %}
                 {% else %}
                 <span class="empty-state">O arquivo não informa saldo</span>
@@ -54,7 +54,7 @@
         <tbody>
         {% for linha in linhas %}
             <tr>
-                <td>{{ linha.statement_date|date:"d/m/Y" }}</td>
+                <td>{{ linha.statement_date|udate }}</td>
                 <td>{{ linha.description }}</td>
                 <td class="amount {{ linha.amount|amount_class }}">{{ linha.amount|money_signed:conta.currency }}</td>
                 <td>{{ linha.get_status_display }}</td>

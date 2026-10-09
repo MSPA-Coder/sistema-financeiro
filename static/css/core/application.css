@@ -1225,3 +1225,23 @@ canvas { display: block; box-sizing: border-box; }
     flex-wrap: wrap;
 }
 .section-header h4 { margin: 0; color: var(--muted); font-size: 0.9rem; font-weight: 700; }
+
+/* ============================================================
+   CAMPOS DE DATA, MES E VALOR NO FORMATO REGIONAL (regional.js)
+   O campo visivel e de texto; o original fica escondido, so com o valor.
+   ============================================================ */
+.regional-field { position: relative; display: inline-flex; align-items: center; gap: 0.15rem; vertical-align: middle; }
+.regional-field input[data-regional-view="date"] { width: 7.6rem; }
+.regional-field input[data-regional-view="month"] { width: 5.6rem; }
+.regional-field input[data-regional-view="number"] { width: 7rem; text-align: right; }
+.regional-picker-button {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0.2rem; border: 0; background: transparent; color: var(--muted);
+    cursor: pointer; border-radius: var(--radius-sm); line-height: 0;
+}
+.regional-picker-button:hover:not(:disabled) { color: var(--primary); }
+.regional-picker-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.regional-picker-proxy {
+    position: absolute; right: 0; bottom: 0; width: 1px; height: 1px;
+    opacity: 0; pointer-events: none; padding: 0; border: 0 !important;
+}

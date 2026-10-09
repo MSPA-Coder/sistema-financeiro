@@ -345,6 +345,7 @@ def app_shell(request):
         "global_currency": global_currency,
         "global_currency_options": currency_filter_options(global_currency),
         "ui_theme": getattr(user, "ui_theme", "light") if user else "light",
+        "regional_format": getattr(user, "regional_format", "br") if user else "br",
         "table_scroll_rows": getattr(user, "table_scroll_rows", 15) if user else 15,
         "current_active_user": user,
         "app_menu_items": menu_items,

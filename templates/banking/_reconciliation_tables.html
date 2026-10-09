@@ -1,4 +1,4 @@
-{% load static %}
+{% load static regional_filters %}
 {% load icons %}
 {% load money_filters %}
 {% if rendimentos_agrupados %}
@@ -13,7 +13,7 @@
         {% csrf_token %}
         <input type="hidden" name="bulk_action" value="apply_plan">
         {% for line_id in grupo.line_ids %}<input type="hidden" name="line_ids" value="{{ line_id }}">{% endfor %}
-        <span>{{ grupo.mes|date:"m/Y" }} · {{ grupo.conta.owner.name }} / {{ grupo.conta.institution.institution_name }} / {{ grupo.conta.account_name }}
+        <span>{{ grupo.mes|umonth }} · {{ grupo.conta.owner.name }} / {{ grupo.conta.institution.institution_name }} / {{ grupo.conta.account_name }}
             · {{ grupo.quantidade }} linha{{ grupo.quantidade|pluralize }} · <strong class="amount amount-positive">{{ grupo.total|money:grupo.conta.currency }}</strong></span>
         <button type="submit" class="btn-sm btn-primary"
                 data-sa-confirmar="Criar os {{ grupo.quantidade }} lançamentos de rendimento deste mês?"
@@ -84,7 +84,7 @@
                     <input type="checkbox" name="line_ids" value="{{ line.id }}" form="bulkPendingLinesForm" aria-label="Selecionar linha">
                     {% endif %}
                 </td>
-                <td>{{ line.statement_date|date:"d/m/Y" }}</td>
+                <td>{{ line.statement_date|udate }}</td>
                 <td>{{ line.account.owner.name }} / {{ line.account.institution.institution_name }} / {{ line.account.account_name }}</td>
                 <td>{{ line.description }}</td>
                 <td class="amount {{ line.amount|amount_class }}">{{ line.amount|money_signed:line.account.currency }}</td>
@@ -104,7 +104,7 @@
                                 <option value="">Selecione…</option>
                                 {% endif %}
                                 {% for entry in line.reconcile_candidates %}
-                                <option value="{{ entry.id }}" data-sensitive-value="true" {% if line.reconcile_candidates|length == 1 %}selected{% endif %}>#{{ entry.id }} - {{ entry.due_date|date:"d/m/Y" }} - {{ entry.description|default:"-" }} - {{ entry.entry_amount|money:entry.account.currency }}</option>
+                                <option value="{{ entry.id }}" data-sensitive-value="true" {% if line.reconcile_candidates|length == 1 %}selected{% endif %}>#{{ entry.id }} - {{ entry.due_date|udate }} - {{ entry.description|default:"-" }} - {{ entry.entry_amount|money:entry.account.currency }}</option>
                                 {% endfor %}
                             </select>
                             <button type="submit" class="btn-sm btn-primary"
@@ -176,7 +176,7 @@
     {% for batch in reconciled_batches %}
     <details class="reconciled-batch" {% if batch.id == target_batch_id %}open{% endif %}>
         <summary>
-            <strong>{{ batch.created_at|date:"d/m/Y H:i" }}</strong>
+            <strong>{{ batch.created_at|udatetime }}</strong>
             — {{ batch.account.owner.name }} / {{ batch.account.institution.institution_name }} / {{ batch.account.account_name }}
             — {{ batch.source_filename }}
             — {{ batch.reconciled_lines|length }} linha{{ batch.reconciled_lines|length|pluralize }} conciliada{{ batch.reconciled_lines|length|pluralize }}
@@ -194,7 +194,7 @@
             <tbody>
             {% for line in batch.reconciled_lines %}
                 <tr id="statement-line-{{ line.id }}">
-                    <td>{{ line.statement_date|date:"d/m/Y" }}</td>
+                    <td>{{ line.statement_date|udate }}</td>
                     <td>{{ line.description }}</td>
                     <td class="amount {{ line.amount|amount_class }}">{{ line.amount|money_signed:line.account.currency }}</td>
                     <td>{% if line.matched_entry %}#{{ line.matched_entry.id }} - {{ line.matched_entry.description|default:"-" }}{% else %}Movimento não encontrado{% endif %}</td>
