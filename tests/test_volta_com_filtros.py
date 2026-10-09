@@ -217,3 +217,15 @@ def test_corpo_da_tabela_se_recarrega_com_o_filtro_vivo(parcial, tbody):
     assert 'hx-include="[data-table-filter]"' in tag
     # as escritas da tabela saem por HTMX com alvo nela mesma
     assert texto.count(f'data-cadastro-htmx="#{tbody}"') == 2
+
+
+@pytest.mark.parametrize("pagina", ["tables/accounts.html", "tables/banks.html", "tables/categories.html"])
+def test_filtro_da_tabela_troca_o_corpo_e_acerta_a_url(pagina):
+    from pathlib import Path
+
+    texto = (Path(__file__).resolve().parent.parent / "templates" / pagina).read_text(encoding="utf-8")
+    filtros = re.findall(r"<select data-table-filter[^>]*>", texto)
+    assert filtros, pagina
+    for filtro in filtros:
+        assert "TableBody" in filtro and 'hx-swap="outerHTML"' in filtro, filtro
+        assert 'hx-replace-url="true"' in filtro, filtro

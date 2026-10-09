@@ -223,6 +223,9 @@ def test_filtros_da_tabela_de_lancamentos_trocam_so_a_tabela() -> None:
     assert len(seletores) == 3, seletores
     for seletor in seletores:
         assert 'hx-target="#transactions-table-container"' in seletor, seletor
+        # O middleware só manda HX-Replace-Url quando há o que limpar; sem o
+        # atributo, a barra ficava com o filtro anterior (visto no navegador).
+        assert 'hx-replace-url="true"' in seletor, seletor
         incluidos = re.search(r'hx-include="([^"]*)"', seletor).group(1)
         assert "#contextForm" in incluidos, seletor
         assert "[data-table-filter]" in incluidos, seletor

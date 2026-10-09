@@ -93,13 +93,13 @@
             <thead>
                 <tr>
                     <th>
-                        <select data-table-filter name="filter_owner_id" aria-label="Filtrar por titular" data-filter="true" hx-get="{{ request.path }}" hx-trigger="change" hx-include="[data-table-filter]" hx-target="#accountsTableBody" hx-swap="outerHTML" hx-indicator="#ajaxLoadingBar">
+                        <select data-table-filter name="filter_owner_id" aria-label="Filtrar por titular" data-filter="true" hx-get="{{ request.path }}" hx-trigger="change" hx-include="[data-table-filter]" hx-target="#accountsTableBody" hx-swap="outerHTML" hx-replace-url="true" hx-indicator="#ajaxLoadingBar">
                             <option value="">Todos os titulares</option>
                             {% for owner in owners %}<option value="{{ owner.id }}" {% if owner.id == current_filter_owner_id %}selected{% endif %}>{{ owner.name }}</option>{% endfor %}
                         </select>
                     </th>
                     <th>
-                        <select data-table-filter name="filter_institution_id" aria-label="Filtrar por instituição" data-filter="true" hx-get="{{ request.path }}" hx-trigger="change" hx-include="[data-table-filter]" hx-target="#accountsTableBody" hx-swap="outerHTML" hx-indicator="#ajaxLoadingBar">
+                        <select data-table-filter name="filter_institution_id" aria-label="Filtrar por instituição" data-filter="true" hx-get="{{ request.path }}" hx-trigger="change" hx-include="[data-table-filter]" hx-target="#accountsTableBody" hx-swap="outerHTML" hx-replace-url="true" hx-indicator="#ajaxLoadingBar">
                             <option value="">Todas as instituições</option>
                             {% for institution in institutions %}<option value="{{ institution.id }}" {% if institution.id == current_filter_institution_id %}selected{% endif %}>{{ institution.institution_name }}</option>{% endfor %}
                         </select>

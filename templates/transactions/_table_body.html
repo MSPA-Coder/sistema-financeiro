@@ -16,19 +16,19 @@
             </tr>
             <tr class="filter-header-row">
                 <th class="filter-date">
-                    <select data-table-filter name="filter_date" aria-label="Filtrar por data" hx-get="{% url 'transactions:transactions_view' %}" hx-trigger="change" hx-include="#contextForm, [data-table-filter]" hx-target="#transactions-table-container" hx-swap="outerHTML" hx-indicator="#ajaxLoadingBar">
+                    <select data-table-filter name="filter_date" aria-label="Filtrar por data" hx-get="{% url 'transactions:transactions_view' %}" hx-trigger="change" hx-include="#contextForm, [data-table-filter]" hx-target="#transactions-table-container" hx-swap="outerHTML" hx-replace-url="true" hx-indicator="#ajaxLoadingBar">
                         <option value="">Todas</option>
                         {% for d in available_dates %}<option value="{{ d }}" {% if d == filter_date %}selected{% endif %}>{{ d|slice:"8:10" }}/{{ d|slice:"5:7" }}</option>{% endfor %}
                     </select>
                 </th>
                 <th class="filter-type">
-                    <select data-table-filter name="filter_type" aria-label="Filtrar por tipo" hx-get="{% url 'transactions:transactions_view' %}" hx-trigger="change" hx-include="#contextForm, [data-table-filter]" hx-target="#transactions-table-container" hx-swap="outerHTML" hx-indicator="#ajaxLoadingBar">
+                    <select data-table-filter name="filter_type" aria-label="Filtrar por tipo" hx-get="{% url 'transactions:transactions_view' %}" hx-trigger="change" hx-include="#contextForm, [data-table-filter]" hx-target="#transactions-table-container" hx-swap="outerHTML" hx-replace-url="true" hx-indicator="#ajaxLoadingBar">
                         <option value="">Todos</option>
                         {% for t in available_types %}<option value="{{ t }}" {% if t == filter_type %}selected{% endif %}>{{ t|capfirst }}</option>{% endfor %}
                     </select>
                 </th>
                 <th>
-                    <select data-table-filter name="filter_category" aria-label="Filtrar por categoria" hx-get="{% url 'transactions:transactions_view' %}" hx-trigger="change" hx-include="#contextForm, [data-table-filter]" hx-target="#transactions-table-container" hx-swap="outerHTML" hx-indicator="#ajaxLoadingBar">
+                    <select data-table-filter name="filter_category" aria-label="Filtrar por categoria" hx-get="{% url 'transactions:transactions_view' %}" hx-trigger="change" hx-include="#contextForm, [data-table-filter]" hx-target="#transactions-table-container" hx-swap="outerHTML" hx-replace-url="true" hx-indicator="#ajaxLoadingBar">
                         <option value="">Todas</option>
                         {% for c in available_categories %}<option value="{{ c }}" {% if c == filter_category %}selected{% endif %}>{{ c }}</option>{% endfor %}
                     </select>
