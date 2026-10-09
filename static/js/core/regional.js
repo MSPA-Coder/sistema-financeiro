@@ -190,6 +190,10 @@
 
     function enhance(input) {
         if (input.getAttribute('data-regional-done')) return;
+        // O auxiliar do calendario (type=date/month) mora dentro do wrapper e
+        // nunca vira campo regional: sem esta guarda, o observador o trataria
+        // como campo novo e criaria wrapper dentro de wrapper, sem fim.
+        if (input.classList.contains('regional-picker-proxy')) return;
         var kind = kindOf(input);
         if (!kind) return;
         input.setAttribute('data-regional-done', '1');
@@ -400,7 +404,8 @@
     function enhanceAll(root) {
         var scope = root && root.querySelectorAll ? root : document;
         var found = scope.querySelectorAll(
-            'input[type="date"], input[type="month"], input[type="number"][step], input[data-regional-kind="decimal"]'
+            'input[type="date"]:not(.regional-picker-proxy), input[type="month"]:not(.regional-picker-proxy), '
+            + 'input[type="number"][step], input[data-regional-kind="decimal"]'
         );
         for (var i = 0; i < found.length; i++) enhance(found[i]);
         if (scope.matches && scope.matches('input')) enhance(scope);
