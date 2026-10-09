@@ -293,8 +293,12 @@ def selected_context(user, params, *, request=None) -> FinancialContext:
         owner_id = None
         _descartar("owner_id")
 
+    account = None
     if account_id is not None:
-        account = FinancialAccount.objects.filter(pk=account_id, owner_id__in=allowed_owner_ids).first()
+        account = (
+            FinancialAccount.objects.select_related("owner", "institution")
+            .filter(pk=account_id, owner_id__in=allowed_owner_ids).first()
+        )
         if account is None:
             account_id = None
         else:
@@ -307,6 +311,15 @@ def selected_context(user, params, *, request=None) -> FinancialContext:
 
     if request is not None and descartados:
         request.filtros_descartados = descartados
+    if request is not None:
+        # A faixa "Mostrando só..." (core/contexto_global.py) mostra os nomes
+        # do recorte; com isto ela os tira do que já foi validado aqui, sem
+        # consultar de novo nem confiar no id cru da URL.
+        request.contexto_resolvido = {
+            "owner_id": owner_id,
+            "institution_id": institution_id,
+            "account": account if account_id is not None else None,
+        }
 
     return FinancialContext(
         owner_id=owner_id,

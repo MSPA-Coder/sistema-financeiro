@@ -43,7 +43,7 @@
                           hx-swap="innerHTML" class="u-d-inline">
                         {% csrf_token %}
                         <button type="submit" class="btn-sm btn-action-edit"
-                                data-sa-confirmar="Desfazer esta importação inteira? As linhas conciliadas voltam para Vencidos (sem apagar lançamentos) e o lote é removido. Conferida a conta errada? É melhor reimportar na conta certa depois."
+                                data-sa-confirmar="Desfazer esta importação inteira? Os lançamentos conciliados voltam a ficar em aberto, conforme o vencimento (sem serem apagados) e o lote é removido. Conferida a conta errada? É melhor reimportar na conta certa depois."
                                 data-sa-titulo="Desfazer importação"
                                 data-sa-severidade="warning"
                                 data-sa-ok="Desfazer">{% icon 'undo' %} Desfazer</button>

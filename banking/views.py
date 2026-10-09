@@ -4,9 +4,8 @@ from decimal import Decimal
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import Http404, HttpResponse
-from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse
+from django.http import Http404
+from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
@@ -22,6 +21,7 @@ from core.domain.finance import (
 from core.htmx import quer_fragmento
 from core.patrimonio import saldo_da_conta
 from core.permissions import permission_required
+from core.volta import resposta_de_cadastro
 from reports.services import month_input_value
 from transactions.models import AccountMonthClose
 from transactions.services import compute_statement, resolve_statement_request
@@ -160,6 +160,7 @@ def create_institution_view(request):
         messages.success(request, "Instituição cadastrada com sucesso.")
     except ValueError as exc:
         messages.error(request, str(exc))
+        return _respond(request, 'banking:institutions_view', sucesso=False)
     return _respond(request, 'banking:institutions_view')
 
 
@@ -178,6 +179,7 @@ def update_institution_view(request, institution_id):
         messages.success(request, "Instituição atualizada com sucesso.")
     except ValueError as exc:
         messages.error(request, str(exc))
+        return _respond(request, 'banking:institutions_view', sucesso=False)
     return _respond(request, 'banking:institutions_view')
 
 
@@ -192,6 +194,7 @@ def delete_institution_view(request, institution_id):
         messages.success(request, "Instituição excluída com sucesso.")
     except ValueError as exc:
         messages.error(request, str(exc))
+        return _respond(request, 'banking:institutions_view', sucesso=False)
     return _respond(request, 'banking:institutions_view')
 
 
@@ -275,6 +278,7 @@ def create_account_view(request):
         messages.success(request, "Conta cadastrada com sucesso.")
     except ValueError as exc:
         messages.error(request, str(exc))
+        return _respond(request, 'banking:accounts_view', sucesso=False)
     return _respond(request, 'banking:accounts_view')
 
 
@@ -305,6 +309,7 @@ def update_account_view(request, account_id):
         messages.success(request, "Conta atualizada com sucesso.")
     except ValueError as exc:
         messages.error(request, str(exc))
+        return _respond(request, 'banking:accounts_view', sucesso=False)
     return _respond(request, 'banking:accounts_view')
 
 
@@ -319,12 +324,9 @@ def delete_account_view(request, account_id):
         messages.success(request, "Conta excluída com sucesso.")
     except ValueError as exc:
         messages.error(request, str(exc))
+        return _respond(request, 'banking:accounts_view', sucesso=False)
     return _respond(request, 'banking:accounts_view')
 
 
-def _respond(request, redirect_name):
-    if quer_fragmento(request):
-        response = HttpResponse(status=200)
-        response.headers['HX-Redirect'] = reverse(redirect_name)
-        return response
-    return redirect(redirect_name)
+def _respond(request, redirect_name, *, sucesso=True):
+    return resposta_de_cadastro(request, redirect_name, sucesso=sucesso)

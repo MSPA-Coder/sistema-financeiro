@@ -378,3 +378,21 @@ class AccountMonthClose(models.Model):
         if self.pk:
             self.updated_at = timezone.now()
         super().save(*args, **kwargs)
+
+
+class EnvioDeLancamento(models.Model):
+    """Token de uso único do formulário de novo lançamento.
+
+    O mesmo formulário enviado duas vezes -- dois cliques rápidos, o navegador
+    reenviando -- criava lançamentos repetidos (auditoria de 09/10/2026,
+    CB-10). O formulário leva um token gerado na renderização, e a criação
+    grava o token na MESMA transação dos lançamentos: a restrição única do
+    banco recusa o segundo envio, inclusive quando os dois chegam juntos a
+    workers diferentes (um cache em memória não veria isso).
+    """
+
+    token = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "cash_flow_entry_submission"

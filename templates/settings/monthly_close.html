@@ -67,7 +67,7 @@
 {% block content %}
 <div class="section-card">
     <h3>Fechamento Mensal</h3>
-    <form method="post" action="{% url 'core:settings_close_month' %}{% if monthly_close_filter_query %}?{{ monthly_close_filter_query }}{% endif %}" class="btn-group monthly-close-form" data-ui="monthly-close-form">
+    <form method="post" {% nav_escrita %} action="{% url 'core:settings_close_month' %}{% if monthly_close_filter_query %}?{{ monthly_close_filter_query }}{% endif %}" class="btn-group monthly-close-form" data-ui="monthly-close-form">
         {% csrf_token %}
         <input type="hidden" name="filter_account_id" value="{{ monthly_close_filters.account_id|default:'' }}">
         <input type="hidden" name="filter_year" value="{{ monthly_close_filters.year|default:'' }}">
@@ -119,7 +119,7 @@
                     <td>{% if close.active %}Fechado{% else %}Reaberto{% endif %}</td>
                     <td>
                         {% if close.active %}
-                        <form method="post" action="{% url 'core:settings_reopen_month' %}" data-ui="reopen-form">
+                        <form method="post" {% nav_escrita %} action="{% url 'core:settings_reopen_month' %}" data-ui="reopen-form">
                             {% csrf_token %}
                             <input type="hidden" name="filter_account_id" value="{{ monthly_close_filters.account_id|default:'' }}">
                             <input type="hidden" name="filter_year" value="{{ monthly_close_filters.year|default:'' }}">

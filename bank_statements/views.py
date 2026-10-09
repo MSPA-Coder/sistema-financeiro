@@ -150,7 +150,7 @@ def undo_import_view(request, batch_id):
         if reconciled_count:
             texto += (
                 f", {reconciled_count} conciliação(ões) revertida(s) -- os lançamentos "
-                "voltaram para Vencidos, sem serem apagados."
+                "voltaram a ficar em aberto, conforme o vencimento, sem serem apagados."
             )
         else:
             texto += "."
@@ -556,8 +556,8 @@ def undo_reconciliation_view(request):
         reconciliation.undo_reconciliation(request.user, line_id=line_id)
         messages.success(
             request,
-            "Conciliação desfeita. A linha voltou para Vencidos e o movimento "
-            "deixou de estar realizado pela conciliação.",
+            "Conciliação desfeita. A linha voltou a pendente e o movimento "
+            "voltou a ficar em aberto, conforme o vencimento.",
         )
     except ValueError as exc:
         messages.error(request, str(exc))

@@ -332,13 +332,17 @@ def unrealize_transaction(entry: CashFlowEntry, audit_context=None, user=None) -
     if revert_counterpart:
         assert_entry_period_open(counterpart, action_label="desfazer a realização de")
 
-    entry.status = STATUS_PENDING
+    # Volta para o status aberto que a DATA manda: vencido só se o vencimento
+    # já passou. Gravar sempre "vencidos" escondia o lançamento de vencimento
+    # futuro das duas visões ("A vencer" exige `a_vencer`; "Vencidos" exige
+    # vencimento no passado) -- só "Todos" o mostrava (auditoria L01, 09/10/2026).
+    entry.status = _normalize_open_entry_status(STATUS_PENDING, entry.due_date)
     entry.realized_date = None
     entry.realized_amount = None
     entry.save(update_fields=['status', 'realized_date', 'realized_amount', 'updated_at'])
 
     if revert_counterpart:
-        counterpart.status = STATUS_PENDING
+        counterpart.status = _normalize_open_entry_status(STATUS_PENDING, counterpart.due_date)
         counterpart.realized_date = None
         counterpart.realized_amount = None
         counterpart.save(update_fields=['status', 'realized_date', 'realized_amount', 'updated_at'])

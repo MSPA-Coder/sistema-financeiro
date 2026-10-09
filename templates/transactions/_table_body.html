@@ -16,19 +16,19 @@
             </tr>
             <tr class="filter-header-row">
                 <th class="filter-date">
-                    <select data-table-filter name="filter_date" aria-label="Filtrar por data" hx-get="{% url 'transactions:transactions_view' %}" hx-trigger="change" hx-include="#contextForm" {% nav_filtro %}>
+                    <select data-table-filter name="filter_date" aria-label="Filtrar por data" hx-get="{% url 'transactions:transactions_view' %}" hx-trigger="change" hx-include="#contextForm, [data-table-filter]" hx-target="#transactions-table-container" hx-swap="outerHTML" hx-indicator="#ajaxLoadingBar">
                         <option value="">Todas</option>
                         {% for d in available_dates %}<option value="{{ d }}" {% if d == filter_date %}selected{% endif %}>{{ d|slice:"8:10" }}/{{ d|slice:"5:7" }}</option>{% endfor %}
                     </select>
                 </th>
                 <th class="filter-type">
-                    <select data-table-filter name="filter_type" aria-label="Filtrar por tipo" hx-get="{% url 'transactions:transactions_view' %}" hx-trigger="change" hx-include="#contextForm" {% nav_filtro %}>
+                    <select data-table-filter name="filter_type" aria-label="Filtrar por tipo" hx-get="{% url 'transactions:transactions_view' %}" hx-trigger="change" hx-include="#contextForm, [data-table-filter]" hx-target="#transactions-table-container" hx-swap="outerHTML" hx-indicator="#ajaxLoadingBar">
                         <option value="">Todos</option>
                         {% for t in available_types %}<option value="{{ t }}" {% if t == filter_type %}selected{% endif %}>{{ t|capfirst }}</option>{% endfor %}
                     </select>
                 </th>
                 <th>
-                    <select data-table-filter name="filter_category" aria-label="Filtrar por categoria" hx-get="{% url 'transactions:transactions_view' %}" hx-trigger="change" hx-include="#contextForm" {% nav_filtro %}>
+                    <select data-table-filter name="filter_category" aria-label="Filtrar por categoria" hx-get="{% url 'transactions:transactions_view' %}" hx-trigger="change" hx-include="#contextForm, [data-table-filter]" hx-target="#transactions-table-container" hx-swap="outerHTML" hx-indicator="#ajaxLoadingBar">
                         <option value="">Todas</option>
                         {% for c in available_categories %}<option value="{{ c }}" {% if c == filter_category %}selected{% endif %}>{{ c }}</option>{% endfor %}
                     </select>
@@ -47,7 +47,14 @@
                 </th>
             </tr>
         </thead>
-        <tbody id="transactions-tbody" hx-trigger="tableRefresh from:body" hx-get="{% url 'transactions:transactions_view' %}?{{ request.GET.urlencode }}" hx-target="#transactions-table-container" hx-swap="outerHTML">
+        {% comment %}
+        Recarga depois de uma escrita (`HX-Trigger: tableRefresh`). Os filtros
+        saem dos controles VIVOS da tela (`hx-include`), não de uma query
+        congelada na renderização: se a pessoa trocou um filtro de coluna
+        depois de a tabela ser desenhada, a query congelada traria o filtro
+        velho de volta.
+        {% endcomment %}
+        <tbody id="transactions-tbody" hx-trigger="tableRefresh from:body" hx-get="{% url 'transactions:transactions_view' %}" hx-include="#contextForm, [data-table-filter]" hx-target="#transactions-table-container" hx-swap="outerHTML">
             {% for t in txs %}
             <tr id="tx-row-{{ t.id }}" class="{% if entry_id and t.id == entry_id %}tx-highlight{% endif %}">
                 <td>{% if t.display_date %}{{ t.display_date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
@@ -77,7 +84,7 @@
             {% if can_update_transactions and show_actions_column %}
             <tr id="tx-edit-{{ t.id }}" class="edit-row">
                 <td colspan="{{ table_columns }}">
-                    <form method="POST" action="{% url 'transactions:transaction_edit' t.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="tx-form">
+                    <form method="POST" action="{% url 'transactions:transaction_edit' t.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="tx-form" data-tx-htmx>
                         {% csrf_token %}
                         {% with form_id="edit-"|add:t.id|stringformat:"s" %}
                         {% include "transactions/_fields.html" with t=t form_id=form_id %}

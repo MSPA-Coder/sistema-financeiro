@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from core.account_group_filter import (
     is_filtering,
     parse_account_groups,
 )
+from core.contexto_global import faixa_de_contexto, telas_com_contexto
 from core.currency_filter import currency_filter_options, parse_currency_filter
 
 
@@ -342,6 +344,8 @@ def app_shell(request):
     global_currency = parse_currency_filter(request.GET)
     return {
         **_global_account_groups(request, user),
+        **faixa_de_contexto(request, user),
+        "telas_com_contexto_json": json.dumps(telas_com_contexto()),
         "global_currency": global_currency,
         "global_currency_options": currency_filter_options(global_currency),
         "ui_theme": getattr(user, "ui_theme", "light") if user else "light",

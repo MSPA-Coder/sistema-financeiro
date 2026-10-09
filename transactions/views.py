@@ -1,13 +1,18 @@
 """Views de transações com HTMX (Movimentação > Lançamentos)."""
-from datetime import date
+import json
+import secrets
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db import IntegrityError
+from django.db import transaction as db_transaction
 from django.db.models import Count, Exists, OuterRef
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from core.domain.finance import (
@@ -23,10 +28,17 @@ from core.domain.finance import (
 from core.htmx import invalid_period_response, quer_fragmento, recusa_moedas_misturadas
 from core.permissions import permission_required
 from core.services import audit_request_context, log_audit_event
+from core.volta import resposta_de_cadastro, url_de_volta, voltar_para
 from transactions import access
-from transactions.models import CashFlowCategory, CashFlowCategoryGroup, CashFlowEntry
+from transactions.models import (
+    CashFlowCategory,
+    CashFlowCategoryGroup,
+    CashFlowEntry,
+    EnvioDeLancamento,
+)
 from transactions.operations import OPERATION_LABELS, operations_page_for_user
 from transactions.services import (
+    TRANSACTIONS_QUERY_PARAMS,
     TransactionRequest,
     build_transactions_view_context,
     create_category,
@@ -40,7 +52,6 @@ from transactions.services import (
     possible_duplicates_for_created_entries,
     realize_transaction,
     supports_operation_scope,
-    transactions_query_params,
     unrealize_transaction,
     update_category,
     update_category_group,
@@ -97,14 +108,30 @@ def _invalid_operation_scope_response(exc: ValueError) -> HttpResponseBadRequest
 
 
 def _redirect_to_transactions(request, extra_params=None):
-    params = transactions_query_params(request.GET)
-    if extra_params:
-        params.update({key: value for key, value in extra_params.items() if value})
-    query = "&".join(f"{key}={value}" for key, value in params.items())
-    url = "/transactions/"
-    if query:
-        url = f"{url}?{query}"
-    return redirect(url)
+    """Volta para Lançamentos com os filtros que a tela mostrava (ver core/volta.py)."""
+    return redirect(url_de_volta(
+        request,
+        reverse("transactions:transactions_view"),
+        manter=TRANSACTIONS_QUERY_PARAMS,
+        extra=extra_params,
+    ))
+
+
+def _resposta_da_escrita(request, *, sucesso=True, extra_params=None, gravado=True):
+    """Fim de uma escrita em Lançamentos.
+
+    No HTMX a tela fica onde está: 204 e, se deu certo, `tableRefresh` (a
+    tabela se recarrega com os filtros vivos) e `lancamentoGravado` (o
+    formulário ou o modal fecha). Se deu errado, nada se recarrega -- o
+    formulário continua preenchido e a mensagem chega fora de banda
+    (`core.htmx`). Sem HTMX, volta para a lista com os filtros.
+    """
+    if quer_fragmento(request):
+        response = HttpResponse(status=204)
+        if sucesso:
+            response.headers["HX-Trigger"] = json.dumps({"tableRefresh": True, "lancamentoGravado": gravado})
+        return response
+    return _redirect_to_transactions(request, extra_params)
 
 
 def _log_failed_transaction_action(request, entry_id, action: str) -> None:
@@ -143,7 +170,13 @@ def _transaction_request_from_post(post) -> TransactionRequest:
     realized_date = _parse_date(post.get("realized_date")) if status == STATUS_REALIZED else None
     realized_amount = _to_decimal(post.get("realized_amount")) if status == STATUS_REALIZED else None
 
+    # Obrigatória no formulário manual desde 09/10/2026: a sugestão de
+    # conciliação compara descrições, e um lançamento sem ela fica invisível
+    # para essa sugestão. O campo do model continua opcional (`blank=True`)
+    # porque o que vem de extrato e de migração entra por outros caminhos.
     description = (post.get("description") or "").strip()
+    if not description:
+        raise ValueError("Informe a descrição do lançamento.")
 
     return TransactionRequest(
         account_id=account_id,
@@ -185,6 +218,7 @@ def transactions_view(request):
         "can_delete_transactions": request.user.has_perm("transactions.delete"),
         "can_realize_transactions": request.user.has_perm("transactions.realize"),
         "can_view_operations": request.user.has_perm("operations.view"),
+        "submit_token": novo_token_de_envio(),
         "show_balance_column": show_balance_column,
         "show_actions_column": show_actions_column,
         "table_columns": table_columns,
@@ -211,11 +245,11 @@ def mark_realized(request, tx_id):
     if entry is None:
         _log_failed_transaction_action(request, tx_id, "realize")
         messages.warning(request, "Lançamento não encontrado.")
-        return _redirect_to_transactions(request)
+        return _resposta_da_escrita(request, sucesso=False)
     if not access.can_access_entry(request.user, entry, "update"):
         _log_failed_transaction_action(request, entry.id, "realize")
         messages.warning(request, "Acesso negado: usuário sem permissão para realizar este lançamento.")
-        return _redirect_to_transactions(request)
+        return _resposta_da_escrita(request, sucesso=False)
 
     realized_date = _parse_date(request.POST.get("realized_date"))
     try:
@@ -223,8 +257,9 @@ def mark_realized(request, tx_id):
     except ValueError as exc:
         _log_failed_transaction_action(request, entry.id, "realize")
         messages.error(request, str(exc))
-        return _redirect_to_transactions(request)
+        return _resposta_da_escrita(request, sucesso=False)
 
+    sucesso = True
     try:
         realize_transaction(
             entry,
@@ -234,14 +269,11 @@ def mark_realized(request, tx_id):
         )
         messages.success(request, "Lançamento marcado como realizado.")
     except ValueError as e:
+        sucesso = False
         _log_failed_transaction_action(request, entry.id, "realize")
         messages.error(request, str(e))
 
-    if quer_fragmento(request):
-        response = HttpResponse(status=204)
-        response.headers["HX-Trigger"] = "tableRefresh"
-        return response
-    return _redirect_to_transactions(request)
+    return _resposta_da_escrita(request, sucesso=sucesso)
 
 
 @login_required
@@ -253,26 +285,24 @@ def mark_unrealized(request, tx_id):
     if entry is None:
         _log_failed_transaction_action(request, tx_id, "unrealize")
         messages.warning(request, "Lançamento não encontrado.")
-        return _redirect_to_transactions(request)
+        return _resposta_da_escrita(request, sucesso=False)
     if not access.can_access_entry(request.user, entry, "update"):
         _log_failed_transaction_action(request, entry.id, "unrealize")
         messages.warning(request, "Acesso negado: usuário sem permissão para alterar este lançamento.")
-        return _redirect_to_transactions(request)
+        return _resposta_da_escrita(request, sucesso=False)
 
+    sucesso = True
     try:
         unrealize_transaction(
             entry, audit_context=audit_request_context(request), user=request.user,
         )
-        messages.success(request, "Realização desfeita. Lançamento retornado para Vencidos.")
+        messages.success(request, "Realização desfeita. O lançamento voltou a ficar em aberto (A vencer ou Vencido, conforme o vencimento).")
     except ValueError as exc:
+        sucesso = False
         _log_failed_transaction_action(request, entry.id, "unrealize")
         messages.error(request, str(exc))
 
-    if quer_fragmento(request):
-        response = HttpResponse(status=204)
-        response.headers["HX-Trigger"] = "tableRefresh"
-        return response
-    return _redirect_to_transactions(request)
+    return _resposta_da_escrita(request, sucesso=sucesso)
 
 
 @login_required
@@ -284,6 +314,33 @@ def transaction_new(request):
     return _redirect_to_transactions(request, {"new_entry_open": "1"})
 
 
+class _EnvioRepetidoError(Exception):
+    """O mesmo formulário de novo lançamento chegou outra vez."""
+
+
+def novo_token_de_envio() -> str:
+    return secrets.token_urlsafe(24)
+
+
+def _registrar_envio(token) -> None:
+    """Grava o token do formulário; um token já usado aborta a criação.
+
+    Chamado dentro da transação da criação: se a criação falhar, o token
+    volta a valer e a pessoa pode reenviar. Sem token (formulário antigo, ou
+    POST feito à mão) não há o que conferir. Tokens de mais de dois dias são
+    descartados aqui mesmo -- a tabela só precisa lembrar envios recentes.
+    """
+    token = (token or "").strip()[:64]
+    if not token:
+        return
+    EnvioDeLancamento.objects.filter(created_at__lt=timezone.now() - timedelta(days=2)).delete()
+    try:
+        with db_transaction.atomic():
+            EnvioDeLancamento.objects.create(token=token)
+    except IntegrityError as exc:
+        raise _EnvioRepetidoError from exc
+
+
 @require_POST
 def _transaction_new_post(request):
     try:
@@ -291,15 +348,17 @@ def _transaction_new_post(request):
     except ValueError as exc:
         _log_failed_transaction_action(request, None, "create")
         messages.error(request, str(exc))
-        return _redirect_to_transactions(request)
+        return _resposta_da_escrita(request, sucesso=False)
 
     if not access.can_access_account(request.user, req.account_id, "create"):
         _log_failed_transaction_action(request, None, "create")
         messages.warning(request, "Acesso negado: usuário sem permissão para criar lançamentos nesta conta.")
-        return _redirect_to_transactions(request)
+        return _resposta_da_escrita(request, sucesso=False)
 
     try:
-        entries = create_transaction_batch(req, audit_context=audit_request_context(request), user=request.user)
+        with db_transaction.atomic():
+            _registrar_envio(request.POST.get("submit_token"))
+            entries = create_transaction_batch(req, audit_context=audit_request_context(request), user=request.user)
         messages.success(request, "Lançamento(s) criado(s) com sucesso.")
         duplicates = possible_duplicates_for_created_entries(req, entries)
         if duplicates:
@@ -308,11 +367,17 @@ def _transaction_new_post(request):
                 request,
                 f"Atenção: existem movimentos semelhantes na mesma conta, data e valor: {ids}.",
             )
+    except _EnvioRepetidoError:
+        messages.info(request, "Este lançamento já tinha sido enviado; não foi criado de novo.")
+        return _resposta_da_escrita(request, sucesso=False)
     except ValueError as e:
         _log_failed_transaction_action(request, None, "create")
         messages.error(request, str(e))
-        return _redirect_to_transactions(request)
+        return _resposta_da_escrita(request, sucesso=False)
 
+    if quer_fragmento(request):
+        # O formulário continua na tela: leva um token novo para o próximo.
+        return _resposta_da_escrita(request, gravado={"submit_token": novo_token_de_envio()})
     if request.POST.get("keep_entry_form_open") == "1":
         return _redirect_to_transactions(request, {
             "new_entry_open": "1",
@@ -322,11 +387,7 @@ def _transaction_new_post(request):
             "new_due_date": req.due_date.isoformat(),
         })
 
-    if quer_fragmento(request):
-        response = HttpResponse(status=204)
-        response.headers["HX-Trigger"] = "tableRefresh"
-        return response
-    return _redirect_to_transactions(request)
+    return _resposta_da_escrita(request)
 
 
 @login_required
@@ -336,10 +397,10 @@ def transaction_edit(request, tx_id):
     tx = CashFlowEntry.objects.filter(id=tx_id).select_related("account", "source_entry").first()
     if tx is None:
         messages.warning(request, "Lançamento não encontrado.")
-        return _redirect_to_transactions(request)
+        return _resposta_da_escrita(request, sucesso=False)
     if not access.can_access_entry(request.user, tx, "update"):
         messages.warning(request, "Acesso negado: usuário sem permissão para editar lançamentos nesta conta.")
-        return _redirect_to_transactions(request)
+        return _resposta_da_escrita(request, sucesso=False)
 
     if request.method == "POST":
         return _transaction_edit_post(request, tx)
@@ -353,12 +414,12 @@ def _transaction_edit_post(request, tx):
     except ValueError as exc:
         _log_failed_transaction_action(request, tx.id, "update")
         messages.error(request, str(exc))
-        return _redirect_to_transactions(request)
+        return _resposta_da_escrita(request, sucesso=False)
 
     if not access.can_access_account(request.user, req.account_id, "update"):
         _log_failed_transaction_action(request, tx.id, "update")
         messages.warning(request, "Acesso negado: usuário sem permissão para editar lançamentos nesta conta.")
-        return _redirect_to_transactions(request)
+        return _resposta_da_escrita(request, sucesso=False)
 
     try:
         scope = _operation_scope_from_request(tx, request.POST.get("operation_scope"))
@@ -377,13 +438,9 @@ def _transaction_edit_post(request, tx):
     except ValueError as e:
         _log_failed_transaction_action(request, tx.id, "update")
         messages.error(request, str(e))
-        return _redirect_to_transactions(request)
+        return _resposta_da_escrita(request, sucesso=False)
 
-    if quer_fragmento(request):
-        response = HttpResponse(status=204)
-        response.headers["HX-Trigger"] = "tableRefresh"
-        return response
-    return _redirect_to_transactions(request)
+    return _resposta_da_escrita(request)
 
 
 @login_required
@@ -395,17 +452,18 @@ def transaction_delete(request, tx_id):
     if tx is None:
         _log_failed_transaction_action(request, tx_id, "delete")
         messages.warning(request, "Lançamento não encontrado.")
-        return _redirect_to_transactions(request)
+        return _resposta_da_escrita(request, sucesso=False)
     if not access.can_access_entry(request.user, tx, "delete"):
         _log_failed_transaction_action(request, tx.id, "delete")
         messages.warning(request, "Acesso negado: usuário sem permissão para excluir lançamentos nesta conta.")
-        return _redirect_to_transactions(request)
+        return _resposta_da_escrita(request, sucesso=False)
 
     try:
         scope = _operation_scope_from_request(tx, request.POST.get("operation_scope"))
     except ValueError as exc:
         _log_failed_transaction_action(request, tx.id, "delete")
         return _invalid_operation_scope_response(exc)
+    sucesso = True
     try:
         delete_transaction_or_operation(
             tx,
@@ -415,14 +473,11 @@ def transaction_delete(request, tx_id):
         )
         messages.success(request, "Lançamento excluído com sucesso.")
     except ValueError as e:
+        sucesso = False
         _log_failed_transaction_action(request, tx.id, "delete")
         messages.error(request, str(e))
 
-    if quer_fragmento(request):
-        response = HttpResponse(status=204)
-        response.headers["HX-Trigger"] = "tableRefresh"
-        return response
-    return _redirect_to_transactions(request)
+    return _resposta_da_escrita(request, sucesso=sucesso)
 
 
 # --- Cadastros: Categorias ---
@@ -462,7 +517,8 @@ def create_category_group_view(request):
         messages.success(request, "Grupo cadastrado com sucesso.")
     except ValueError as e:
         messages.error(request, str(e))
-    return _respond_categories(request)
+        return _respond_category_groups(request, sucesso=False)
+    return _respond_category_groups(request)
 
 
 @login_required
@@ -481,7 +537,8 @@ def update_category_group_view(request, group_id):
         messages.success(request, "Grupo atualizado com sucesso.")
     except ValueError as e:
         messages.error(request, str(e))
-    return _respond_categories(request)
+        return _respond_category_groups(request, sucesso=False)
+    return _respond_category_groups(request)
 
 
 @login_required
@@ -495,7 +552,8 @@ def delete_category_group_view(request, group_id):
         messages.success(request, "Grupo excluído com sucesso.")
     except ValueError as e:
         messages.error(request, str(e))
-    return _respond_categories(request)
+        return _respond_category_groups(request, sucesso=False)
+    return _respond_category_groups(request)
 
 
 @login_required
@@ -510,6 +568,7 @@ def create_category_view(request):
         messages.success(request, "Categoria cadastrada com sucesso.")
     except ValueError as e:
         messages.error(request, str(e))
+        return _respond_categories(request, sucesso=False)
     return _respond_categories(request)
 
 
@@ -530,6 +589,7 @@ def update_category_view(request, category_id):
         messages.success(request, "Categoria atualizada com sucesso.")
     except ValueError as e:
         messages.error(request, str(e))
+        return _respond_categories(request, sucesso=False)
     return _respond_categories(request)
 
 
@@ -544,15 +604,17 @@ def delete_category_view(request, category_id):
         messages.success(request, "Categoria excluída com sucesso.")
     except ValueError as e:
         messages.error(request, str(e))
+        return _respond_categories(request, sucesso=False)
     return _respond_categories(request)
 
 
-def _respond_categories(request):
-    if quer_fragmento(request):
-        response = HttpResponse(status=200)
-        response.headers['HX-Redirect'] = reverse('transactions:categories_view')
-        return response
-    return redirect('transactions:categories_view')
+def _respond_categories(request, *, sucesso=True):
+    return resposta_de_cadastro(request, 'transactions:categories_view', sucesso=sucesso)
+
+
+def _respond_category_groups(request, *, sucesso=True):
+    """Grupos ainda não têm fragmento próprio: volta para a tela inteira, filtrada."""
+    return voltar_para(request, 'transactions:categories_view')
 
 
 @login_required

@@ -152,10 +152,6 @@ function openDeleteModal(actionUrl, supportsScope, currentFutureToken) {
     var confirmationToken = document.getElementById('deleteCurrentFutureConfirmationToken');
     if (!modal) return;
     form.action           = actionUrl;
-    form.setAttribute('hx-post', actionUrl);
-    form.setAttribute('hx-target', '#transactions-table-container');
-    form.setAttribute('hx-swap', 'outerHTML');
-    if (window.htmx) window.htmx.process(form);
     scopeOptions.classList.toggle('is-visible', supportsScope);
     if (scopeSelect) {
         scopeSelect.value = 'single';
@@ -355,9 +351,65 @@ document.addEventListener('htmx:load', function (event) {
     _initEditScopeConfirm(root);
 });
 
-document.addEventListener('htmx:afterRequest', function (event) {
-    var source = event.detail && event.detail.elt;
-    if (source && source.id === 'deleteForm' && event.detail.successful) {
-        closeDeleteModal();
+/* -- Escritas de Lançamentos sem recarregar a página --
+   Novo, editar, realizar, desfazer e excluir (`form[data-tx-htmx]`) saem por
+   HTMX com alvo na tabela: o servidor responde 204 e, se deu certo,
+   `tableRefresh` (a tabela se recarrega com os filtros VIVOS da tela) e
+   `lancamentoGravado` (abaixo). Se deu errado, nada se recarrega e o
+   formulário continua preenchido; a mensagem chega fora de banda.
+
+   O ouvinte fica no `document`, na fase de bolha: as confirmações que seguram
+   o envio (a da SharedAuth no clique e a de escopo em `_initEditScopeConfirm`)
+   rodam antes e chamam `preventDefault()`; só o envio já confirmado chega
+   aqui sem isso. `data-enviando` segura o segundo clique enquanto a resposta
+   não volta -- dois cliques rápidos criavam dois lançamentos (auditoria de
+   09/10/2026, CB-10). Sem HTMX carregado, o POST comum segue: o servidor
+   volta para a lista com os filtros. */
+document.addEventListener('submit', function (event) {
+    var form = event.target;
+    if (!form.matches || !form.matches('form[data-tx-htmx]')) return;
+    if (event.defaultPrevented || !window.htmx) return;
+    event.preventDefault();
+    if (form.dataset.enviando === '1') return;
+    form.dataset.enviando = '1';
+    var liberar = function () { delete form.dataset.enviando; };
+    window.htmx.ajax('POST', form.getAttribute('action'), {
+        source: form,
+        target: '#transactions-table-container',
+        swap: 'none'
+    }).then(liberar, liberar);
+});
+
+/* Novo lançamento gravado: limpa o formulário mas mantém conta, tipo, status
+   e vencimento, para lançar o próximo em seguida (o que o
+   `keep_entry_form_open` fazia com uma recarga inteira). */
+function _limparNovoLancamento(form) {
+    var manter = ['account_id', 'entry_type', 'status', 'due_date'];
+    var valores = {};
+    manter.forEach(function (nome) {
+        var campo = form.querySelector('[name="' + nome + '"]');
+        if (campo) valores[nome] = campo.value;
+    });
+    form.reset();
+    manter.forEach(function (nome) {
+        var campo = form.querySelector('[name="' + nome + '"]');
+        if (campo && valores[nome] !== undefined) campo.value = valores[nome];
+    });
+    form.querySelectorAll('select').forEach(function (select) {
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+}
+
+document.addEventListener('lancamentoGravado', function (event) {
+    closeRealizeModal();
+    closeUnrealizeModal();
+    closeDeleteModal();
+    var form = event.target;
+    if (form && form.closest && form.closest('#newTransactionCard')) {
+        _limparNovoLancamento(form);
+        /* O token de uso único já foi gasto: o servidor manda o do próximo. */
+        var token = event.detail && event.detail.submit_token;
+        var campo = form.querySelector('input[name="submit_token"]');
+        if (token && campo) campo.value = token;
     }
 });
