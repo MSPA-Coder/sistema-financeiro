@@ -206,6 +206,25 @@ usuário e as permissões continuam pertencendo a este projeto. O repositório d
 SharedAuth é público: o build o instala por Git, na tag fixada no
 `pyproject.toml` e no commit registrado no `uv.lock`, sem credencial.
 
+## Formato regional (Brasil/EUA)
+
+Cada usuário escolhe em Configurações > Perfil como datas e números aparecem e
+são digitados (`AppUser.regional_format`, padrão `br`). É só UX: banco, serviços,
+importação, exportação, API e MCP seguem como sempre foram (ISO `AAAA-MM-DD` e
+decimal com ponto).
+
+- `core/regional.py` guarda o formato da requisição (preenchido por
+  `core/regional_middleware.py`) e formata datas; fora de requisição vale Brasil.
+- Templates: texto legível usa `|udate`, `|udatetime`, `|umonth` (de
+  `regional_filters`) e `|money`; valores de `<input>` seguem ISO.
+- Texto de tela montado em Python usa `regional.formatar_data` e afins. Texto
+  gravado (descrição de operação, trilha de auditoria) fica com data fixa.
+- `static/js/core/regional.js` troca `input[type=date|month]` e os decimais
+  (`step` fracionário ou `data-regional-kind="decimal"`) por um campo de texto
+  no formato escolhido; o original fica escondido, com o mesmo `name` e o valor
+  de sempre. Campo novo de data ou valor não precisa de código: basta ser um
+  desses tipos.
+
 ## Publicação patrimonial
 
 Este sistema publica o caixa para quem consolida o patrimônio (hoje, o

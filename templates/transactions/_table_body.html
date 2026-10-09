@@ -1,4 +1,4 @@
-{% load static l10n money_filters icons navegacao %}
+{% load static l10n money_filters icons navegacao regional_filters %}
 {# Partial HTMX: corpo da tabela de lançamentos + cartões de resumo (OOB). #}
 <div class="table-container" id="transactions-table-container">
     <table class="tx-table">
@@ -50,7 +50,7 @@
         <tbody id="transactions-tbody" hx-trigger="tableRefresh from:body" hx-get="{% url 'transactions:transactions_view' %}?{{ request.GET.urlencode }}" hx-target="#transactions-table-container" hx-swap="outerHTML">
             {% for t in txs %}
             <tr id="tx-row-{{ t.id }}" class="{% if entry_id and t.id == entry_id %}tx-highlight{% endif %}">
-                <td>{% if t.display_date %}{{ t.display_date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                <td>{% if t.display_date %}{{ t.display_date|udate }}{% else %}-{% endif %}</td>
                 <td>{{ t.entry_type|capfirst }}</td>
                 <td>{{ t.category.category_name }}</td>
                 <td>{{ t.description }}</td>

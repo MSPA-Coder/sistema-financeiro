@@ -23,6 +23,7 @@ from django import template
 from sharedauth.formatting import moeda, moeda_com_sinal
 
 from core.domain.finance import BASE_CURRENCY, CURRENCY_OPTIONS, CURRENCY_SYMBOLS
+from core.regional import adaptar_numero
 
 _CURRENCY_LABELS = dict(CURRENCY_OPTIONS)
 
@@ -33,6 +34,11 @@ def _to_decimal(value) -> Decimal:
     if value is None:
         return Decimal("0.00")
     return value if isinstance(value, Decimal) else Decimal(str(value))
+
+
+def _regional(texto: str) -> str:
+    """Troca os separadores pelo formato do usuário; o símbolo não tem ponto nem vírgula."""
+    return adaptar_numero(texto)
 
 
 def _symbol(currency) -> str:
@@ -46,12 +52,12 @@ def neg(value) -> Decimal:
 
 @register.filter
 def money(value, currency=None) -> str:
-    return moeda(_to_decimal(value), ocultar_zero=True, simbolo=_symbol(currency))
+    return _regional(moeda(_to_decimal(value), ocultar_zero=True, simbolo=_symbol(currency)))
 
 
 @register.filter
 def money_signed(value, currency=None) -> str:
-    return moeda_com_sinal(_to_decimal(value), simbolo=_symbol(currency))
+    return _regional(moeda_com_sinal(_to_decimal(value), simbolo=_symbol(currency)))
 
 
 @register.filter

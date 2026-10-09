@@ -1,4 +1,4 @@
-{% load money_filters %}
+{% load money_filters regional_filters %}
 {% load icons %}
 <div class="page-header-title" data-ui="mb-1">
     <div>
@@ -145,7 +145,7 @@
             {% for entry in recent_entries %}
             <tr>
                 <td>#{{ entry.id }}</td>
-                <td>{{ entry.due_date|date:'d/m/Y' }}</td>
+                <td>{{ entry.due_date|udate }}</td>
                 <td>{{ entry.account.owner.name }} / {{ entry.account.account_name }}</td>
                 <td>{{ entry.description|default:'-' }}</td>
                 <td class="amount {% if entry.entry_type == 'despesa' %}amount-negative{% else %}{{ entry.entry_amount|amount_class }}{% endif %}">{% if entry.entry_type == 'despesa' %}{{ entry.entry_amount|neg|money_signed:entry.account.currency }}{% else %}{{ entry.entry_amount|money_signed:entry.account.currency }}{% endif %}</td>

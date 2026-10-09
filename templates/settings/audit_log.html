@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static navegacao %}
+{% load static navegacao regional_filters %}
 
 {% block title %}Auditoria{% endblock %}
 
@@ -78,7 +78,7 @@
                     {% if recent_audit_logs %}
                     {% for log in recent_audit_logs %}
                     <tr>
-                        <td>{{ log.created_at|date:"d/m/Y H:i:s" }}</td>
+                        <td>{{ log.created_at|udatetime_s }}</td>
                         <td>{% if log.actor_name %}{{ log.actor_name }}{% elif log.user %}{{ log.user.username }}{% else %}-{% endif %}{% if log.actor_id %} (#{{ log.actor_id }}){% endif %}</td>
                         <td>{{ log.entity_name }}</td>
                         <td>{{ log.entity_id|default:"-" }}</td>

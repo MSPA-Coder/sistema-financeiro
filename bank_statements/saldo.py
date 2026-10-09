@@ -34,6 +34,7 @@ from django.db.models import Max, Q
 
 from banking.models import FinancialAccount
 from banking.services import accessible_account_ids, can_access_account
+from core import regional
 from core.domain.finance import (
     ENTRY_TYPE_EXPENSE,
     ENTRY_TYPE_INCOME,
@@ -132,7 +133,7 @@ def pendencia_da_movimentacao(conta: FinancialAccount, data: date) -> str:
     if pendentes:
         return (
             f"A conta de movimento {rotulo} tem {pendentes} linha(s) de extrato pendente(s) até "
-            f"{data:%d/%m/%Y}: concilie antes, ou uma transferência que falta vira rendimento."
+            f"{regional.formatar_data(data)}: concilie antes, ou uma transferência que falta vira rendimento."
         )
     ultima_linha = BankStatementLine.objects.filter(account=movimento).aggregate(d=Max("statement_date"))["d"]
     lotes = BankStatementImport.objects.filter(account=movimento).aggregate(

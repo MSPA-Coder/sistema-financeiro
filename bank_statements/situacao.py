@@ -45,6 +45,7 @@ from django.db.models.functions import TruncMonth
 
 from banking.models import FinancialAccount
 from banking.services import accessible_account_ids
+from core import regional
 from core.domain.finance import ACCOUNT_KIND_INVESTMENT, STATUS_REALIZED, VIEW_REALIZED
 from reports.services import decimal_balances_before_by_account
 from transactions.models import AccountMonthClose, CashFlowEntry
@@ -273,10 +274,10 @@ def _celula_da_aplicacao(conta, mes: date, movimento: Celula, *, informado_no_fi
     rotulo = f"{conta.movement_account.institution.institution_name} / {conta.movement_account.account_name}"
     if movimento.estado == CONCILIADO:
         if informado_no_fim:
-            return Celula(mes=mes, estado=CONCILIADO, motivo=f"{rotulo} conciliada; saldo de {_ultimo_dia(mes):%d/%m} informado")
+            return Celula(mes=mes, estado=CONCILIADO, motivo=f"{rotulo} conciliada; saldo de {regional.formatar_dia_mes(_ultimo_dia(mes))} informado")
         if zerada:
             return Celula(mes=mes, estado=CONCILIADO, motivo=f"{rotulo} conciliada; aplicação zerada e sem movimento")
-        return Celula(mes=mes, estado=COM_PENDENCIAS, motivo=f"falta informar o saldo de {_ultimo_dia(mes):%d/%m}")
+        return Celula(mes=mes, estado=COM_PENDENCIAS, motivo=f"falta informar o saldo de {regional.formatar_dia_mes(_ultimo_dia(mes))}")
     if movimento.estado == COM_PENDENCIAS:
         return Celula(mes=mes, estado=COM_PENDENCIAS, motivo=f"falta conciliar {rotulo}")
     return Celula(mes=mes, estado=SEM_IMPORTACAO, motivo=f"sem extrato de {rotulo}")
@@ -316,7 +317,7 @@ def estados(contas: list[FinancialAccount], meses: list[date]) -> dict[tuple[int
         )
         if not dados and estado == CONCILIADO:
             lote_id, dia = saldo_do_extrato
-            return Celula(mes=mes, estado=estado, lote_id=lote_id, motivo=f"extrato sem movimento; saldo de {dia:%d/%m}")
+            return Celula(mes=mes, estado=estado, lote_id=lote_id, motivo=f"extrato sem movimento; saldo de {regional.formatar_dia_mes(dia)}")
         return Celula(
             mes=mes, estado=estado,
             linhas=dados["linhas"] if dados else 0,

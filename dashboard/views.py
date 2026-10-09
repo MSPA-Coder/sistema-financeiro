@@ -28,6 +28,7 @@ from django.shortcuts import render
 from django.urls import reverse
 
 from banking.services import account_ids_by_currency
+from core import regional
 from core.account_group_filter import ACCOUNT_GROUP_OPTIONS, GROUPS_PARAM, is_filtering
 from core.currency_filter import ALL_CURRENCIES, parse_currency_filter
 from core.domain.finance import (
@@ -296,7 +297,7 @@ def dashboard_view(request):
 		"projSaldo": chart_saldo,
 		"catLabels": [nome for nome, _total in categorias],
 		"catValues": [_to_float(total) for _nome, total in categorias],
-		"dailyDates": [dia.strftime("%d/%m") for dia, _saldo in saldo_diario],
+		"dailyDates": [regional.formatar_dia_mes(dia) for dia, _saldo in saldo_diario],
 		"dailyBal": [_to_float(saldo) for _dia, saldo in saldo_diario],
 		"chartPeriods": chart_periods,
 		"chartLabels": chart_labels,

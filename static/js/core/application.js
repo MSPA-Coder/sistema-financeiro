@@ -41,6 +41,9 @@
     document.addEventListener('invalid', function (event) {
         var field = event.target;
         if (!field || typeof field.setCustomValidity !== 'function') return;
+        /* Campos de data, mês e valor do formato regional (regional.js) já
+           trazem a própria mensagem, no formato escolhido pelo usuário. */
+        if (field.hasAttribute && field.hasAttribute('data-regional-view')) return;
         field.setCustomValidity('');
         if (!field.validity.valid) field.setCustomValidity(_validationMessagePtBr(field));
     }, true);

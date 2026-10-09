@@ -29,6 +29,7 @@ urlpatterns = [
 
     path("settings/profile/", views.settings_profile_view, name="settings_profile"),
     path("settings/theme/", views.settings_update_theme_view, name="settings_update_theme"),
+    path("settings/regional-format/", views.settings_update_regional_format_view, name="settings_update_regional_format"),
     path("settings/table-scroll/", views.settings_update_table_scroll_view, name="settings_update_table_scroll"),
 
 

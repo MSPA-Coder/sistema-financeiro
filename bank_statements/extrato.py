@@ -39,6 +39,7 @@ from django.db import transaction as db_transaction
 from accounts.models import AccountOwner
 from accounts.services import can_use_transfer_destination
 from banking.services import accessible_account_ids, can_access_account
+from core import regional
 from core.domain.finance import (
     CATEGORY_KIND_MANAGERIAL,
     CATEGORY_KIND_TRANSFER,
@@ -162,7 +163,7 @@ class Plano:
         if self.acao == TRANSFERENCIA_COM_LANCAMENTO and self.lancamento is not None:
             return (
                 f"{texto} (#{self.lancamento.id}, {self.lancamento.account.account_name}, "
-                f"{self.lancamento.realized_date:%d/%m/%Y})"
+                f"{regional.formatar_data(self.lancamento.realized_date)})"
             )
         if self.acao == TRANSFERENCIA_REGRA and self.conta_destino is not None:
             return f"{texto} {self.conta_destino.account_name}"

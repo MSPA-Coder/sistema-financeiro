@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static regional_filters %}
 {% load money_filters %}
 
 {% block title %}Banking • Extratos importados{% endblock %}
@@ -35,7 +35,7 @@
         <tbody>
         {% for extrato in painel.extratos %}
             <tr>
-                <td>{{ extrato.lote.created_at|date:"d/m/Y" }}</td>
+                <td>{{ extrato.lote.created_at|udate }}</td>
                 <td>{{ extrato.lote.source_filename }}</td>
                 <td>{{ extrato.total }}</td>
                 <td>
@@ -46,9 +46,9 @@
                 <td>
                     {% if extrato.conferencia %}
                         {% if extrato.conferencia.bate %}
-                        <span class="amount amount-positive">Bate em {{ extrato.conferencia.data|date:"d/m/Y" }}: {{ extrato.conferencia.saldo_do_extrato|money:conta.currency }}</span>
+                        <span class="amount amount-positive">Bate em {{ extrato.conferencia.data|udate }}: {{ extrato.conferencia.saldo_do_extrato|money:conta.currency }}</span>
                         {% else %}
-                        <span class="amount amount-negative">Extrato {{ extrato.conferencia.saldo_do_extrato|money:conta.currency }} · CB {{ extrato.conferencia.saldo_no_cb|money:conta.currency }} em {{ extrato.conferencia.data|date:"d/m/Y" }} · diferença {{ extrato.conferencia.diferenca|money:conta.currency }}</span>
+                        <span class="amount amount-negative">Extrato {{ extrato.conferencia.saldo_do_extrato|money:conta.currency }} · CB {{ extrato.conferencia.saldo_no_cb|money:conta.currency }} em {{ extrato.conferencia.data|udate }} · diferença {{ extrato.conferencia.diferenca|money:conta.currency }}</span>
                         {% endif %}
                     {% else %}
                     <span class="empty-state">O arquivo não informa saldo</span>

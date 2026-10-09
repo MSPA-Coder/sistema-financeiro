@@ -32,6 +32,7 @@ from django.db import transaction as db_transaction
 from django.db.models import Q
 
 from banking.services import accessible_account_ids, can_access_account
+from core import regional
 from core.domain.finance import ENTRY_TYPE_EXPENSE, ENTRY_TYPE_INCOME, STATUS_REALIZED
 from transactions.models import CashFlowCategory, CashFlowEntry
 from transactions.services import (
@@ -589,7 +590,7 @@ def correcao_da_realizacao(*, entry_antes: tuple, line: BankStatementLine) -> st
     data, valor = entry_antes
     partes = []
     if data != line.statement_date:
-        partes.append(f"data de {data:%d/%m/%Y} para {line.statement_date:%d/%m/%Y}")
+        partes.append(f"data de {regional.formatar_data(data)} para {regional.formatar_data(line.statement_date)}")
     if valor != abs(line.amount):
         partes.append(f"valor de {valor} para {abs(line.amount)}")
     return " e ".join(partes)

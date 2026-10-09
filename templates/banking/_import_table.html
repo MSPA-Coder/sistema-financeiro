@@ -1,4 +1,4 @@
-{% load icons %}
+{% load icons regional_filters %}
 {% load money_filters %}
 <div class="table-container">
     <h3 class="u-mb-075">Últimas importações</h3>
@@ -17,16 +17,16 @@
         <tbody>
         {% for batch in imports %}
             <tr>
-                <td>{{ batch.created_at|date:"d/m/Y H:i" }}</td>
+                <td>{{ batch.created_at|udatetime }}</td>
                 <td>{{ batch.account.owner.name }} / {{ batch.account.institution.institution_name }} / {{ batch.account.account_name }}</td>
                 <td>{{ batch.source_filename }}</td>
                 <td>{{ batch.row_count }}</td>
                 <td>
                     {% if batch.conferencia %}
                         {% if batch.conferencia.bate %}
-                        <span class="amount amount-positive">Bate em {{ batch.conferencia.data|date:"d/m/Y" }}: {{ batch.conferencia.saldo_do_extrato|money:batch.account.currency }}</span>
+                        <span class="amount amount-positive">Bate em {{ batch.conferencia.data|udate }}: {{ batch.conferencia.saldo_do_extrato|money:batch.account.currency }}</span>
                         {% else %}
-                        <span class="amount amount-negative">Extrato {{ batch.conferencia.saldo_do_extrato|money:batch.account.currency }} · CB {{ batch.conferencia.saldo_no_cb|money:batch.account.currency }} em {{ batch.conferencia.data|date:"d/m/Y" }} · diferença {{ batch.conferencia.diferenca|money:batch.account.currency }}</span>
+                        <span class="amount amount-negative">Extrato {{ batch.conferencia.saldo_do_extrato|money:batch.account.currency }} · CB {{ batch.conferencia.saldo_no_cb|money:batch.account.currency }} em {{ batch.conferencia.data|udate }} · diferença {{ batch.conferencia.diferenca|money:batch.account.currency }}</span>
                         {% endif %}
                     {% else %}
                     <span class="empty-state">O arquivo não informa saldo</span>

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static contas %}
+{% load static contas regional_filters %}
 {% load money_filters %}
 
 {% block title %}Banking • Saldo Aplicações{% endblock %}
@@ -51,7 +51,7 @@
     <h3>2. Diferença</h3>
     <p>
         {{ previa.conta.owner.name }} / {{ previa.conta.institution.institution_name }} / {{ previa.conta.account_name }}
-        em {{ previa.data|date:"d/m/Y" }}:
+        em {{ previa.data|udate }}:
         saldo informado <strong>{{ previa.saldo_informado|money:previa.conta.currency }}</strong>,
         saldo no CB <strong>{{ previa.saldo_no_cb|money:previa.conta.currency }}</strong>,
         diferença <strong class="amount {{ previa.diferenca|amount_class }}">{{ previa.diferenca|money_signed:previa.conta.currency }}</strong>.
@@ -98,7 +98,7 @@
         <tbody>
         {% for entrada in atualizacoes %}
             <tr>
-                <td>{{ entrada.due_date|date:"d/m/Y" }}</td>
+                <td>{{ entrada.due_date|udate }}</td>
                 <td>{{ entrada.account.owner.name }} / {{ entrada.account.institution.institution_name }} / {{ entrada.account.account_name }}</td>
                 <td>{% if entrada.category.category_name == categoria_de_ajuste %}<strong>⚠ Assunção</strong>{% else %}{{ entrada.category.category_name }}{% endif %}</td>
                 <td>{{ entrada.description }}</td>
