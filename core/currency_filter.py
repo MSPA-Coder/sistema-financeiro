@@ -44,10 +44,6 @@ def selected_currency(params: Mapping[str, str]) -> str:
     return parse_currency_filter(params)
 
 
-def currency_matches(selected: str, currency: str) -> bool:
-    return selected in (ALL, currency)
-
-
 def selected_currencies(selected: str) -> frozenset[str]:
     """As moedas marcadas no filtro."""
     return frozenset(VALID_CURRENCIES) if selected == ALL else frozenset({selected})
