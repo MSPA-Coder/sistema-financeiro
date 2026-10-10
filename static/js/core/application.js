@@ -787,12 +787,48 @@
                 parentGroup = parentGroup.parentElement ? parentGroup.parentElement.closest('[data-sidebar-group]') : null;
             }
         }
+        /* -- Menu recolhido/completo --
+           Toda carga nasce recolhida (`data-sidebar="collapsed"` no <html>) e nada e
+           guardado. So vale no desktop: abaixo de 901px o menu e a faixa de sempre. */
+        var _sidebarDesktop = window.matchMedia('(min-width: 901px)');
+        var _sidebarNav = document.getElementById('appSidebar');
+        function _sidebarIsCollapsed() {
+            return _sidebarDesktop.matches && document.documentElement.getAttribute('data-sidebar') === 'collapsed';
+        }
+        function _setSidebarCollapsed(collapsed) {
+            document.documentElement.setAttribute('data-sidebar', collapsed ? 'collapsed' : 'expanded');
+            var btn = document.querySelector('[data-sidebar-collapse]');
+            if (!btn) return;
+            var label = collapsed ? 'Expandir menu' : 'Recolher menu';
+            btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            btn.setAttribute('aria-label', label);
+            btn.setAttribute('title', label);
+        }
+        var _collapseBtn = document.querySelector('[data-sidebar-collapse]');
+        if (_collapseBtn) {
+            _collapseBtn.addEventListener('click', function () {
+                _setSidebarCollapsed(!_sidebarIsCollapsed());
+            });
+        }
+        /* A largura das telas muda com o menu: refaz o que depende dela ao fim da transicao. */
+        if (_sidebarNav) {
+            _sidebarNav.addEventListener('transitionend', function (e) {
+                if (e.target === _sidebarNav && e.propertyName === 'width') {
+                    _updateTableOverflow();
+                    window.dispatchEvent(new Event('resize'));
+                }
+            });
+        }
+
         document.querySelectorAll('[data-sidebar-toggle]').forEach(function (btn) {
             btn.addEventListener('click', function (e) {
                 e.stopPropagation();
                 var group = btn.closest('[data-sidebar-group]');
                 if (!group) return;
-                var willOpen = !group.classList.contains('is-open');
+                /* Recolhido, o submenu nao tem onde aparecer: o clique expande o menu e abre o grupo. */
+                var wasCollapsed = _sidebarIsCollapsed();
+                if (wasCollapsed) _setSidebarCollapsed(false);
+                var willOpen = wasCollapsed ? true : !group.classList.contains('is-open');
                 _closeSiblings(group);
                 _setSidebarOpen(group, willOpen);
                 if (willOpen) _setSidebarGroupActive(group);

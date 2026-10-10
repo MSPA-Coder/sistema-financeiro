@@ -74,6 +74,14 @@
         {% endfor %}
     </div>
 
+    {# Toda carga nasce recolhida (data-sidebar no <html>); o estado nao e guardado. #}
+    <button type="button" class="sidebar-collapse-toggle" data-sidebar-collapse
+            aria-controls="appSidebar" aria-expanded="false"
+            aria-label="Expandir menu" title="Expandir menu">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+        <span class="sidebar-collapse-label">Recolher menu</span>
+    </button>
+
     {% if current_active_user %}
     <div class="sidebar-user-card">
         <span class="sidebar-user-avatar">{{ current_active_user.username|slice:':1'|upper }}</span>
