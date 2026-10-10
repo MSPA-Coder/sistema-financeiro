@@ -603,11 +603,17 @@ a:hover { text-decoration: underline; }
     html[data-sidebar="collapsed"] .sidebar-link { justify-content: center; padding: 0.5rem 0; }
     html[data-sidebar="collapsed"] .sidebar-link-main { gap: 0; }
     html[data-sidebar="collapsed"] .sidebar-icon { width: auto; min-width: 0; font-size: 1.15rem; opacity: 1; }
-    html[data-sidebar="collapsed"] .sidebar-chevron,
-    /* `.sidebar-group.is-open > .sidebar-submenu` (grupo da pagina atual) pesa mais que
-       `.sidebar-submenu`: sem repetir o seletor, os subitens reapareciam no trilho. */
-    html[data-sidebar="collapsed"] .sidebar-submenu,
-    html[data-sidebar="collapsed"] .sidebar-group.is-open > .sidebar-submenu { display: none; }
+    html[data-sidebar="collapsed"] .sidebar-chevron { display: none; }
+    /* Com grupos abertos a lista passa da altura da janela: rola ela, sem cobrir o botao e o usuario. */
+    html[data-sidebar="collapsed"] .sidebar-menu { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+    /* Grupo aberto no trilho: os icones dos subitens aparecem logo abaixo, recuados pouco
+       (cada nivel soma o recuo, e o trilho so tem 48px uteis). Abrir e fechar segue a regra
+       `.sidebar-group.is-open > .sidebar-submenu` do menu completo. */
+    html[data-sidebar="collapsed"] .sidebar-submenu { margin: 0.1rem 0 0.2rem 0.3rem; padding-left: 0.25rem; }
+    html[data-sidebar="collapsed"] .sidebar-link.level-1,
+    html[data-sidebar="collapsed"] .sidebar-link.level-2 { padding: 0.4rem 0; }
+    html[data-sidebar="collapsed"] .sidebar-link.level-1 .sidebar-icon,
+    html[data-sidebar="collapsed"] .sidebar-link.level-2 .sidebar-icon { width: auto; min-width: 0; font-size: 1.05rem; }
     html[data-sidebar="collapsed"] .sidebar-collapse-toggle { justify-content: center; padding: 0.5rem 0; }
     html[data-sidebar="collapsed"] .sidebar-collapse-toggle svg { transform: rotate(180deg); }
     html[data-sidebar="collapsed"] .sidebar-user-card { flex-direction: column; padding: 0.4rem 0; gap: 0.35rem; }

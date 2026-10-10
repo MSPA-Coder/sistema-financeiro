@@ -144,7 +144,7 @@ def _build_menu_items() -> list[MenuItem]:
                 MenuItem(
                     "Planejamento anual",
                     "/reports/annual-planning/",
-                    "\U0001F4C5",
+                    "\U0001F3AF",
                     "/reports/annual-planning/",
                     required_permission="reports.annual_planning.view",
                 ),
@@ -167,7 +167,7 @@ def _build_menu_items() -> list[MenuItem]:
                 MenuItem("Titulares", "/tables/owners/", "\U0001F464", "/tables/owners/", required_permission="tables.owners.manage"),
                 MenuItem("Instituições", "/tables/banks/", "\U0001F3DB", "/tables/banks/", required_permission="tables.institutions.manage"),
                 MenuItem("Contas", "/tables/accounts/", "\U0001F4BC", "/tables/accounts/", required_permission="tables.accounts.manage"),
-                MenuItem("Categorias", "/tables/categories/", "\U0001F3F7", "/tables/categories/", required_permission="tables.categories.manage"),
+                MenuItem("Categorias", "/tables/categories/", "\U0001F516", "/tables/categories/", required_permission="tables.categories.manage"),
             ),
         ),
         MenuItem(
@@ -190,7 +190,7 @@ def _build_menu_items() -> list[MenuItem]:
             children=(
                 MenuItem("Alterar senha", "/change-password/", "\U0001F511", "/change-password/"),
                 MenuItem("Permissões", "/permissions/", "\U0001F510", "/permissions/", required_permission="permissions.manage"),
-                MenuItem("Trilha de auditoria", "/settings/audit-log/", "\U0001F9FE", "/settings/audit-log/", required_permission="settings.audit.view"),
+                MenuItem("Trilha de auditoria", "/settings/audit-log/", "\U0001F4DC", "/settings/audit-log/", required_permission="settings.audit.view"),
             ),
         ),
         # NAO ha item "Administracao" apontando para `/admin/`. O

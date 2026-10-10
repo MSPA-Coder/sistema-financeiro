@@ -61,3 +61,14 @@ def test_cada_item_tem_nome_acessivel_e_dica_com_o_menu_recolhido(pagina):
 @pytest.mark.django_db
 def test_o_estado_nao_e_guardado_em_cookie(pagina):
     assert not [nome for nome in pagina.cookies if "sidebar" in nome.lower() or "menu" in nome.lower()]
+
+
+@pytest.mark.django_db
+def test_cada_item_tem_um_icone_so_dele(pagina):
+    """Recolhido, o ícone é tudo o que identifica o item: repetido, dois itens se confundem."""
+    html = pagina.content.decode()
+    icones = re.findall(r'<span class="sidebar-icon"[^>]*>([^<]+)</span>', html)
+
+    assert len(icones) > 20
+    repetidos = sorted({i for i in icones if icones.count(i) > 1})
+    assert not repetidos, f"ícones repetidos no menu: {repetidos}"

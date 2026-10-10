@@ -825,10 +825,7 @@
                 e.stopPropagation();
                 var group = btn.closest('[data-sidebar-group]');
                 if (!group) return;
-                /* Recolhido, o submenu nao tem onde aparecer: o clique expande o menu e abre o grupo. */
-                var wasCollapsed = _sidebarIsCollapsed();
-                if (wasCollapsed) _setSidebarCollapsed(false);
-                var willOpen = wasCollapsed ? true : !group.classList.contains('is-open');
+                var willOpen = !group.classList.contains('is-open');
                 _closeSiblings(group);
                 _setSidebarOpen(group, willOpen);
                 if (willOpen) _setSidebarGroupActive(group);
