@@ -59,20 +59,19 @@
 </div>
 
 <div class="chart-card">
-    <div class="section-header"><h4>Grupos de categoria</h4></div>
+    <div class="section-header section-header-acoes"><h4>Grupos de categoria</h4>
+        {% include "tables/_cadastro_acoes.html" with confirmar="Cadastrar este grupo?" chave="grupo" %}
+    </div>
     <p class="help-text">O grupo agrupa categorias para ler o resultado (Dashboard e Planejamento anual). O lançamento continua
         apontando para a categoria. Grupos fora dos gráficos (como "Sistema") não aparecem na rosca por padrão.</p>
-    <form method="post" action="{% url 'transactions:create_category_group' %}" class="add-form">
+    <div id="cadastro-novo-grupo" class="cadastro-novo" hidden>
+    <form method="post" action="{% url 'transactions:create_category_group' %}" id="cadastro-form-grupo" class="add-form">
         {% csrf_token %}
         <input type="text" name="group_name" aria-label="Nome do grupo" placeholder="Nome do grupo..." maxlength="100" required data-ui="flex-1">
         <input type="number" name="position" min="0" max="32000" aria-label="Posição" placeholder="Posição" data-ui="w-100">
         <label><input type="checkbox" name="in_charts" value="1" checked> Aparece nos gráficos</label>
-        <button type="submit" class="btn btn-primary btn-sm"
-                data-sa-confirmar="Cadastrar este grupo?"
-                data-sa-titulo="Confirmar cadastro"
-                data-sa-severidade="info"
-                data-sa-ok="Cadastrar">{% icon 'plus' %}<span>Incluir</span></button>
     </form>
+    </div>
     <div class="table-container" data-ui="table-plain-flex">
         <table>
             <thead>

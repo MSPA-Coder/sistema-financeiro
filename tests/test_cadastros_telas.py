@@ -129,3 +129,16 @@ def test_nao_ha_linha_de_links_entre_cadastros_so_o_menu(logado, rota, url):
 
     assert f'href="{url}"' not in miolo
     assert html.count(f'href="{url}"') == 1  # o item do menu lateral
+
+
+@pytest.mark.django_db
+def test_formulario_de_grupos_tambem_nasce_oculto_com_os_botoes_no_card(logado):
+    html = logado.get(reverse("transactions:categories_view")).content.decode()
+    card = html[html.index("Grupos de categoria"):]
+
+    assert re.search(r'<div id="cadastro-novo-grupo"[^>]*\shidden>', card)
+    assert 'form="cadastro-form-grupo"' in card
+    assert 'id="cadastro-form-grupo"' in card
+    assert re.search(r'<button[^>]*data-cadastro-salvar="grupo"[^>]*\shidden', card)
+    formulario = card[card.index('id="cadastro-form-grupo"'): card.index("</form>", card.index('id="cadastro-form-grupo"'))]
+    assert "Incluir" not in formulario
