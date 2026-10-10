@@ -1,4 +1,4 @@
-{% load money_filters icons %}
+{% load money_filters icons regional_filters %}
 <div id="operations-results">
 <div class="chart-card">
     <div class="section-header">
@@ -36,8 +36,8 @@
                     <td>{{ op.origin_account }}</td>
                     <td>{{ op.destination_account }}</td>
                     <td>{{ op.category }}</td>
-                    <td>{{ op.start_date|date:"d/m/Y"|default:"-" }}</td>
-                    <td>{{ op.end_date|date:"d/m/Y"|default:"-" }}</td>
+                    <td>{{ op.start_date|udate|default:"-" }}</td>
+                    <td>{{ op.end_date|udate|default:"-" }}</td>
                     <td>{{ op.entries_count }}</td>
                     <td class="amount">{{ op.total_amount|money:op.total_currency }}</td>
                     <td>{{ op.status_summary }}</td>
@@ -72,7 +72,7 @@
                                     <tbody>
                                         {% for entry in op.entries %}
                                         <tr>
-                                            <td>{{ entry.due_date|date:"d/m/Y"|default:"-" }}</td>
+                                            <td>{{ entry.due_date|udate|default:"-" }}</td>
                                             <td>{{ entry.get_entry_type_display }}</td>
                                             <td>{{ entry.account.owner.name }} / {{ entry.account.institution.institution_name }} / {{ entry.account.account_name }}</td>
                                             <td>{{ entry.category.category_name }}</td>

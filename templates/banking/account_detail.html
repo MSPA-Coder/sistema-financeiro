@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static money_filters icons %}
+{% load static money_filters icons regional_filters %}
 {% block title %}Conta • {{ account.account_name }}{% endblock %}
 
 {% block styles %}
@@ -25,7 +25,7 @@
         </label>
         <button type="submit" class="btn btn-primary btn-sm">Atualizar</button>
     </form>
-    <p class="account-reference">Saldo realizado em {{ reference_date|date:"d/m/Y" }}.</p>
+    <p class="account-reference">Saldo realizado em {{ reference_date|udate }}.</p>
 </section>
 
 <section class="summary-cards account-summary-cards" aria-label="Resumo da conta">
@@ -54,7 +54,7 @@
             <tbody>
                 {% for t in txs %}
                 <tr>
-                    <td>{{ t.display_date|date:"d/m/Y" }}</td><td>{{ t.entry_type|capfirst }}</td><td>{{ t.category.category_name }}</td><td>{{ t.description }}</td>
+                    <td>{{ t.display_date|udate }}</td><td>{{ t.entry_type|capfirst }}</td><td>{{ t.category.category_name }}</td><td>{{ t.description }}</td>
                     {% if t.entry_type == 'receita' %}<td class="amount amount-positive" data-sensitive-value="true">{{ t.realized_amount|money_signed:account.currency }}</td>{% else %}<td class="amount amount-negative" data-sensitive-value="true">{{ t.realized_amount|neg|money_signed:account.currency }}</td>{% endif %}
                     <td class="amount {{ t.running_balance|amount_class }}" data-sensitive-value="true">{% if t.is_last_of_day %}{{ t.running_balance|money_signed:account.currency }}{% endif %}</td>
                 </tr>

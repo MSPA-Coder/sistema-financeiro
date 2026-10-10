@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db.models.functions import Lower
 from django.http import Http404
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
@@ -142,7 +143,10 @@ def institutions_view(request):
     """Lista e cadastro de instituições financeiras, com suporte a HTMX."""
     current_filter_type = request.GET.get('filter_type') or ''
     context = {
-        "institutions": list_institutions(current_filter_type or None),
+        # Por tipo e, dentro dele, por nome (sem diferenciar maiúsculas).
+        "institutions": list_institutions(current_filter_type or None).order_by(
+            'institution_type', Lower('institution_name'), 'id'
+        ),
         "current_filter_type": current_filter_type,
     }
     if quer_fragmento(request):
@@ -208,10 +212,13 @@ def accounts_view(request):
     current_filter_owner_id = request.GET.get('filter_owner_id') or ''
     current_filter_institution_id = request.GET.get('filter_institution_id') or ''
     context = {
+        # Por titular, instituição e nome da conta (sem diferenciar maiúsculas).
         "accounts": list_accounts_for_user(
             request.user,
             owner_id=current_filter_owner_id or None,
             institution_id=current_filter_institution_id or None,
+        ).order_by(
+            Lower('owner__name'), Lower('institution__institution_name'), Lower('account_name'), 'id'
         ),
         "owners": _owners_for_form(request.user),
         "institutions": list_institutions(),

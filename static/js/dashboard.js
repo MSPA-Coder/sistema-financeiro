@@ -91,7 +91,7 @@
         var simboloMoeda = d.currencySymbol || 'R$';
 
         var formatNumber = function (value, digits) {
-            return Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+            return window.regional.formatNumber(value, digits);
         };
         var setParamIfPresent = function (params, key, value) {
             if (value !== null && value !== undefined && value !== '') {
@@ -261,7 +261,7 @@
                     var pct = value / total * 100;
                     if (pct <= 3) return;
                     var pos = arc.tooltipPosition();
-                    ctx.fillText(pct.toFixed(1) + '%', pos.x, pos.y);
+                    ctx.fillText(formatNumber(pct, 1) + '%', pos.x, pos.y);
                 });
                 ctx.restore();
             }
@@ -278,8 +278,8 @@
                         legend: { position: 'bottom' },
                         tooltip: { callbacks: { label: function (ctx) {
                             var total = ctx.dataset.data.reduce(function (a, v) { return a + Number(v || 0); }, 0);
-                            var pct = total ? (Number(ctx.raw || 0) / total * 100).toFixed(1) : '0.0';
-                            return ctx.label + ': ' + simboloMoeda + ' ' + Number(ctx.raw || 0).toFixed(2) + ' (' + pct + '%)';
+                            var pct = total ? formatNumber(Number(ctx.raw || 0) / total * 100, 1) : formatNumber(0, 1);
+                            return ctx.label + ': ' + simboloMoeda + ' ' + formatNumber(ctx.raw, 2) + ' (' + pct + '%)';
                         } } }
                     }
                 },

@@ -12,6 +12,7 @@ from uuid import uuid4
 from django.conf import settings
 from django.db import connection
 
+from core import regional
 from core.domain.settings import (
     APP_SETTING_LAST_OPTIMIZE_INFO,
     APP_SETTING_LAST_PROJECTION_RUN,
@@ -24,6 +25,7 @@ from core.domain.settings import (
     APP_SETTING_PROJECTION_HORIZON_MONTHS,
     APP_SETTING_PROJECTION_RUN_DAY,
     APP_SETTING_SYSTEM_START_DATE,
+    normalize_regional_format,
     normalize_table_scroll_rows,
     normalize_ui_theme,
 )
@@ -76,6 +78,14 @@ def update_user_ui_theme(user, theme: str) -> str:
     normalized = normalize_ui_theme(theme)
     user.ui_theme = normalized
     user.save(update_fields=["ui_theme", "updated_at"])
+    return normalized
+
+
+def update_user_regional_format(user, regional_format: str) -> str:
+    """Formato de datas e números na tela. Só apresentação: nada gravado muda."""
+    normalized = normalize_regional_format(regional_format)
+    user.regional_format = normalized
+    user.save(update_fields=["regional_format", "updated_at"])
     return normalized
 
 
@@ -416,7 +426,7 @@ def format_last_projection_run(setting_value: str | None) -> str:
     if not setting_value:
         return "Nenhuma execução registrada"
     try:
-        return datetime.fromisoformat(setting_value).strftime("%d/%m/%Y %H:%M:%S")
+        return regional.formatar_data_hora(datetime.fromisoformat(setting_value), segundos=True)
     except ValueError:
         return setting_value
 
@@ -494,7 +504,7 @@ def format_last_optimize_info(setting_value: str | None) -> str:
         return "Nenhuma otimização registrada"
     timestamp, _, summary = setting_value.partition("|")
     try:
-        formatted = datetime.fromisoformat(timestamp).strftime("%d/%m/%Y %H:%M:%S")
+        formatted = regional.formatar_data_hora(datetime.fromisoformat(timestamp), segundos=True)
     except ValueError:
         return setting_value
     return f"{formatted} — {summary}" if summary else formatted

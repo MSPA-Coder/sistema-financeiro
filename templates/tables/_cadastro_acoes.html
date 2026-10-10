@@ -1,0 +1,12 @@
+{% load icons %}
+{# Incluir abre o formulario de inclusao; enquanto aberto, Salvar (envia o formulario #cadastro-form) e Cancelar tomam o lugar dele. #}
+<div class="page-header-actions">
+    <button type="button" class="btn btn-primary btn-sm" data-cadastro-incluir
+            aria-controls="cadastro-novo" aria-expanded="false">{% icon 'plus' %}<span>Incluir</span></button>
+    <button type="submit" form="cadastro-form" class="btn btn-primary btn-sm" data-cadastro-salvar hidden
+            data-sa-confirmar="{{ confirmar }}"
+            data-sa-titulo="Confirmar cadastro"
+            data-sa-severidade="info"
+            data-sa-ok="Cadastrar">{% icon 'save' %}<span>Salvar</span></button>
+    <button type="button" class="btn btn-ghost btn-sm" data-cadastro-cancelar hidden>{% icon 'x' %}<span>Cancelar</span></button>
+</div>

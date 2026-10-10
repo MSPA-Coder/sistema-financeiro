@@ -44,6 +44,7 @@ from django.db.models import Q
 
 from banking.models import FinancialAccount
 from banking.services import can_access_account
+from core import regional
 from core.domain.finance import (
     CALC_REPEAT,
     CATEGORY_KIND_MANAGERIAL,
@@ -124,18 +125,18 @@ class Plano:
                 )
             return "Já está no saldo inicial"
         if self.acao == PAGAMENTO:
-            return f"Pagamento: concilia com a transferência de {self.lancamento.due_date:%d/%m/%Y}"
+            return f"Pagamento: concilia com a transferência de {regional.formatar_data(self.lancamento.due_date)}"
         if self.acao == PAGAMENTO_SEM_PAR:
             return "Pagamento sem transferência correspondente: fica pendente em Conciliação"
         if self.acao == PARCELA_LANCADA:
-            return f"Parcela já lançada (vencimento {self.lancamento.due_date:%d/%m/%Y})"
+            return f"Parcela já lançada (vencimento {regional.formatar_data(self.lancamento.due_date)})"
         if self.acao == PARCELADO_NOVO:
             return (
                 f"Compra parcelada nova: cria as parcelas {linha.installment_current} "
                 f"a {linha.installment_total}"
             )
         if self.acao == COMPRA_LANCADA:
-            return f"Compra já lançada em {self.lancamento.due_date:%d/%m/%Y}: concilia"
+            return f"Compra já lançada em {regional.formatar_data(self.lancamento.due_date)}: concilia"
         if self.acao == ESTORNO:
             return "Estorno ou crédito"
         return "Compra"

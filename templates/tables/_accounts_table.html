@@ -1,4 +1,4 @@
-{% load icons contas %}
+{% load icons contas regional_filters l10n %}
 {% load money_filters %}
 {# Depois de uma escrita (`tabelaAtualizar`), o corpo da tabela se recarrega com o filtro VIVO da tela. #}
 <tbody id="accountsTableBody" hx-trigger="tabelaAtualizar from:body" hx-get="{{ request.path }}" hx-include="[data-table-filter]" hx-target="this" hx-swap="outerHTML">
@@ -9,7 +9,7 @@
         <td>{{ account.account_name }}{% if account.is_credit_card %}<br><small class="text-muted">Cartão de crédito · fecha dia {{ account.card_closing_day }} · vence dia {{ account.card_due_day }}{% if account.card_payment_account %} · paga por {{ account.card_payment_account.account_name }}{% endif %}{% if account.card_estimated_spend is not None %} · gasto fixado em {{ account.card_estimated_spend|money:account.currency }}/mês{% endif %}</small>{% elif account.account_kind == 'aplicacao' %}<br><small class="text-muted">Aplicação{% if account.movement_account %} · movimenta por {{ account.movement_account.institution.institution_name }} / {{ account.movement_account.account_name }}{% endif %}{% if account.purpose == 'administrada' %} · administrada{% endif %}</small>{% elif account.purpose == 'administrada' %}<br><small class="text-muted">Administrada</small>{% endif %}</td>
         <td>{{ account.get_currency_display }}</td>
         <td class="amount {{ account.initial_balance|amount_class }}">{{ account.initial_balance|money:account.currency }}</td>
-        <td>{{ account.initial_balance_date|date:'d/m/Y' }}</td>
+        <td>{{ account.initial_balance_date|udate }}</td>
         <td class="actions">
             {% if can_view_account_details %}<a class="btn btn-sm btn-icon btn-action-view" title="Ver posição da conta" href="{% url 'banking:account_detail' account.id %}">{% icon 'eye' %}</a>{% endif %}
             <button type="button" class="btn btn-sm btn-icon btn-action-edit" title="Editar" data-toggle-edit="edit-account-{{ account.id }}">{% icon 'edit' %}</button>
@@ -51,7 +51,7 @@ enviado pelo navegador.
                     {% endfor %}
                 </select>
                 {% if account.has_entries %}<input type="hidden" name="currency" value="{{ account.currency }}">{% endif %}
-                <input type="text" name="initial_balance" value="{{ account.initial_balance }}" aria-label="Saldo inicial" data-ui="w-120">
+                <input type="text" name="initial_balance" data-regional-kind="decimal" value="{{ account.initial_balance|unlocalize }}" aria-label="Saldo inicial" data-ui="w-120">
                 <input type="date" name="initial_balance_date" value="{{ account.initial_balance_date|date:'Y-m-d' }}" aria-label="Data do saldo inicial" data-ui="w-120">
                 <select name="account_kind" aria-label="Tipo de conta" data-ui="w-120">
                     {% for code, label in account_kinds %}
@@ -65,7 +65,7 @@ enviado pelo navegador.
                 </select>
                 <input type="number" name="card_closing_day" min="1" max="31" value="{{ account.card_closing_day|default_if_none:'' }}" aria-label="Dia de fechamento do cartão" placeholder="Fecha dia" title="Só para cartão de crédito" data-ui="w-100">
                 <input type="number" name="card_due_day" min="1" max="31" value="{{ account.card_due_day|default_if_none:'' }}" aria-label="Dia de vencimento do cartão" placeholder="Vence dia" title="Só para cartão de crédito" data-ui="w-100">
-                <input type="text" name="card_estimated_spend" inputmode="decimal" value="{{ account.card_estimated_spend|default_if_none:'' }}" aria-label="Gasto mensal estimado do cartão" placeholder="Gasto/mês (auto)" title="Só para cartão de crédito: gasto novo por fatura. Vazio, o sistema usa a mediana das últimas 6 faturas importadas." data-ui="w-120">
+                <input type="text" name="card_estimated_spend" data-regional-kind="decimal" inputmode="decimal" value="{% if account.card_estimated_spend is not None %}{{ account.card_estimated_spend|unlocalize }}{% endif %}" aria-label="Gasto mensal estimado do cartão" placeholder="Gasto/mês (auto)" title="Só para cartão de crédito: gasto novo por fatura. Vazio, o sistema usa a mediana das últimas 6 faturas importadas." data-ui="w-120">
                 <select name="card_payment_account_id" aria-label="Conta de pagamento padrão do cartão" title="Só para cartão de crédito: de onde sai a fatura projetada. O pagamento real pode ser dividido entre contas." data-ui="flex-1">
                     <option value="">Conta de pagamento (opcional)</option>
                     {% for titular, contas in payment_accounts|por_titular %}

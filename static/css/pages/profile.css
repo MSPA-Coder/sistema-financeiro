@@ -6,7 +6,7 @@
     .theme-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:0.8rem; margin-top:0.8rem; }
     .theme-option { cursor:pointer; border:2px solid var(--border); border-radius:8px; padding:0.55rem; text-align:center; background:var(--card); transition:0.2s; position:relative; }
     .theme-option:hover { border-color:var(--primary); }
-    .theme-option.active { border-color:var(--primary); box-shadow:0 0 0 2px rgba(59,130,246,0.2); }
+    .theme-option:has(input:checked) { border-color:var(--primary); box-shadow:0 0 0 2px rgba(59,130,246,0.2); }
     .theme-option input { display:none; }
     .theme-preview { width:40px; height:24px; border-radius:4px; margin:0 auto 0.5rem; border:1px solid rgba(255,255,255,0.1); }
     .preview-light { background:linear-gradient(135deg, #f8fafc 50%, #e2e8f0 50%); }

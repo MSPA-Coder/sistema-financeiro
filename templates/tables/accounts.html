@@ -13,15 +13,15 @@
     <div>
         <h1>Cadastros • Contas</h1>
     </div>
+    {% include "tables/_cadastro_acoes.html" with confirmar="Cadastrar esta conta financeira?" %}
 </div>
 {% endblock %}
 
 {% block content %}
-{% include "tables/_nav.html" %}
-
 <div class="chart-card">
+    <div id="cadastro-novo" class="cadastro-novo" hidden>
     <div class="section-header"><h4>Nova conta</h4></div>
-    <form method="post" data-cadastro-htmx="#accountsTableBody" action="{% url 'banking:create_account' %}" class="add-form">
+    <form method="post" data-cadastro-htmx="#accountsTableBody" id="cadastro-form" action="{% url 'banking:create_account' %}" class="add-form">
         {% csrf_token %}
         <select name="owner_id" aria-label="Titular" required data-ui="flex-1">
             <option value="">Selecione o titular</option>
@@ -35,13 +35,13 @@
                 <option value="{{ institution.id }}">{{ institution.institution_name }}</option>
             {% endfor %}
         </select>
-        <input type="text" name="account_name" aria-label="Nome da conta" placeholder="Nome da conta..." maxlength="100" required autofocus data-ui="flex-1">
+        <input type="text" name="account_name" aria-label="Nome da conta" placeholder="Nome da conta..." maxlength="100" required data-ui="flex-1">
         <select name="currency" aria-label="Moeda" required data-ui="w-120">
             {% for code, label in currencies %}
                 <option value="{{ code }}">{{ label }}</option>
             {% endfor %}
         </select>
-        <input type="text" name="initial_balance" aria-label="Saldo inicial" placeholder="Saldo inicial" data-ui="w-120">
+        <input type="text" name="initial_balance" data-regional-kind="decimal" aria-label="Saldo inicial" placeholder="Saldo inicial" data-ui="w-120">
         <input type="date" name="initial_balance_date" aria-label="Data do saldo inicial" title="Data a que o saldo inicial se refere" data-ui="w-120">
         <select name="account_kind" aria-label="Tipo de conta" data-ui="w-120">
             {% for code, label in account_kinds %}
@@ -55,7 +55,7 @@
         </select>
         <input type="number" name="card_closing_day" min="1" max="31" aria-label="Dia de fechamento do cartão" placeholder="Fecha dia" title="Só para cartão de crédito" data-ui="w-100">
         <input type="number" name="card_due_day" min="1" max="31" aria-label="Dia de vencimento do cartão" placeholder="Vence dia" title="Só para cartão de crédito" data-ui="w-100">
-        <input type="text" name="card_estimated_spend" inputmode="decimal" aria-label="Gasto mensal estimado do cartão" placeholder="Gasto/mês (auto)" title="Só para cartão de crédito: gasto novo por fatura. Vazio, o sistema usa a mediana das últimas 6 faturas importadas." data-ui="w-120">
+        <input type="text" name="card_estimated_spend" data-regional-kind="decimal" inputmode="decimal" aria-label="Gasto mensal estimado do cartão" placeholder="Gasto/mês (auto)" title="Só para cartão de crédito: gasto novo por fatura. Vazio, o sistema usa a mediana das últimas 6 faturas importadas." data-ui="w-120">
         <select name="card_payment_account_id" aria-label="Conta de pagamento padrão do cartão" title="Só para cartão de crédito: de onde sai a fatura projetada. O pagamento real pode ser dividido entre contas." data-ui="flex-1">
             <option value="">Conta de pagamento (opcional)</option>
             {% for titular, contas in payment_accounts|por_titular %}
@@ -77,12 +77,8 @@
             {% endfor %}
         </select>
         <input type="text" name="statement_identifier" aria-label="Identificador no extrato" placeholder="Nº da conta no extrato (opcional)" maxlength="40" title="Número da conta como aparece no extrato do banco. Usado para reconhecer a conta ao importar vários extratos de uma vez." data-ui="w-120">
-        <button type="submit" class="btn btn-primary btn-sm"
-                data-sa-confirmar="Cadastrar esta conta financeira?"
-                data-sa-titulo="Confirmar cadastro"
-                data-sa-severidade="info"
-                data-sa-ok="Cadastrar">{% icon 'plus' %}<span>Incluir</span></button>
     </form>
+    </div>
 
     {% if not owners %}
     <p class="empty-state">Nenhum titular disponível para você. Cadastre um titular ou solicite acesso antes de criar contas.</p>
@@ -115,4 +111,8 @@
         </table>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/cadastro-incluir.js' %}"></script>
 {% endblock %}

@@ -19,6 +19,7 @@ from django.db import transaction
 
 from banking.models import FinancialAccount
 from banking.services import accessible_account_ids, can_access_account
+from core import regional
 
 from .adapters import (
     extract_statement_balance,
@@ -233,7 +234,7 @@ def statement_import_status(user, batch_id: int) -> dict[str, object] | None:
         "id": batch.id,
         "row_count": batch.row_count,
         "status": batch.status,
-        "created_at": batch.created_at.strftime("%d/%m/%Y %H:%M") if batch.created_at else None,
+        "created_at": regional.formatar_data_hora(batch.created_at) or None,
     }
 
 

@@ -77,6 +77,25 @@ def normalize_ui_theme(value: str | None) -> str:
     return value if value in VALID_UI_THEMES else UI_THEME_LIGHT
 
 
+# Formato regional de datas e números na tela (`AppUser.regional_format`).
+# Só apresentação e digitação: o que é gravado, exportado ou importado não muda.
+REGIONAL_FORMAT_BR: Final = "br"
+REGIONAL_FORMAT_US: Final = "us"
+VALID_REGIONAL_FORMATS: Final = (REGIONAL_FORMAT_BR, REGIONAL_FORMAT_US)
+REGIONAL_FORMAT_LABELS: Final = {
+    REGIONAL_FORMAT_BR: "Brasil",
+    REGIONAL_FORMAT_US: "EUA",
+}
+REGIONAL_FORMAT_EXAMPLES: Final = {
+    REGIONAL_FORMAT_BR: "Data 31/12/2026 · Valor 1.234,56",
+    REGIONAL_FORMAT_US: "Data 12/31/2026 · Valor 1,234.56",
+}
+
+
+def normalize_regional_format(value: str | None) -> str:
+    return value if value in VALID_REGIONAL_FORMATS else REGIONAL_FORMAT_BR
+
+
 TABLE_SCROLL_ROWS_MIN: Final = 5
 TABLE_SCROLL_ROWS_MAX: Final = 200
 

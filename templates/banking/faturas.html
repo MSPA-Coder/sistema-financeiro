@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static regional_filters %}
 {% load money_filters %}
 
 {% block title %}Banking • Faturas e projeção{% endblock %}
@@ -36,7 +36,7 @@
         <tbody>
         {% for lote, resumo in painel.importadas %}
             <tr>
-                <td>{{ lote.created_at|date:"d/m/Y" }}</td>
+                <td>{{ lote.created_at|udate }}</td>
                 <td>{{ lote.source_filename }}</td>
                 <td class="amount">{{ resumo.total_da_fatura|money:conta.currency }}</td>
                 <td><a href="{% url 'bank_statements:fatura' lote.id %}">Ver fatura</a></td>

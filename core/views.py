@@ -38,10 +38,13 @@ from accounts.services import (
 )
 from bank_statements.fatura_projetada import atualizar_todos as atualizar_faturas_projetadas
 from banking.models import FinancialAccount
+from core import regional
 from core.context_processors import primeira_tela_permitida
 from core.domain.identity import USER_TYPE_ADMINISTRATOR, USER_TYPE_LABELS
 from core.domain.settings import (
     APP_SETTING_LAST_OPTIMIZE_INFO,
+    REGIONAL_FORMAT_EXAMPLES,
+    REGIONAL_FORMAT_LABELS,
     UI_THEME_LABELS,
 )
 from core.permissions import permission_required
@@ -65,6 +68,7 @@ from core.services import (
     update_password_policy_settings,
     update_recurring_projection_settings,
     update_system_start_date,
+    update_user_regional_format,
     update_user_table_scroll_rows,
     update_user_ui_theme,
 )
@@ -428,6 +432,11 @@ def settings_profile_view(request):
         "theme_descriptions": UI_THEME_DESCRIPTIONS,
         "current_theme": request.user.ui_theme,
         "current_table_scroll_rows": request.user.table_scroll_rows,
+        "regional_options": [
+            (value, label, REGIONAL_FORMAT_EXAMPLES[value])
+            for value, label in REGIONAL_FORMAT_LABELS.items()
+        ],
+        "current_regional_format": request.user.regional_format,
     })
 
 
@@ -438,6 +447,15 @@ def settings_update_theme_view(request):
     if request.method == 'POST':
         new_theme = update_user_ui_theme(request.user, request.POST.get('theme', ''))
         messages.success(request, f"Tema alterado para: {UI_THEME_LABELS.get(new_theme, 'Light')}")
+    return redirect('core:settings_profile')
+
+
+@login_required
+@permission_required('settings.theme.update')
+@require_POST
+def settings_update_regional_format_view(request):
+    novo = update_user_regional_format(request.user, request.POST.get('regional_format', ''))
+    messages.success(request, f"Formato de datas e números alterado para: {REGIONAL_FORMAT_LABELS[novo]}")
     return redirect('core:settings_profile')
 
 
@@ -792,7 +810,7 @@ def settings_update_recurring_projection_view(request):
             if recolhido.removed_count:
                 aviso = (
                     f" {recolhido.removed_count} ocorrência(s) recorrente(s) depois de "
-                    f"{recolhido.horizon_end.strftime('%d/%m/%Y')} removida(s)."
+                    f"{regional.formatar_data(recolhido.horizon_end)} removida(s)."
                 )
             messages.success(
                 request,
@@ -817,6 +835,6 @@ def settings_run_recurring_projection_view(request):
         messages.success(
             request,
             f"Projeção de recorrências executada. {result.generated_count} lançamento(s) "
-            f"gerado(s) até {result.horizon_end.strftime('%d/%m/%Y')}.",
+            f"gerado(s) até {regional.formatar_data(result.horizon_end)}.",
         )
     return redirect('core:settings_home')

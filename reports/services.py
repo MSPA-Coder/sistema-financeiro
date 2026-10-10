@@ -29,6 +29,7 @@ from accounts.models import AccountOwner
 from accounts.services import accessible_owner_ids
 from banking.models import FinancialAccount, FinancialInstitution
 from banking.services import currency_of_accounts
+from core import regional
 from core.account_group_filter import ALL_ACCOUNT_GROUPS, account_group_q, parse_account_groups
 from core.currency_filter import ALL_CURRENCIES, currency_q, parse_currency_filter
 from core.domain.finance import (
@@ -1692,7 +1693,7 @@ def _account_action(minimum_balance: Decimal, minimum_balance_date: date, *, has
         return (
             "danger",
             "Transferir/cobrir",
-            f"Saldo fica negativo em {minimum_balance_date.strftime('%d/%m/%Y')}.",
+            f"Saldo fica negativo em {regional.formatar_data(minimum_balance_date)}.",
             (-minimum_balance).quantize(MONEY_QUANT),
         )
     if not has_movements:
@@ -1709,7 +1710,7 @@ def _summary_action(rows: list[UpcomingMovementAccountRow], minimum_balance: Dec
         return (
             "danger",
             "Caixa insuficiente",
-            f"O conjunto das contas fica negativo em {minimum_balance_date.strftime('%d/%m/%Y')}.",
+            f"O conjunto das contas fica negativo em {regional.formatar_data(minimum_balance_date)}.",
             (-minimum_balance).quantize(MONEY_QUANT),
         )
     deficit_rows = [row for row in rows if row.minimum_balance < 0]

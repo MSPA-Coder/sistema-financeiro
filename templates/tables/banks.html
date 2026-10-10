@@ -13,27 +13,23 @@
     <div>
         <h1>Cadastros • Instituições</h1>
     </div>
+    {% include "tables/_cadastro_acoes.html" with confirmar="Cadastrar esta instituição financeira?" %}
 </div>
 {% endblock %}
 
 {% block content %}
-{% include "tables/_nav.html" %}
-
 <div class="chart-card">
+    <div id="cadastro-novo" class="cadastro-novo" hidden>
     <div class="section-header"><h4>Nova instituição</h4></div>
-    <form method="post" data-cadastro-htmx="#institutionsTableBody" action="{% url 'banking:create_institution' %}" class="add-form">
+    <form method="post" data-cadastro-htmx="#institutionsTableBody" id="cadastro-form" action="{% url 'banking:create_institution' %}" class="add-form">
         {% csrf_token %}
         <select name="institution_type" aria-label="Tipo de instituição" required data-ui="w-140">
             <option value="Banco">Banco</option>
             <option value="Corretora">Corretora</option>
         </select>
-        <input type="text" name="institution_name" aria-label="Nome da instituição" placeholder="Nome da instituição..." maxlength="100" required autofocus data-ui="flex-1">
-        <button type="submit" class="btn btn-primary btn-sm"
-                data-sa-confirmar="Cadastrar esta instituição financeira?"
-                data-sa-titulo="Confirmar cadastro"
-                data-sa-severidade="info"
-                data-sa-ok="Cadastrar">{% icon 'plus' %}<span>Incluir</span></button>
+        <input type="text" name="institution_name" aria-label="Nome da instituição" placeholder="Nome da instituição..." maxlength="100" required data-ui="flex-1">
     </form>
+    </div>
 
     <div class="table-container" data-ui="table-plain-flex">
         <table>
@@ -55,4 +51,8 @@
         </table>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/cadastro-incluir.js' %}"></script>
 {% endblock %}

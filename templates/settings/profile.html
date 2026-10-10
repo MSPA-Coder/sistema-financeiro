@@ -36,6 +36,24 @@
 </div>
 
 <div class="section-card">
+    <h3>Formato de datas e números</h3>
+    <p>Como datas e valores aparecem e são digitados nas telas. Não altera o que já está gravado, nem importações e exportações.</p>
+    <form method="post" action="{% url 'core:settings_update_regional_format' %}" id="regional-form">
+        {% csrf_token %}
+        <div class="theme-grid">
+            {% for value, label, example in regional_options %}
+            <label class="theme-option {% if current_regional_format == value %}active{% endif %}">
+                <input type="radio" name="regional_format" value="{{ value }}" aria-label="Formato {{ label }}" {% if current_regional_format == value %}checked{% endif %}>
+                <span class="theme-name">{{ label }}</span>
+                <span class="theme-desc">{{ example }}</span>
+            </label>
+            {% endfor %}
+        </div>
+        <button type="submit" class="btn btn-primary" data-sa-confirmar="Salvar este formato como sua preferência?" data-sa-titulo="Confirmar formato" data-sa-severidade="info" data-sa-ok="Salvar">{% icon 'save' %}<span>Salvar</span></button>
+    </form>
+</div>
+
+<div class="section-card">
     <h3>Grades</h3>
     <p>Quantidade de registros exibidos antes da barra de rolagem vertical.</p>
     <form method="post" action="{% url 'core:settings_update_table_scroll' %}" class="btn-group" data-ui="items-end">

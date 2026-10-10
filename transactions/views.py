@@ -9,6 +9,7 @@ from django.contrib.auth.decorators import login_required
 from django.db import IntegrityError
 from django.db import transaction as db_transaction
 from django.db.models import Count, Exists, OuterRef
+from django.db.models.functions import Lower
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -491,21 +492,41 @@ def categories_view(request):
     context = {
         # `has_entries` trava o seletor de tipo na tela: categoria com histórico
         # não muda de tipo sem passar pela reclassificação, que tem relatório.
+        # Por grupo e nome (sem diferenciar maiúsculas); as sem grupo vão ao fim, e o
+        # template recua cada categoria sob o seu grupo.
         "categories": list_categories(current_filter_type or None).select_related("group").annotate(
             has_entries=Exists(CashFlowEntry.objects.filter(category_id=OuterRef("pk")))
+        ).order_by(
+            Lower("group__group_name").asc(nulls_last=True), Lower("category_name"), "id"
         ),
         "category_kind_options": CATEGORY_KIND_OPTIONS,
         "current_filter_type": current_filter_type,
-        "category_groups": list_category_groups().annotate(total_categories=Count("categories")),
+        "category_groups": list_category_groups(),
     }
     if quer_fragmento(request):
         return render(request, 'tables/_categories_table.html', context)
     return render(request, 'tables/categories.html', context)
 
 
+# --- Cadastros: Grupos de categoria ---
+
 @login_required
-@permission_required('tables.view', fallback='transactions:categories_view')
-@permission_required('tables.categories.manage', fallback='transactions:categories_view')
+@permission_required('tables.view')
+@permission_required('tables.categories.manage')
+def category_groups_view(request):
+    """Lista e cadastro dos grupos que agrupam categorias (tela própria)."""
+    # Na ordem dos gráficos (posição) e, empatando, por nome.
+    context = {
+        "category_groups": list_category_groups().annotate(total_categories=Count("categories")).order_by(
+            "position", Lower("group_name"), "id"
+        )
+    }
+    return render(request, 'tables/category_groups.html', context)
+
+
+@login_required
+@permission_required('tables.view', fallback='transactions:category_groups_view')
+@permission_required('tables.categories.manage', fallback='transactions:category_groups_view')
 @require_POST
 def create_category_group_view(request):
     try:
@@ -522,8 +543,8 @@ def create_category_group_view(request):
 
 
 @login_required
-@permission_required('tables.view', fallback='transactions:categories_view')
-@permission_required('tables.categories.manage', fallback='transactions:categories_view')
+@permission_required('tables.view', fallback='transactions:category_groups_view')
+@permission_required('tables.categories.manage', fallback='transactions:category_groups_view')
 @require_POST
 def update_category_group_view(request, group_id):
     group = get_object_or_404(CashFlowCategoryGroup, id=group_id)
@@ -542,8 +563,8 @@ def update_category_group_view(request, group_id):
 
 
 @login_required
-@permission_required('tables.view', fallback='transactions:categories_view')
-@permission_required('tables.categories.manage', fallback='transactions:categories_view')
+@permission_required('tables.view', fallback='transactions:category_groups_view')
+@permission_required('tables.categories.manage', fallback='transactions:category_groups_view')
 @require_POST
 def delete_category_group_view(request, group_id):
     group = get_object_or_404(CashFlowCategoryGroup, id=group_id)
@@ -613,8 +634,8 @@ def _respond_categories(request, *, sucesso=True):
 
 
 def _respond_category_groups(request, *, sucesso=True):
-    """Grupos ainda não têm fragmento próprio: volta para a tela inteira, filtrada."""
-    return voltar_para(request, 'transactions:categories_view')
+    """Os grupos têm tela própria, sem fragmento: a volta é para ela inteira."""
+    return voltar_para(request, 'transactions:category_groups_view')
 
 
 @login_required

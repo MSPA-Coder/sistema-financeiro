@@ -10,6 +10,11 @@
     --radius-lg:  14px;
     --shadow-sm:  0 1px 2px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04);
     --transition: 0.15s ease;
+    /* Menu lateral: largura completa e recolhida (so icones). O conteudo das telas
+       ganha, ao recolher, exatamente o que o menu devolveu (ver `data-sidebar`). */
+    --sidebar-w: 236px;
+    --sidebar-w-rail: 70px;
+    --content-max: 1200px;
     /* SharedAuth entrega a estrutura dos componentes; a paleta continua
        pertencendo ao tema local e se atualiza junto com cada variação dele. */
     --sharedauth-surface: var(--card);
@@ -324,8 +329,8 @@ a:hover { text-decoration: underline; }
    SIDEBAR
    ============================================================ */
 .app-sidebar-nav {
-    flex: 0 0 236px;
-    width: 236px;
+    flex: 0 0 var(--sidebar-w);
+    width: var(--sidebar-w);
     height: 100vh;
     height: 100dvh;
     display: flex;
@@ -338,6 +343,7 @@ a:hover { text-decoration: underline; }
     overflow-y: auto;
     overscroll-behavior: contain;
     z-index: 320;
+    transition: width 0.18s ease, flex-basis 0.18s ease;
 }
 
 .sidebar-brand {
@@ -547,7 +553,75 @@ a:hover { text-decoration: underline; }
 }
 .sidebar-user-actions form { margin: 0; display: inline-flex; }
 
+/* Botao que recolhe/expande o menu: so existe no desktop. */
+.sidebar-collapse-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.48rem;
+    padding: 0.36rem 0.55rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.sidebar-collapse-toggle:hover, .sidebar-collapse-toggle:focus-visible { background: var(--primary-light); color: var(--primary); }
+.sidebar-collapse-toggle svg {
+    width: 1.05rem; height: 1.05rem; flex-shrink: 0;
+    fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+    transition: transform 0.18s ease;
+}
+
+/* Menu recolhido (padrao a cada carga, so desktop): so os icones. Os rotulos saem
+   da vista mas continuam no DOM, entao o nome acessivel de cada item se mantem. */
+@media (min-width: 901px) {
+    html[data-sidebar="collapsed"] {
+        --sidebar-w: var(--sidebar-w-rail);
+        /* O conteudo cresce o que o menu devolveu, em vez de ficar centrado com sobra nas laterais. */
+        --content-max: calc(1200px + 236px - var(--sidebar-w-rail));
+    }
+    html[data-sidebar="collapsed"] .app-sidebar-nav { padding-left: 0.5rem; padding-right: 0.5rem; align-items: stretch; }
+    html[data-sidebar="collapsed"] .sidebar-brand { flex-direction: column; gap: 0.35rem; padding: 0.3rem 0 0.6rem; }
+    html[data-sidebar="collapsed"] .sidebar-brand-title,
+    html[data-sidebar="collapsed"] .sidebar-brand-subtitle,
+    html[data-sidebar="collapsed"] .sidebar-link-main > span:not(.sidebar-icon),
+    html[data-sidebar="collapsed"] .sidebar-user-info,
+    html[data-sidebar="collapsed"] .sidebar-collapse-label {
+        position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+        overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+    }
+    html[data-sidebar="collapsed"] .sidebar-brand-title-row { justify-content: center; }
+    /* O menu de filtros nao cabe no trilho (e o corte do overflow o esconderia): fixo, ao lado dele. */
+    html[data-sidebar="collapsed"] .sidebar-global-filters-menu {
+        position: fixed; top: 3.6rem; left: calc(var(--sidebar-w-rail) + 0.5rem); right: auto;
+        max-height: calc(100vh - 5rem); overflow-y: auto;
+    }
+    html[data-sidebar="collapsed"] .sidebar-link { justify-content: center; padding: 0.5rem 0; }
+    html[data-sidebar="collapsed"] .sidebar-link-main { gap: 0; }
+    html[data-sidebar="collapsed"] .sidebar-icon { width: auto; min-width: 0; font-size: 1.15rem; opacity: 1; }
+    html[data-sidebar="collapsed"] .sidebar-chevron { display: none; }
+    /* Com grupos abertos a lista passa da altura da janela: rola ela, sem cobrir o botao e o usuario. */
+    html[data-sidebar="collapsed"] .sidebar-menu { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+    /* Grupo aberto no trilho: os icones dos subitens aparecem logo abaixo, recuados pouco
+       (cada nivel soma o recuo, e o trilho so tem 48px uteis). Abrir e fechar segue a regra
+       `.sidebar-group.is-open > .sidebar-submenu` do menu completo. */
+    html[data-sidebar="collapsed"] .sidebar-submenu { margin: 0.1rem 0 0.2rem 0.3rem; padding-left: 0.25rem; }
+    html[data-sidebar="collapsed"] .sidebar-link.level-1,
+    html[data-sidebar="collapsed"] .sidebar-link.level-2 { padding: 0.4rem 0; }
+    html[data-sidebar="collapsed"] .sidebar-link.level-1 .sidebar-icon,
+    html[data-sidebar="collapsed"] .sidebar-link.level-2 .sidebar-icon { width: auto; min-width: 0; font-size: 1.05rem; }
+    html[data-sidebar="collapsed"] .sidebar-collapse-toggle { justify-content: center; padding: 0.5rem 0; }
+    html[data-sidebar="collapsed"] .sidebar-collapse-toggle svg { transform: rotate(180deg); }
+    html[data-sidebar="collapsed"] .sidebar-user-card { flex-direction: column; padding: 0.4rem 0; gap: 0.35rem; }
+    html[data-sidebar="collapsed"] .sidebar-user-actions { margin-left: 0; }
+}
+
 @media (max-width: 900px) {
+    .sidebar-collapse-toggle { display: none; }
     .app-shell { flex-direction: column; }
     .app-sidebar-nav {
         width: 100%; height: auto; max-height: 40vh;
@@ -574,7 +648,7 @@ a:hover { text-decoration: underline; }
     backdrop-filter: blur(8px);
 }
 .app-page-header-inner {
-    max-width: 1200px;
+    max-width: var(--content-max);
     margin: 0 auto;
     padding: 0.45rem 1rem;
 }
@@ -589,6 +663,8 @@ a:hover { text-decoration: underline; }
     flex-wrap: wrap;
     padding: 0.35rem 0;
 }
+.page-header-actions { display: flex; align-items: center; gap: 0.5rem; }
+.page-header-actions [hidden] { display: none; }
 .page-header-title h1 { margin: 0; font-size: 1.02rem; font-weight: 800; color: var(--text); }
 .page-header-title p  { margin: 0; font-size: 0.8rem; color: var(--muted); }
 
@@ -620,7 +696,7 @@ a:hover { text-decoration: underline; }
    ============================================================ */
 main {
     width: 100%;
-    max-width: 1200px;
+    max-width: var(--content-max);
     min-height: 0;
     flex: 1 1 auto;
     overflow-y: auto;
@@ -1225,3 +1301,23 @@ canvas { display: block; box-sizing: border-box; }
     flex-wrap: wrap;
 }
 .section-header h4 { margin: 0; color: var(--muted); font-size: 0.9rem; font-weight: 700; }
+
+/* ============================================================
+   CAMPOS DE DATA, MES E VALOR NO FORMATO REGIONAL (regional.js)
+   O campo visivel e de texto; o original fica escondido, so com o valor.
+   ============================================================ */
+.regional-field { position: relative; display: inline-flex; align-items: center; gap: 0.15rem; vertical-align: middle; }
+.regional-field input[data-regional-view="date"] { width: 7.6rem; }
+.regional-field input[data-regional-view="month"] { width: 5.6rem; }
+.regional-field input[data-regional-view="number"] { width: 7rem; text-align: right; }
+.regional-picker-button {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0.2rem; border: 0; background: transparent; color: var(--muted);
+    cursor: pointer; border-radius: var(--radius-sm); line-height: 0;
+}
+.regional-picker-button:hover:not(:disabled) { color: var(--primary); }
+.regional-picker-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.regional-picker-proxy {
+    position: absolute; right: 0; bottom: 0; width: 1px; height: 1px;
+    opacity: 0; pointer-events: none; padding: 0; border: 0 !important;
+}
