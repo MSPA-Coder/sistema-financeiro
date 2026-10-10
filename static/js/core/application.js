@@ -787,6 +787,43 @@
                 parentGroup = parentGroup.parentElement ? parentGroup.parentElement.closest('[data-sidebar-group]') : null;
             }
         }
+        /* -- Menu recolhido/completo --
+           Toda sessao nasce recolhida (`data-sidebar="collapsed"` no <html>); expandir vale
+           ate recolher, guardado so no sessionStorage do navegador (nunca no servidor).
+           So vale no desktop: abaixo de 901px o menu e a faixa de sempre. */
+        var _sidebarDesktop = window.matchMedia('(min-width: 901px)');
+        var _sidebarNav = document.getElementById('appSidebar');
+        function _sidebarIsCollapsed() {
+            return _sidebarDesktop.matches && document.documentElement.getAttribute('data-sidebar') === 'collapsed';
+        }
+        function _setSidebarCollapsed(collapsed) {
+            document.documentElement.setAttribute('data-sidebar', collapsed ? 'collapsed' : 'expanded');
+            try { sessionStorage.setItem('app_sidebar', collapsed ? 'collapsed' : 'expanded'); } catch (_) { /* sem armazenamento: so esta pagina */ }
+            var btn = document.querySelector('[data-sidebar-collapse]');
+            if (!btn) return;
+            var label = collapsed ? 'Expandir menu' : 'Recolher menu';
+            btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            btn.setAttribute('aria-label', label);
+            btn.setAttribute('title', label);
+        }
+        /* O estado pode ter vindo da sessao (theme-init.js): alinha o botao a ele. */
+        _setSidebarCollapsed(document.documentElement.getAttribute('data-sidebar') !== 'expanded');
+        var _collapseBtn = document.querySelector('[data-sidebar-collapse]');
+        if (_collapseBtn) {
+            _collapseBtn.addEventListener('click', function () {
+                _setSidebarCollapsed(!_sidebarIsCollapsed());
+            });
+        }
+        /* A largura das telas muda com o menu: refaz o que depende dela ao fim da transicao. */
+        if (_sidebarNav) {
+            _sidebarNav.addEventListener('transitionend', function (e) {
+                if (e.target === _sidebarNav && e.propertyName === 'width') {
+                    _updateTableOverflow();
+                    window.dispatchEvent(new Event('resize'));
+                }
+            });
+        }
+
         document.querySelectorAll('[data-sidebar-toggle]').forEach(function (btn) {
             btn.addEventListener('click', function (e) {
                 e.stopPropagation();

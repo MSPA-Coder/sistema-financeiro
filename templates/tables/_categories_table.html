@@ -1,8 +1,13 @@
 {% load icons %}
 <tbody id="categoriesTableBody">
-{% for category in categories %}
+{% regroup categories by group as por_grupo %}
+{% for bloco in por_grupo %}
+    <tr class="group-row">
+        <th scope="rowgroup" colspan="3">{% if bloco.grouper %}{{ bloco.grouper.group_name }}{% else %}Sem grupo{% endif %}<span class="group-count">{{ bloco.list|length }}</span></th>
+    </tr>
+{% for category in bloco.list %}
     <tr>
-        <td>{{ category.category_name }}</td>
+        <td class="category-indent">{{ category.category_name }}</td>
         <td>
             {% if category.kind == 'transferencia' %}
             <span class="badge badge-warning">Transferência</span>
@@ -12,7 +17,6 @@
             <span class="badge badge-success">Gerencial</span>
             {% endif %}
         </td>
-        <td>{% if category.group %}{{ category.group.group_name }}{% else %}<span class="empty-state">Sem grupo</span>{% endif %}</td>
         <td class="actions">
             <button type="button" class="btn btn-sm btn-icon btn-action-edit" title="Editar" data-toggle-edit="edit-category-{{ category.id }}">{% icon 'edit' %}</button>
             <form method="post" action="{% url 'transactions:delete_category' category.id %}" data-ui="inline">
@@ -26,7 +30,7 @@
         </td>
     </tr>
     <tr id="edit-category-{{ category.id }}" class="edit-row">
-        <td colspan="4">
+        <td colspan="3">
             <form method="post" action="{% url 'transactions:update_category' category.id %}" class="edit-form">
                 {% csrf_token %}
                 <input type="text" name="category_name" value="{{ category.category_name }}" aria-label="Nome da categoria" maxlength="100" required data-ui="flex-1">
@@ -57,9 +61,10 @@
             </form>
         </td>
     </tr>
+{% endfor %}
 {% empty %}
     <tr>
-        <td colspan="4" class="empty-state">Nenhuma categoria cadastrada.</td>
+        <td colspan="3" class="empty-state">Nenhuma categoria cadastrada.</td>
     </tr>
 {% endfor %}
 </tbody>

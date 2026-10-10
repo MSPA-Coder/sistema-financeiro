@@ -22,7 +22,6 @@ from core.domain.finance import (
     ENTRY_TYPE_INCOME,
     MAX_TRANSACTION_DESCRIPTION_LENGTH,
     MAX_TRANSACTION_INSTALLMENTS,
-    NON_MANAGERIAL_CATEGORY_KINDS,
     OPERATION_INSTALLMENT,
     OPERATION_INTERNAL_TRANSFER,
     OPERATION_RECURRING,
@@ -483,17 +482,11 @@ _MAX_CATEGORY_NAME_LENGTH = 100
 
 
 def list_categories(type_filter: str | None = None):
-    """`internal` é o filtro antigo da tela: tudo que não é gerencial.
-
-    Ele continua valendo porque a pergunta que a tela faz é essa -- "o que não
-    entra em receita nem despesa" --, e as duas respostas (transferência e
-    movimentação) cabem juntas nela.
-    """
+    """`type_filter` é o tipo da categoria (gerencial, movimentação ou transferência),
+    com os mesmos nomes que a tela mostra. Valor desconhecido não filtra."""
     queryset = CashFlowCategory.objects.all()
-    if type_filter == 'internal':
-        queryset = queryset.filter(kind__in=NON_MANAGERIAL_CATEGORY_KINDS)
-    elif type_filter == 'normal':
-        queryset = queryset.filter(kind=CATEGORY_KIND_MANAGERIAL)
+    if type_filter in VALID_CATEGORY_KINDS:
+        queryset = queryset.filter(kind=type_filter)
     return queryset
 
 

@@ -33,6 +33,7 @@ urlpatterns = [
     path('tables/categories/create/', views.create_category_view, name='create_category'),
     path('tables/categories/<int:category_id>/update/', views.update_category_view, name='update_category'),
     path('tables/categories/<int:category_id>/delete/', views.delete_category_view, name='delete_category'),
+    path('tables/category-groups/', views.category_groups_view, name='category_groups_view'),
     path('tables/category-groups/create/', views.create_category_group_view, name='create_category_group'),
     path('tables/category-groups/<int:group_id>/update/', views.update_category_group_view, name='update_category_group'),
     path('tables/category-groups/<int:group_id>/delete/', views.delete_category_group_view, name='delete_category_group'),
