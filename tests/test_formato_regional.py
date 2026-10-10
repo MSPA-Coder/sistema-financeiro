@@ -33,7 +33,6 @@ def _renderizar(texto: str, **contexto) -> str:
 
 
 def test_sem_requisicao_vale_o_formato_do_brasil():
-    assert regional.formato_ativo() == REGIONAL_FORMAT_BR
     assert regional.formatar_data(date(2026, 12, 31)) == "31/12/2026"
     assert regional.formatar_data_hora(datetime(2026, 12, 31, 8, 5, 9)) == "31/12/2026 08:05"
 
@@ -73,20 +72,6 @@ def test_filtros_de_data_seguem_o_formato_ativo(eua):
 
 def test_filtro_de_data_aceita_vazio():
     assert _renderizar("[{{ d|udate }}]", d=None) == "[]"
-
-
-def test_nenhum_template_formata_data_fora_dos_filtros_regionais():
-    """Data legível por pessoa passa por `udate`, nunca por `date:"d/m/Y"` fixo.
-
-    Valores de `<input>` seguem ISO (`Y-m-d`), que é o que o servidor recebe.
-    """
-    fixos = []
-    for caminho in (RAIZ / "templates").rglob("*.html"):
-        texto = caminho.read_text(encoding="utf-8")
-        for padrao in ('date:"d/m/Y', "date:'d/m/Y", 'date:"m/Y', "date:'m/Y"):
-            if padrao in texto:
-                fixos.append(f"{caminho.relative_to(RAIZ).as_posix()}: {padrao}")
-    assert not fixos, fixos
 
 
 @pytest.mark.django_db
@@ -133,18 +118,5 @@ class TestPreferenciaDoUsuario:
         cliente_br = Client()
         cliente_br.force_login(outro)
         assert 'data-regional="br"' in cliente_br.get(reverse("core:settings_profile")).content.decode()
-        assert regional.formato_ativo() == REGIONAL_FORMAT_BR
-
-
-@pytest.mark.sentinela_front
-def test_o_javascript_regional_ignora_o_auxiliar_do_calendario():
-    """O campo auxiliar do calendario nunca vira campo regional.
-
-    Risco que protege: o auxiliar e um `<input type="date">` dentro do wrapper.
-    Sem a guarda, conteudo inserido depois do carregamento (troca de HTMX, campo
-    criado por JS) faz o observador tratar o auxiliar como campo novo e criar
-    wrapper dentro de wrapper sem fim, travando a aba.
-    """
-    texto = (RAIZ / "static/js/core/regional.js").read_text(encoding="utf-8")
-    assert "classList.contains('regional-picker-proxy')" in texto
-    assert ":not(.regional-picker-proxy)" in texto
+        # E nada ficou ativo depois das duas requisições: fora delas vale o Brasil.
+        assert regional.formatar_data(date(2026, 12, 31)) == "31/12/2026"

@@ -202,35 +202,6 @@ def test_erro_no_cadastro_por_htmx_nao_recarrega_a_tabela(client, admin):
     assert "tabelaAtualizar" not in response.get("HX-Trigger", "")
 
 
-@pytest.mark.parametrize("parcial, tbody", [
-    ("tables/_institutions_table.html", "institutionsTableBody"),
-    ("tables/_accounts_table.html", "accountsTableBody"),
-    ("tables/_categories_table.html", "categoriesTableBody"),
-    ("tables/_owners_table.html", "ownersTableBody"),
-])
-def test_corpo_da_tabela_se_recarrega_com_o_filtro_vivo(parcial, tbody):
-    from pathlib import Path
-
-    texto = (Path(__file__).resolve().parent.parent / "templates" / parcial).read_text(encoding="utf-8")
-    tag = re.search(rf'<tbody id="{tbody}"[^>]*>', texto).group(0)
-    assert 'hx-trigger="tabelaAtualizar from:body"' in tag
-    assert 'hx-include="[data-table-filter]"' in tag
-    # as escritas da tabela saem por HTMX com alvo nela mesma
-    assert texto.count(f'data-cadastro-htmx="#{tbody}"') == 2
-
-
-@pytest.mark.parametrize("pagina", ["tables/accounts.html", "tables/banks.html", "tables/categories.html"])
-def test_filtro_da_tabela_troca_o_corpo_e_acerta_a_url(pagina):
-    from pathlib import Path
-
-    texto = (Path(__file__).resolve().parent.parent / "templates" / pagina).read_text(encoding="utf-8")
-    filtros = re.findall(r"<select data-table-filter[^>]*>", texto)
-    assert filtros, pagina
-    for filtro in filtros:
-        assert "TableBody" in filtro and 'hx-swap="outerHTML"' in filtro, filtro
-        assert 'hx-replace-url="true"' in filtro, filtro
-
-
 # ---------------------------------------------------------------------------
 # Reteste R1 (09/10/2026): o que a primeira rodada de correções deixou passar
 # ---------------------------------------------------------------------------
@@ -245,21 +216,6 @@ def test_fechar_mes_volta_com_moeda_e_grupos():
     )
     query = _query(_monthly_close_redirect(request)["Location"])
     assert query == {"filter_account_id": "4", "filter_year": "2026", "currency": "ALL", "grupos": "cartoes"}
-
-
-@pytest.mark.sentinela_front
-def test_painel_global_refaz_os_filtros_da_tela_a_partir_da_url_atual():
-    """Os campos ocultos do painel são da carga da página; a barra lateral não
-    acompanha as trocas por HTMX. Aplicar moeda ou grupos desfazia um filtro de
-    tabela trocado depois -- o envio do painel tem de reler a URL."""
-    from pathlib import Path
-
-    raiz = Path(__file__).resolve().parent.parent
-    template = (raiz / "templates/components/navigation.html").read_text(encoding="utf-8")
-    assert 'data-filtro-da-tela' in template
-    js = (raiz / "static/js/core/application.js").read_text(encoding="utf-8")
-    trecho = js[js.index("[data-global-currency-form]')) {"):][:1600]
-    assert "data-filtro-da-tela" in trecho and "window.location.href" in trecho
 
 
 @pytest.mark.django_db

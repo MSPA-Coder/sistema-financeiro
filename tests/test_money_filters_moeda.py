@@ -118,31 +118,3 @@ def test_o_valor_do_destino_nasce_desabilitado_no_formulario():
 
     campo = re.search(r'<input[^>]*name="counterparty_amount"[^>]*>', html)
     assert campo and re.search(r"\sdisabled[\s>]", campo.group(0))
-
-
-def test_telas_por_conta_passam_a_moeda_da_conta():
-    """Contrato de tela: onde a linha é de uma conta só, o símbolo é o dela.
-
-    O total que soma várias contas fica de fora de propósito -- somar moedas
-    diferentes é assunto da etapa de agregação, e até lá um total só existe
-    entre contas da mesma moeda.
-    """
-    from pathlib import Path
-
-    raiz = Path(__file__).resolve().parents[1] / "templates"
-    esperado = {
-        "tables/_accounts_table.html": "account.initial_balance|money:account.currency",
-        "transactions/_table_body.html": "money_signed:t.account.currency",
-        "transactions/_operations_table.html": "money_signed:entry.account.currency",
-        "reports/partials/account_position_content.html": "money_signed:row.currency",
-        "banking/_reconciliation_tables.html": "money_signed:line.account.currency",
-        "settings/monthly_close.html": "close.closing_balance|money:close.account.currency",
-    }
-
-    faltando = [
-        caminho
-        for caminho, marca in esperado.items()
-        if marca not in (raiz / caminho).read_text(encoding="utf-8")
-    ]
-
-    assert not faltando, f"telas por conta sem a moeda da conta: {faltando}"

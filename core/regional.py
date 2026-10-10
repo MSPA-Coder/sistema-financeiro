@@ -24,10 +24,6 @@ _PADRAO_MES = {REGIONAL_FORMAT_BR: "%m/%Y", REGIONAL_FORMAT_US: "%m/%Y"}
 _PADRAO_DIA_MES = {REGIONAL_FORMAT_BR: "%d/%m", REGIONAL_FORMAT_US: "%m/%d"}
 
 
-def formato_ativo() -> str:
-    return _formato.get()
-
-
 def ativar(formato: str | None):
     """Ativa o formato e devolve o token para `desativar`."""
     return _formato.set(normalize_regional_format(formato))
