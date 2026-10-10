@@ -788,8 +788,9 @@
             }
         }
         /* -- Menu recolhido/completo --
-           Toda carga nasce recolhida (`data-sidebar="collapsed"` no <html>) e nada e
-           guardado. So vale no desktop: abaixo de 901px o menu e a faixa de sempre. */
+           Toda sessao nasce recolhida (`data-sidebar="collapsed"` no <html>); expandir vale
+           ate recolher, guardado so no sessionStorage do navegador (nunca no servidor).
+           So vale no desktop: abaixo de 901px o menu e a faixa de sempre. */
         var _sidebarDesktop = window.matchMedia('(min-width: 901px)');
         var _sidebarNav = document.getElementById('appSidebar');
         function _sidebarIsCollapsed() {
@@ -797,6 +798,7 @@
         }
         function _setSidebarCollapsed(collapsed) {
             document.documentElement.setAttribute('data-sidebar', collapsed ? 'collapsed' : 'expanded');
+            try { sessionStorage.setItem('app_sidebar', collapsed ? 'collapsed' : 'expanded'); } catch (_) { /* sem armazenamento: so esta pagina */ }
             var btn = document.querySelector('[data-sidebar-collapse]');
             if (!btn) return;
             var label = collapsed ? 'Expandir menu' : 'Recolher menu';
@@ -804,6 +806,8 @@
             btn.setAttribute('aria-label', label);
             btn.setAttribute('title', label);
         }
+        /* O estado pode ter vindo da sessao (theme-init.js): alinha o botao a ele. */
+        _setSidebarCollapsed(document.documentElement.getAttribute('data-sidebar') !== 'expanded');
         var _collapseBtn = document.querySelector('[data-sidebar-collapse]');
         if (_collapseBtn) {
             _collapseBtn.addEventListener('click', function () {

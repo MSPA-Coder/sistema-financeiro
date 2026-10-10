@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Exists, OuterRef
+from django.db.models.functions import Lower
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -436,8 +437,12 @@ def categories_view(request):
     context = {
         # `has_entries` trava o seletor de tipo na tela: categoria com histórico
         # não muda de tipo sem passar pela reclassificação, que tem relatório.
+        # Por grupo e nome (sem diferenciar maiúsculas); as sem grupo vão ao fim, e o
+        # template recua cada categoria sob o seu grupo.
         "categories": list_categories(current_filter_type or None).select_related("group").annotate(
             has_entries=Exists(CashFlowEntry.objects.filter(category_id=OuterRef("pk")))
+        ).order_by(
+            Lower("group__group_name").asc(nulls_last=True), Lower("category_name"), "id"
         ),
         "category_kind_options": CATEGORY_KIND_OPTIONS,
         "current_filter_type": current_filter_type,

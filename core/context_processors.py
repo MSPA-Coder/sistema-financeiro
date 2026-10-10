@@ -45,7 +45,7 @@ def _build_menu_items() -> list[MenuItem]:
                 MenuItem(
                     "Lançamentos",
                     "/transactions/",
-                    "\U0001F9FE",
+                    "\U0001F4D2",
                     "/transactions/",
                     required_permission="transactions.view",
                 ),
@@ -59,28 +59,28 @@ def _build_menu_items() -> list[MenuItem]:
                 MenuItem(
                     "Importação",
                     "/banking/imports/",
-                    "\U0001F3E6",
+                    "\U0001F4E5",
                     "/banking/imports/",
                     exact_match=True,
                     children=(
                         MenuItem(
                             "Importar extratos e faturas",
                             "/banking/imports/",
-                            "\U0001F4E5",
+                            "\U0001F4E9",
                             "/banking/imports/",
                             required_permission="banking.import",
                         ),
                         MenuItem(
                             "Conciliação",
                             "/banking/reconciliation/",
-                            "\U0001F517",
+                            "\U00002705",
                             "/banking/reconciliation/",
                             required_permission="banking.reconcile",
                         ),
                         MenuItem(
                             "Extratos importados",
                             "/banking/statements/",
-                            "\U0001F4C4",
+                            "\U0001F9FE",
                             "/banking/statements/",
                             required_permission="banking.view",
                             active_patterns=(r"^/banking/import/\d+/extrato/",),
@@ -105,21 +105,21 @@ def _build_menu_items() -> list[MenuItem]:
                 MenuItem(
                     "Reclassificação",
                     "/banking/reclassification/",
-                    "\U0001F3F7",
+                    "\U0001F500",
                     "/banking/reclassification/",
                     required_permission="banking.reclassify",
                 ),
                 MenuItem(
                     "Fechamento Mensal",
                     "/settings/monthly-close/",
-                    "\U0001F4C5",
+                    "\U0001F512",
                     "/settings/monthly-close/",
                     required_permission="settings.monthly_close.manage",
                 ),
                 MenuItem(
                     "Parcelas e Recorrências",
                     "/operations/",
-                    "\U0001F9E9",
+                    "\U0001F501",
                     "/operations/",
                     required_permission="operations.view",
                 ),
@@ -138,13 +138,13 @@ def _build_menu_items() -> list[MenuItem]:
             "\U0001F4C8",
             "/reports/",
             children=(
-                MenuItem("Próximos movimentos", "/reports/upcoming-movements/", "\U0001F4CC", "/reports/upcoming-movements/", required_permission="reports.upcoming_movements.view"),
-                MenuItem("Projeções", "/reports/projections/", "\U0001F4C9", "/reports/projections/", required_permission="projections.view"),
+                MenuItem("Próximos movimentos", "/reports/upcoming-movements/", "\U000023F3", "/reports/upcoming-movements/", required_permission="reports.upcoming_movements.view"),
+                MenuItem("Projeções", "/reports/projections/", "\U0001F52E", "/reports/projections/", required_permission="projections.view"),
                 MenuItem("Posição por conta", "/reports/account-position/", "\U0001F9EE", "/reports/account-position/", required_permission="reports.account_position.view"),
                 MenuItem(
                     "Planejamento anual",
                     "/reports/annual-planning/",
-                    "\U0001F3AF",
+                    "\U0001F4C5",
                     "/reports/annual-planning/",
                     required_permission="reports.annual_planning.view",
                 ),
@@ -160,7 +160,7 @@ def _build_menu_items() -> list[MenuItem]:
         MenuItem(
             "Cadastros",
             "/tables/owners/",
-            "\U0001F9F1",
+            "\U0001F4C7",
             "/tables/",
             required_permission="tables.view",
             children=(
@@ -178,7 +178,7 @@ def _build_menu_items() -> list[MenuItem]:
             required_permission="settings.view",
             children=(
                 MenuItem("Perfil e tema", "/settings/profile/", "\U0001F3A8", "/settings/profile/"),
-                MenuItem("Parâmetros", "/settings/", "\U0001F6E0", "/settings/", exact_match=True),
+                MenuItem("Parâmetros", "/settings/", "\U0001F39A", "/settings/", exact_match=True),
                 MenuItem("Banco de dados", "/settings/database/", "\U0001F5C4", "/settings/database/"),
             ),
         ),
@@ -189,7 +189,7 @@ def _build_menu_items() -> list[MenuItem]:
             "/change-password/",
             children=(
                 MenuItem("Alterar senha", "/change-password/", "\U0001F511", "/change-password/"),
-                MenuItem("Permissões", "/permissions/", "\U0001F510", "/permissions/", required_permission="permissions.manage"),
+                MenuItem("Permissões", "/permissions/", "\U0001F465", "/permissions/", required_permission="permissions.manage"),
                 MenuItem("Trilha de auditoria", "/settings/audit-log/", "\U0001F4DC", "/settings/audit-log/", required_permission="settings.audit.view"),
             ),
         ),

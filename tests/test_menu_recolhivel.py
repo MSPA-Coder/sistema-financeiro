@@ -2,9 +2,9 @@
 
 Risco que protege: a página nascer com o menu completo (o salto visual que o
 padrão recolhido evita), o botão de alternar sumir ou perder o estado
-acessível, o menu recolhido deixar um item sem nome (só ícone), ou o estado
-passar a ser guardado, o que a decisão de produto descartou: toda carga
-nasce recolhida.
+acessível, o menu recolhido deixar um item sem nome (só ícone), ícones
+repetidos, ou o estado passar a ser guardado no servidor: expandir vale só pela
+sessão do navegador (sessionStorage), nunca em banco nem cookie.
 """
 
 import re

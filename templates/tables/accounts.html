@@ -13,15 +13,15 @@
     <div>
         <h1>Cadastros • Contas</h1>
     </div>
+    {% include "tables/_cadastro_acoes.html" with confirmar="Cadastrar esta conta financeira?" %}
 </div>
 {% endblock %}
 
 {% block content %}
-{% include "tables/_nav.html" %}
-
 <div class="chart-card">
+    <div id="cadastro-novo" class="cadastro-novo" hidden>
     <div class="section-header"><h4>Nova conta</h4></div>
-    <form method="post" action="{% url 'banking:create_account' %}" class="add-form">
+    <form method="post" action="{% url 'banking:create_account' %}" id="cadastro-form" class="add-form">
         {% csrf_token %}
         <select name="owner_id" aria-label="Titular" required data-ui="flex-1">
             <option value="">Selecione o titular</option>
@@ -35,7 +35,7 @@
                 <option value="{{ institution.id }}">{{ institution.institution_name }}</option>
             {% endfor %}
         </select>
-        <input type="text" name="account_name" aria-label="Nome da conta" placeholder="Nome da conta..." maxlength="100" required autofocus data-ui="flex-1">
+        <input type="text" name="account_name" aria-label="Nome da conta" placeholder="Nome da conta..." maxlength="100" required data-ui="flex-1">
         <select name="currency" aria-label="Moeda" required data-ui="w-120">
             {% for code, label in currencies %}
                 <option value="{{ code }}">{{ label }}</option>
@@ -77,12 +77,8 @@
             {% endfor %}
         </select>
         <input type="text" name="statement_identifier" aria-label="Identificador no extrato" placeholder="Nº da conta no extrato (opcional)" maxlength="40" title="Número da conta como aparece no extrato do banco. Usado para reconhecer a conta ao importar vários extratos de uma vez." data-ui="w-120">
-        <button type="submit" class="btn btn-primary btn-sm"
-                data-sa-confirmar="Cadastrar esta conta financeira?"
-                data-sa-titulo="Confirmar cadastro"
-                data-sa-severidade="info"
-                data-sa-ok="Cadastrar">{% icon 'plus' %}<span>Incluir</span></button>
     </form>
+    </div>
 
     {% if not owners %}
     <p class="empty-state">Nenhum titular disponível para você. Cadastre um titular ou solicite acesso antes de criar contas.</p>
@@ -115,4 +111,8 @@
         </table>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/cadastro-incluir.js' %}"></script>
 {% endblock %}

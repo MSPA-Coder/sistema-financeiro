@@ -4,3 +4,7 @@
     /* .edit-form is defined in base.css. */
     /* .empty-state (texto/padding/cor) ja vem do core; so o italico e especifico desta pagina. */
     .empty-state { font-style:italic; }
+    /* Categorias sob o seu grupo: a linha do grupo abre o bloco e cada categoria vem recuada. */
+    .group-row th { text-align:left; background:var(--primary-light); color:var(--text); font-weight:700; padding:0.4rem 0.6rem; }
+    .group-count { margin-left:0.5rem; color:var(--muted); font-weight:500; font-size:0.78rem; }
+    .category-indent { padding-left:1.8rem; border-left:3px solid var(--border); }

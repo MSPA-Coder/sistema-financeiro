@@ -4,6 +4,7 @@ from django.contrib import messages
 from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
+from django.db.models.functions import Lower
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -31,7 +32,8 @@ from core.services import request_client_ip
 
 
 def _owners_context(user):
-    return {"owners": list_owners(user)}
+    # A tela lista por nome, sem diferenciar maiúsculas (a ordem padrão do modelo é a do banco).
+    return {"owners": list_owners(user).order_by(Lower('name'), 'id')}
 
 
 @login_required

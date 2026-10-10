@@ -13,7 +13,7 @@
     /* Menu lateral: largura completa e recolhida (so icones). O conteudo das telas
        ganha, ao recolher, exatamente o que o menu devolveu (ver `data-sidebar`). */
     --sidebar-w: 236px;
-    --sidebar-w-rail: 64px;
+    --sidebar-w-rail: 70px;
     --content-max: 1200px;
     /* SharedAuth entrega a estrutura dos componentes; a paleta continua
        pertencendo ao tema local e se atualiza junto com cada variação dele. */
@@ -663,6 +663,8 @@ a:hover { text-decoration: underline; }
     flex-wrap: wrap;
     padding: 0.35rem 0;
 }
+.page-header-actions { display: flex; align-items: center; gap: 0.5rem; }
+.page-header-actions [hidden] { display: none; }
 .page-header-title h1 { margin: 0; font-size: 1.02rem; font-weight: 800; color: var(--text); }
 .page-header-title p  { margin: 0; font-size: 0.8rem; color: var(--muted); }
 
