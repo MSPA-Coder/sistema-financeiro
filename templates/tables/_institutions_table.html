@@ -1,5 +1,6 @@
 {% load icons %}
-<tbody id="institutionsTableBody">
+{# Depois de uma escrita (`tabelaAtualizar`), o corpo da tabela se recarrega com o filtro VIVO da tela. #}
+<tbody id="institutionsTableBody" hx-trigger="tabelaAtualizar from:body" hx-get="{{ request.path }}" hx-include="[data-table-filter]" hx-target="this" hx-swap="outerHTML">
 {% for institution in institutions %}
     <tr>
         <td>{{ institution.institution_type }}</td>
@@ -13,7 +14,7 @@
         </td>
         <td class="actions">
             <button type="button" class="btn btn-sm btn-icon btn-action-edit" title="Editar" data-toggle-edit="edit-institution-{{ institution.id }}">{% icon 'edit' %}</button>
-            <form method="post" action="{% url 'banking:delete_institution' institution.id %}" data-ui="inline">
+            <form method="post" data-cadastro-htmx="#institutionsTableBody" action="{% url 'banking:delete_institution' institution.id %}" data-ui="inline">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-sm btn-icon btn-action-delete" title="Excluir"
                     data-sa-confirmar="Excluir a instituição {{ institution.institution_name }}? Esta ação não pode ser desfeita."
@@ -25,7 +26,7 @@
     </tr>
     <tr id="edit-institution-{{ institution.id }}" class="edit-row">
         <td colspan="4">
-            <form method="post" action="{% url 'banking:update_institution' institution.id %}" class="edit-form">
+            <form method="post" data-cadastro-htmx="#institutionsTableBody" action="{% url 'banking:update_institution' institution.id %}" class="edit-form">
                 {% csrf_token %}
                 <select name="institution_type" aria-label="Tipo de instituição" required data-ui="w-140">
                     <option value="Banco" {% if institution.institution_type == "Banco" %}selected{% endif %}>Banco</option>

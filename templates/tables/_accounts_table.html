@@ -1,6 +1,7 @@
 {% load icons contas regional_filters l10n %}
 {% load money_filters %}
-<tbody id="accountsTableBody">
+{# Depois de uma escrita (`tabelaAtualizar`), o corpo da tabela se recarrega com o filtro VIVO da tela. #}
+<tbody id="accountsTableBody" hx-trigger="tabelaAtualizar from:body" hx-get="{{ request.path }}" hx-include="[data-table-filter]" hx-target="this" hx-swap="outerHTML">
 {% for account in accounts %}
     <tr>
         <td>{{ account.owner.name }}</td>
@@ -12,7 +13,7 @@
         <td class="actions">
             {% if can_view_account_details %}<a class="btn btn-sm btn-icon btn-action-view" title="Ver posição da conta" href="{% url 'banking:account_detail' account.id %}">{% icon 'eye' %}</a>{% endif %}
             <button type="button" class="btn btn-sm btn-icon btn-action-edit" title="Editar" data-toggle-edit="edit-account-{{ account.id }}">{% icon 'edit' %}</button>
-            <form method="post" action="{% url 'banking:delete_account' account.id %}" data-ui="inline">
+            <form method="post" data-cadastro-htmx="#accountsTableBody" action="{% url 'banking:delete_account' account.id %}" data-ui="inline">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-sm btn-icon btn-action-delete" title="Excluir"
                         data-sa-confirmar="Excluir a conta {{ account.account_name }}? Esta ação não pode ser desfeita."
@@ -24,7 +25,7 @@
     </tr>
     <tr id="edit-account-{{ account.id }}" class="edit-row">
         <td colspan="7">
-            <form method="post" action="{% url 'banking:update_account' account.id %}" class="edit-form">
+            <form method="post" data-cadastro-htmx="#accountsTableBody" action="{% url 'banking:update_account' account.id %}" class="edit-form">
                 {% csrf_token %}
                 <select name="owner_id" aria-label="Titular" required data-ui="flex-1">
                     {% for owner in owners %}

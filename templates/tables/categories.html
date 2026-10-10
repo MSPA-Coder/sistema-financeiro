@@ -21,7 +21,7 @@
 <div class="chart-card">
     <div id="cadastro-novo" class="cadastro-novo" hidden>
     <div class="section-header"><h4>Nova categoria</h4></div>
-    <form method="post" action="{% url 'transactions:create_category' %}" id="cadastro-form" class="add-form">
+    <form method="post" data-cadastro-htmx="#categoriesTableBody" id="cadastro-form" action="{% url 'transactions:create_category' %}" class="add-form">
         {% csrf_token %}
         <input type="text" name="category_name" aria-label="Nome da categoria" placeholder="Nome da categoria..." maxlength="100" required data-ui="flex-1">
         <select name="kind" aria-label="Tipo da categoria" required data-ui="w-260">
@@ -44,7 +44,7 @@
                 <tr>
                     <th>Grupo / Nome</th>
                     <th>
-                        <select data-table-filter name="filter_type" aria-label="Filtrar por tipo" data-filter="true" hx-get="{{ request.path }}" hx-trigger="change" hx-include="[data-table-filter]" {% nav_filtro %}>
+                        <select data-table-filter name="filter_type" aria-label="Filtrar por tipo" data-filter="true" hx-get="{{ request.path }}" hx-trigger="change" hx-include="[data-table-filter]" hx-target="#categoriesTableBody" hx-swap="outerHTML" hx-replace-url="true" hx-indicator="#ajaxLoadingBar">
                             <option value="">Todos os tipos</option>
                             <option value="gerencial" {% if current_filter_type == 'gerencial' %}selected{% endif %}>Gerencial</option>
                             <option value="movimentacao" {% if current_filter_type == 'movimentacao' %}selected{% endif %}>Movimentação</option>

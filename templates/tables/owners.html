@@ -21,7 +21,7 @@
 <div class="chart-card">
     <div id="cadastro-novo" class="cadastro-novo" hidden>
     <div class="section-header"><h4>Novo titular</h4></div>
-    <form method="post" action="{% url 'accounts:create_owner' %}" id="cadastro-form" class="add-form">
+    <form method="post" data-cadastro-htmx="#ownersTableBody" id="cadastro-form" action="{% url 'accounts:create_owner' %}" class="add-form">
         {% csrf_token %}
         <input type="text" name="name" aria-label="Nome do titular" placeholder="Nome do titular..." maxlength="100" required data-ui="flex-1">
     </form>

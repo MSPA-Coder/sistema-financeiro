@@ -59,7 +59,7 @@ edição inline da tabela. Espera no contexto: `t` (CashFlowEntry ou None),
 </div>
 <div class="span-2">
     <label>Descrição</label>
-    <input type="text" name="description" maxlength="255" value="{% if t %}{{ t.description }}{% endif %}" aria-label="Descricao" placeholder="Ex: Supermercado, salário...">
+    <input type="text" name="description" maxlength="255" value="{% if t %}{{ t.description }}{% endif %}" aria-label="Descricao" placeholder="Ex: Supermercado, salário..." required>
 </div>
 <div class="counterparty-field" data-ui="hidden">
     <label>{% if t %}Conta contraparte{% else %}Conta destino{% endif %}</label>

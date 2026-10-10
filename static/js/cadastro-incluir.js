@@ -36,6 +36,11 @@
         _abrir(alvo.hasAttribute('data-cadastro-incluir'));
     });
 
+    /* Gravado por HTMX (a página não recarrega): o formulário se fecha, e o Incluir volta. */
+    document.addEventListener('cadastroGravado', function (e) {
+        if (e.target && e.target.id === 'cadastro-form') _abrir(false);
+    });
+
     document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape') return;
         var p = _partes();

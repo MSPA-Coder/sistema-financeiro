@@ -1,11 +1,23 @@
 {% comment %}Filtro global que tira contas de todas as telas precisa estar a vista: escondido
    no menu, ele e esquecido, e o saldo que ele muda passa por saldo errado.
-   Fica fora de #appMain e #appPageHeader porque so muda com recarga inteira:
-   os filtros globais trocam de pagina, nao de fragmento.
+   Fica fora de #appMain; a navegacao por filtro o traz junto pelo
+   `hx-select-oob` (ver core/templatetags/navegacao.py), e por isso o
+   conteiner existe mesmo vazio.
+
+   Desde 09/10/2026 a faixa mostra tambem o recorte de titular, instituicao e
+   conta, que passou a acompanhar o menu (core/contexto_global.py).
 {% endcomment %}
+<div id="globalFiltersBanner">
 {% if global_account_groups_active %}
 <div class="global-filter-banner" role="status">
     <span>Mostrando só <strong>{{ global_account_groups_labels|join:", " }}</strong>.</span>
     <a href="{{ global_account_groups_reset_url }}">Mostrar todas as contas</a>
 </div>
 {% endif %}
+{% if global_context_labels %}
+<div class="global-filter-banner" role="status" data-global-context>
+    <span>Recorte: <strong>{{ global_context_labels|join:" · " }}</strong>. Ele acompanha a navegação pelo menu.</span>
+    <a href="{{ global_context_reset_url }}">Limpar recorte</a>
+</div>
+{% endif %}
+</div>

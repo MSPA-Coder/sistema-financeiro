@@ -1,11 +1,12 @@
 {% load icons %}
-<tbody id="ownersTableBody">
+{# Depois de uma escrita (`tabelaAtualizar`), o corpo da tabela se recarrega com o filtro VIVO da tela. #}
+<tbody id="ownersTableBody" hx-trigger="tabelaAtualizar from:body" hx-get="{{ request.path }}" hx-include="[data-table-filter]" hx-target="this" hx-swap="outerHTML">
 {% for owner in owners %}
     <tr>
         <td>{{ owner.name }}</td>
         <td class="actions">
             <button type="button" class="btn btn-sm btn-icon btn-action-edit" title="Editar" data-toggle-edit="edit-owner-{{ owner.id }}">{% icon 'edit' %}</button>
-            <form method="post" action="{% url 'accounts:delete_owner' owner.id %}" data-ui="inline">
+            <form method="post" data-cadastro-htmx="#ownersTableBody" action="{% url 'accounts:delete_owner' owner.id %}" data-ui="inline">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-sm btn-icon btn-action-delete" title="Excluir"
                     data-sa-confirmar="Excluir o titular {{ owner.name }}? Esta ação não pode ser desfeita."
@@ -17,7 +18,7 @@
     </tr>
     <tr id="edit-owner-{{ owner.id }}" class="edit-row">
         <td colspan="2">
-            <form method="post" action="{% url 'accounts:update_owner' owner.id %}" class="edit-form">
+            <form method="post" data-cadastro-htmx="#ownersTableBody" action="{% url 'accounts:update_owner' owner.id %}" class="edit-form">
                 {% csrf_token %}
                 <input type="text" name="name" value="{{ owner.name }}" aria-label="Nome do titular" required maxlength="100" data-ui="flex-1">
                 <button type="submit" class="btn btn-primary btn-sm"

@@ -331,13 +331,17 @@ def unrealize_transaction(entry: CashFlowEntry, audit_context=None, user=None) -
     if revert_counterpart:
         assert_entry_period_open(counterpart, action_label="desfazer a realização de")
 
-    entry.status = STATUS_PENDING
+    # Volta para o status aberto que a DATA manda: vencido só se o vencimento
+    # já passou. Gravar sempre "vencidos" escondia o lançamento de vencimento
+    # futuro das duas visões ("A vencer" exige `a_vencer`; "Vencidos" exige
+    # vencimento no passado) -- só "Todos" o mostrava (auditoria L01, 09/10/2026).
+    entry.status = _normalize_open_entry_status(STATUS_PENDING, entry.due_date)
     entry.realized_date = None
     entry.realized_amount = None
     entry.save(update_fields=['status', 'realized_date', 'realized_amount', 'updated_at'])
 
     if revert_counterpart:
-        counterpart.status = STATUS_PENDING
+        counterpart.status = _normalize_open_entry_status(STATUS_PENDING, counterpart.due_date)
         counterpart.realized_date = None
         counterpart.realized_amount = None
         counterpart.save(update_fields=['status', 'realized_date', 'realized_amount', 'updated_at'])
@@ -2334,11 +2338,17 @@ def build_transactions_view_context(user, get_params, session, *, request=None) 
     current_txs, blocos = compute_statement(scope, view_mode)
     _decorate_rows_for_editing(current_txs)
 
-    available_types = sorted({tx.entry_type for tx in current_txs})
+    # As opções saem das linhas já filtradas, mas o valor ESCOLHIDO fica
+    # sempre entre elas: quando a combinação de filtros não traz linha, o
+    # seletor sumia com o próprio filtro e mostrava "Todos" com o filtro ainda
+    # valendo na URL (auditoria de 09/10/2026, reteste R1.1).
+    available_types = sorted(
+        {tx.entry_type for tx in current_txs} | ({scope.filter_type} if scope.filter_type else set())
+    )
     available_dates = sorted({
         _entry_date_for_view_mode(tx, view_mode).isoformat()
         for tx in current_txs if _entry_date_for_view_mode(tx, view_mode)
-    })
+    } | ({resolved.filter_date_raw} if resolved.filter_date_raw else set()))
     available_categories = list_category_names(include_internal=not scope.exclude_internal)
 
     return {

@@ -1,5 +1,6 @@
 {% load icons %}
-<tbody id="categoriesTableBody">
+{# Depois de uma escrita (`tabelaAtualizar`), o corpo da tabela se recarrega com o filtro VIVO da tela. #}
+<tbody id="categoriesTableBody" hx-trigger="tabelaAtualizar from:body" hx-get="{{ request.path }}" hx-include="[data-table-filter]" hx-target="this" hx-swap="outerHTML">
 {% regroup categories by group as por_grupo %}
 {% for bloco in por_grupo %}
     <tr class="group-row">
@@ -19,7 +20,7 @@
         </td>
         <td class="actions">
             <button type="button" class="btn btn-sm btn-icon btn-action-edit" title="Editar" data-toggle-edit="edit-category-{{ category.id }}">{% icon 'edit' %}</button>
-            <form method="post" action="{% url 'transactions:delete_category' category.id %}" data-ui="inline">
+            <form method="post" data-cadastro-htmx="#categoriesTableBody" action="{% url 'transactions:delete_category' category.id %}" data-ui="inline">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-sm btn-icon btn-action-delete" title="Excluir"
                     data-sa-confirmar="Excluir a categoria {{ category.category_name }}? Esta ação não pode ser desfeita."
@@ -31,7 +32,7 @@
     </tr>
     <tr id="edit-category-{{ category.id }}" class="edit-row">
         <td colspan="3">
-            <form method="post" action="{% url 'transactions:update_category' category.id %}" class="edit-form">
+            <form method="post" data-cadastro-htmx="#categoriesTableBody" action="{% url 'transactions:update_category' category.id %}" class="edit-form">
                 {% csrf_token %}
                 <input type="text" name="category_name" value="{{ category.category_name }}" aria-label="Nome da categoria" maxlength="100" required data-ui="flex-1">
                 {% comment %}

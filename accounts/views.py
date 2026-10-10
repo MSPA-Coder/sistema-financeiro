@@ -5,7 +5,6 @@ from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
 from django.db.models.functions import Lower
-from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -29,6 +28,7 @@ from accounts.services import (
 from core.htmx import quer_fragmento
 from core.permissions import permission_required
 from core.services import request_client_ip
+from core.volta import resposta_de_cadastro
 
 
 def _owners_context(user):
@@ -57,6 +57,7 @@ def create_owner_view(request):
         messages.success(request, "Titular cadastrado com sucesso.")
     except ValueError as exc:
         messages.error(request, str(exc))
+        return _respond(request, sucesso=False)
     return _respond(request)
 
 
@@ -71,6 +72,7 @@ def update_owner_view(request, owner_id):
         messages.success(request, "Titular atualizado com sucesso.")
     except ValueError as exc:
         messages.error(request, str(exc))
+        return _respond(request, sucesso=False)
     return _respond(request)
 
 
@@ -85,15 +87,12 @@ def delete_owner_view(request, owner_id):
         messages.success(request, "Titular excluído com sucesso.")
     except ValueError as exc:
         messages.error(request, str(exc))
+        return _respond(request, sucesso=False)
     return _respond(request)
 
 
-def _respond(request):
-    if quer_fragmento(request):
-        response = HttpResponse(status=200)
-        response.headers['HX-Redirect'] = reverse('accounts:owners_view')
-        return response
-    return redirect('accounts:owners_view')
+def _respond(request, *, sucesso=True):
+    return resposta_de_cadastro(request, 'accounts:owners_view', sucesso=sucesso)
 
 
 def _safe_next_url(request, default_url: str) -> str:

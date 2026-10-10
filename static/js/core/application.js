@@ -170,7 +170,71 @@
         if (form.matches && form.matches('[data-global-currency-form]')) {
             if (form.dataset.submitting === '1') { event.preventDefault(); return; }
             form.dataset.submitting = '1';
+            /* Os campos ocultos com os filtros da tela foram escritos na carga
+               da página, e a barra lateral fica fora das trocas por HTMX: um
+               filtro trocado depois voltava ao valor antigo ao aplicar moeda
+               ou grupos (auditoria de 09/10/2026). Refaz a partir da URL
+               ATUAL, menos o que este próprio formulário decide. */
+            form.querySelectorAll('input[type="hidden"][data-filtro-da-tela]').forEach(function (campo) {
+                campo.remove();
+            });
+            new URL(window.location.href).searchParams.forEach(function (valor, nome) {
+                if (nome === 'currency' || nome === 'grupos') return;
+                var campo = document.createElement('input');
+                campo.type = 'hidden';
+                campo.name = nome;
+                campo.value = valor;
+                campo.setAttribute('data-filtro-da-tela', '');
+                form.appendChild(campo);
+            });
         }
+        /* Escrita (POST): leva a query ATUAL da barra no campo `volta`, para
+           o servidor voltar à tela com os filtros que ela mostrava (ver
+           core/volta.py). O `action` do formulário guarda a query da carga
+           da página, que fica velha depois de qualquer filtro trocado por
+           HTMX. */
+        if (form.method === 'post' && !form.hasAttribute('data-sem-volta')) {
+            var volta = form.querySelector('input[name="volta"]');
+            if (!volta) {
+                volta = document.createElement('input');
+                volta.type = 'hidden';
+                volta.name = 'volta';
+                form.appendChild(volta);
+            }
+            volta.value = window.location.search.replace(/^\?/, '');
+        }
+    });
+
+    /* Tabelas cadastrais (contas, bancos, categorias, titulares): incluir,
+       editar e excluir saem por HTMX, sem recarregar a página. O servidor
+       responde 204 e, se deu certo, `tabelaAtualizar` -- o `<tbody>` da
+       tabela se recarrega com o filtro vivo -- e `cadastroGravado` (abaixo).
+       Se deu errado, nada se recarrega: a linha em edição continua com o que
+       foi digitado, e a mensagem chega fora de banda.
+
+       Fase de bolha no `document`: a confirmação da SharedAuth segura o
+       primeiro envio e reenvia com `requestSubmit` depois do "sim"; só esse
+       segundo chega aqui sem `preventDefault`. `data-enviando` segura o
+       segundo clique enquanto a resposta não volta. Sem HTMX, segue o POST
+       comum, que volta para a tabela com os filtros. */
+    document.addEventListener('submit', function (event) {
+        var form = event.target;
+        if (!form.matches || !form.matches('form[data-cadastro-htmx]')) return;
+        if (event.defaultPrevented || !window.htmx) return;
+        event.preventDefault();
+        if (form.dataset.enviando === '1') return;
+        form.dataset.enviando = '1';
+        var liberar = function () { delete form.dataset.enviando; };
+        window.htmx.ajax('POST', form.getAttribute('action'), {
+            source: form,
+            target: form.getAttribute('data-cadastro-htmx'),
+            swap: 'none'
+        }).then(liberar, liberar);
+    });
+
+    document.addEventListener('cadastroGravado', function (event) {
+        var form = event.target;
+        if (form && form.classList && form.classList.contains('add-form')) form.reset();
     });
 
     /* Menus laterais são links nativos. Propague os filtros globais sem
@@ -192,8 +256,34 @@
             href.searchParams.set(name, globals[name]);
             changed = true;
         });
+        /* Titular, instituição e conta acompanham o menu entre as telas que
+           usam o mesmo seletor (core/contexto_global.py), e só os parâmetros
+           que o DESTINO entende. Mesma regra dos globais: o que o link já traz
+           vence -- é assim que "Limpar recorte" leva os três vazios. */
+        var contexto = _contextoParaODestino(href.pathname);
+        Object.keys(contexto).forEach(function (name) {
+            if (href.searchParams.has(name)) return;
+            href.searchParams.set(name, contexto[name]);
+            changed = true;
+        });
         if (changed) link.href = href.href;
     });
+
+    function _telasComContexto() {
+        try { return JSON.parse(document.body.dataset.telasComContexto || '{}'); } catch (_) { return {}; }
+    }
+
+    function _contextoParaODestino(destino) {
+        var telas = _telasComContexto();
+        var atual = new URL(window.location.href);
+        if (!telas[atual.pathname] || !telas[destino]) return {};
+        var saida = {};
+        telas[destino].forEach(function (nome) {
+            var valor = atual.searchParams.get(nome);
+            if (valor) saida[nome] = valor;
+        });
+        return saida;
+    }
 
     /* GETs disparados pelo HTMX recebem os filtros globais sem exigir que
        cada formulário declare um hidden input. Se o próprio formulário já traz

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load static regional_filters %}
-{% load icons contas %}
+{% load icons contas navegacao %}
 {% load money_filters %}
 
 {% block title %}Banking • Reclassificação{% endblock %}
@@ -23,7 +23,7 @@
 {% if plano %}
 <div class="chart-card u-mb-1">
     <h3>Prévia: {{ plano.alvo|length }} lançamento(s) passam para {{ plano.destino.category_name }}</h3>
-    <form method="post" action="{% url 'bank_statements:reclassificacao' %}">
+    <form method="post" {% nav_escrita %} action="{% url 'bank_statements:reclassificacao' %}{% if voltar %}?{{ voltar }}{% endif %}">
         {% csrf_token %}
         <input type="hidden" name="voltar" value="{{ voltar }}">
         <input type="hidden" name="categoria" value="{{ plano.destino.id }}">
@@ -136,7 +136,7 @@
 </div>
 
 <div class="table-container">
-    <form method="post" action="{% url 'bank_statements:reclassificacao' %}">
+    <form method="post" {% nav_escrita %} action="{% url 'bank_statements:reclassificacao' %}{% if voltar %}?{{ voltar }}{% endif %}">
         {% csrf_token %}
         <input type="hidden" name="voltar" value="{{ voltar }}">
         <input type="hidden" name="iguais" value="1">

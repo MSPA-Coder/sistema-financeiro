@@ -24,7 +24,7 @@
                         <form method="get" action="{{ request.path }}" data-global-currency-form>
                             {% for key, values in request.GET.lists %}
                                 {% if key != 'currency' and key != 'grupos' %}
-                                    {% for value in values %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+                                    {% for value in values %}<input type="hidden" name="{{ key }}" value="{{ value }}" data-filtro-da-tela>{% endfor %}
                                 {% endif %}
                             {% endfor %}
                             {# As duas marcadas viajam como `ALL`: ver core/currency_filter.py. #}

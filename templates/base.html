@@ -33,7 +33,7 @@
     {% block styles %}{% endblock %}
 
 </head>
-<body data-table-scroll-rows="{{ table_scroll_rows|default:15 }}">
+<body data-table-scroll-rows="{{ table_scroll_rows|default:15 }}" data-telas-com-contexto="{{ telas_com_contexto_json }}">
     <div id="ajaxLoadingBar" aria-hidden="true"></div>
     <div class="app-shell">
         {% include 'components/navigation.html' %}
