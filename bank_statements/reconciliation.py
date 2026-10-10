@@ -67,18 +67,6 @@ def pending_statement_lines_for_user(user, limit: int = 100) -> Iterable[BankSta
     ).filter(account_id__in=account_ids, status=LINE_STATUS_NEW)[:limit]
 
 
-def reconciled_statement_lines_for_user(user, limit: int = 25) -> Iterable[BankStatementLine]:
-    """Últimas linhas conciliadas visíveis para `user`."""
-    account_ids = accessible_account_ids(user, "view")
-    if not account_ids:
-        return BankStatementLine.objects.none()
-    return BankStatementLine.objects.select_related(
-        "account__owner", "account__institution", "matched_entry"
-    ).filter(
-        account_id__in=account_ids, status=LINE_STATUS_RECONCILED, matched_entry__isnull=False
-    )[:limit]
-
-
 def reconciled_statement_batches_for_user(user, limit: int = 20) -> list[BankStatementImport]:
     """Lotes de importação com ao menos uma linha conciliada, do mais recente
     ao mais antigo, cada um com suas linhas conciliadas em `.reconciled_lines`.

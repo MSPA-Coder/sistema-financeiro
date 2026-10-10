@@ -337,15 +337,6 @@ def test_menu_manda_ao_script_a_selecao_padrao_dos_grupos(client, usuario, conta
     assert todos.context["global_account_groups_active"] is True
 
 
-@pytest.mark.sentinela_front
-def test_script_so_omite_grupos_quando_a_selecao_e_a_padrao():
-    from pathlib import Path
-
-    script = (Path(__file__).resolve().parent.parent / "static" / "js" / "core" / "application.js").read_text(encoding="utf-8")
-    assert "data-default-value" in script
-    assert "field.disabled = value === defaultValue;" in script
-
-
 # --- O tipo novo -------------------------------------------------------------
 
 

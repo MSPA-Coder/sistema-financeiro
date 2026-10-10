@@ -23,7 +23,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db.models import Case, DecimalField, F, Q, Sum, Value, When
-from django.db.models.functions import Coalesce, TruncMonth
+from django.db.models.functions import Coalesce
 
 from accounts.models import AccountOwner
 from accounts.services import accessible_owner_ids
@@ -1144,33 +1144,6 @@ def _signed_entries_totals_by_account(account_ids: list[int], *, view_mode: str,
         .annotate(total=Coalesce(Sum(signed_expr), Value(Decimal("0.00")), output_field=_AMOUNT_FIELD))
     )
     return {int(row["account_id"]): to_decimal(row["total"]) for row in qs}
-
-
-def _signed_entries_totals_by_month(
-    account_ids: list[int], *, view_mode: str, start_date: date, end_date: date
-) -> dict[date, Decimal]:
-    """Como `_signed_entries_total`, mas devolve o total assinado por mês
-    (chave = primeiro dia do mês) dentro do intervalo, numa única consulta
-    agregada em vez de uma por mês -- mesma técnica (TruncMonth + Sum +
-    GROUP BY) que `dashboard_view` já usa para totais multi-mês."""
-    if not account_ids or start_date >= end_date:
-        return {}
-    currency_of_accounts(account_ids)
-    amount_expr = _balance_amount_expr(view_mode)
-    signed_expr = Case(
-        When(entry_type=ENTRY_TYPE_INCOME, then=amount_expr),
-        default=amount_expr * -1,
-        output_field=_AMOUNT_FIELD,
-    )
-    qs = (
-        CashFlowEntry.objects.annotate(balance_date=_balance_date_expr(view_mode))
-        .filter(account_id__in=account_ids, balance_date__gte=start_date, balance_date__lt=end_date)
-        .filter(_balance_status_q(view_mode, date.today()))
-        .annotate(month=TruncMonth("balance_date"))
-        .values("month")
-        .annotate(total=Coalesce(Sum(signed_expr), Value(Decimal("0.00")), output_field=_AMOUNT_FIELD))
-    )
-    return {row["month"]: to_decimal(row["total"]) for row in qs}
 
 
 def decimal_base_balance(account_ids: Iterable[int]) -> Decimal:

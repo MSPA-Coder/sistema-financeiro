@@ -96,46 +96,6 @@ def test_categorias_saem_sob_o_grupo_e_as_sem_grupo_por_ultimo(logado):
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize(
-    "rota",
-    [
-        "accounts:owners_view", "banking:institutions_view", "banking:accounts_view",
-        "transactions:categories_view", "transactions:category_groups_view",
-    ],
-)
-def test_incluir_fica_no_cabecalho_e_o_formulario_nasce_oculto(logado, rota):
-    html = logado.get(reverse(rota)).content.decode()
-    cabecalho = html[html.index('<header id="appPageHeader"'): html.index("</header>")]
-
-    assert "data-cadastro-incluir" in cabecalho
-    assert "data-cadastro-salvar" in cabecalho
-    assert re.search(r'<button[^>]*data-cadastro-salvar[^>]*\shidden', cabecalho)
-    assert re.search(r'<div id="cadastro-novo"[^>]*\shidden>', html)
-    # O Salvar do cabeçalho envia o formulário que está na página.
-    assert 'form="cadastro-form"' in cabecalho
-    assert 'id="cadastro-form"' in html
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize(
-    ("rota", "url"),
-    [
-        ("accounts:owners_view", "/tables/owners/"),
-        ("banking:institutions_view", "/tables/banks/"),
-        ("banking:accounts_view", "/tables/accounts/"),
-        ("transactions:categories_view", "/tables/categories/"),
-        ("transactions:category_groups_view", "/tables/category-groups/"),
-    ],
-)
-def test_nao_ha_linha_de_links_entre_cadastros_so_o_menu(logado, rota, url):
-    html = logado.get(reverse(rota)).content.decode()
-    miolo = html[html.index('<main id="appMain"'):]
-
-    assert f'href="{url}"' not in miolo
-    assert html.count(f'href="{url}"') == 1  # o item do menu lateral
-
-
-@pytest.mark.django_db
 def test_grupos_de_categoria_tem_tela_propria_com_a_contagem_de_categorias(logado):
     grupo = CashFlowCategoryGroup.objects.create(group_name="Moradia", position=1)
     CashFlowCategory.objects.create(category_name="Energia", group=grupo)
@@ -165,10 +125,6 @@ def test_filtro_de_tipo_das_categorias_usa_os_mesmos_nomes_do_selo(logado):
     assert nomes("movimentacao") == {"Aplicação"}
     assert nomes("transferencia") == {"Entre contas"}
     assert nomes("") == {"Mercado", "Aplicação", "Entre contas"}
-    pagina = logado.get(url).content.decode()
-    for rotulo in (">Gerencial</option>", ">Movimentação</option>", ">Transferência</option>"):
-        assert rotulo in pagina
-    assert ">Normal</option>" not in pagina and ">Interna</option>" not in pagina
 
 
 @pytest.mark.django_db

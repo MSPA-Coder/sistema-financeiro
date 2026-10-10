@@ -991,26 +991,6 @@ def renumber_remaining_installments(operation_type: str, entries: list[CashFlowE
             counterparty.save(update_fields=["current_installment", "installments", "updated_at"])
 
 
-def _snapshot_entry(entry: CashFlowEntry) -> dict:
-    return {
-        "account_id": entry.account_id,
-        "category_id": entry.category_id,
-        "entry_type": entry.entry_type,
-        "description": entry.description,
-        "entry_amount": str(entry.entry_amount),
-        "installments": entry.installments,
-        "current_installment": entry.current_installment,
-        "due_date": entry.due_date.isoformat() if entry.due_date else None,
-        "status": entry.status,
-        "realized_date": entry.realized_date.isoformat() if entry.realized_date else None,
-        "realized_amount": str(entry.realized_amount) if entry.realized_amount is not None else None,
-        "is_recurring": entry.is_recurring,
-        "operation_type": entry.operation_type,
-        "bank_operation_id": entry.bank_operation_id,
-        "source_entry_id": entry.source_entry_id,
-    }
-
-
 def _sync_bank_operation_status(bank_operation_id: int | None) -> None:
     if not bank_operation_id:
         return

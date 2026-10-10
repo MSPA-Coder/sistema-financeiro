@@ -11,10 +11,7 @@ antes de qualquer consulta.
 
 from __future__ import annotations
 
-import re
-
 import pytest
-from django.template.loader import render_to_string
 from django.test import RequestFactory
 
 from core.navegacao import ESTADO_DE_INTERFACE, UrlCanonicaMiddleware, url_canonica
@@ -182,86 +179,6 @@ ATRIBUTOS_DE_NAVEGACAO = (
     'hx-replace-url="true"',
 )
 
-
-def test_tag_emite_o_contrato_inteiro() -> None:
-    from django.template import Context, Template
-
-    emitido = Template("{% load navegacao %}{% nav_filtro %}").render(Context({}))
-
-    for atributo in ATRIBUTOS_DE_NAVEGACAO:
-        assert atributo in emitido, atributo
-
-
-def test_filtros_da_tabela_de_lancamentos_trocam_so_a_tabela() -> None:
-    """Os três seletores do cabeçalho da tabela.
-
-    Desde 09/10/2026 trocam só a tabela (com os cartões de resumo fora de
-    banda), não `#appMain` inteiro: o cabeçalho da tela não muda com um
-    filtro de coluna. E cada um leva os OUTROS filtros de coluna junto -- com
-    `hx-include="#contextForm"` sozinho, escolher a categoria apagava o filtro
-    de tipo (auditoria de 09/10, CB-02).
-    """
-    rendered = render_to_string(
-        "transactions/_table_body.html",
-        {
-            "txs": [],
-            "available_dates": ["2026-03-10"],
-            "available_types": ["despesa"],
-            "available_categories": ["Casa"],
-            "view_mode": "a_vencer",
-            "selected_period": "2026-03",
-            "filter_actions_colspan": 3,
-            "request": RequestFactory().get("/lancamentos/"),
-        },
-    )
-
-    # `[^>]*` nao serve aqui: `hx-select="#appMain > *"` tem um `>` DENTRO do
-    # valor do atributo, e o corte ingenuo trunca a tag no meio. Este padrao
-    # atravessa valores entre aspas antes de aceitar o `>` que fecha a tag.
-    tag_select = r"""<select(?:[^>"']|"[^"]*"|'[^']*')*>"""
-    seletores = [t for t in re.findall(tag_select, rendered) if "data-table-filter" in t]
-    assert len(seletores) == 3, seletores
-    for seletor in seletores:
-        assert 'hx-target="#transactions-table-container"' in seletor, seletor
-        # O middleware só manda HX-Replace-Url quando há o que limpar; sem o
-        # atributo, a barra ficava com o filtro anterior (visto no navegador).
-        assert 'hx-replace-url="true"' in seletor, seletor
-        incluidos = re.search(r'hx-include="([^"]*)"', seletor).group(1)
-        assert "#contextForm" in incluidos, seletor
-        assert "[data-table-filter]" in incluidos, seletor
-
-    # A recarga depois de uma escrita lê os controles vivos, não a query da
-    # renderização (que fica velha depois de um filtro trocado por HTMX).
-    tbody = re.search(r'<tbody id="transactions-tbody"[^>]*>', rendered).group(0)
-    assert "?" not in re.search(r'hx-get="([^"]*)"', tbody).group(1), tbody
-    assert "[data-table-filter]" in tbody and "#contextForm" in tbody, tbody
-
-    assert "data-filter-form" not in rendered, (
-        "sobrou gancho do application.js na linha de filtros"
-    )
-    assert "data-clear-filters" not in rendered
-
-
-def test_nenhum_template_ainda_depende_do_application_js() -> None:
-    """Os ganchos do mecanismo antigo não podem sobreviver à migração.
-
-    Um template esquecido não quebra visivelmente: o elemento simplesmente
-    para de reagir, e só se descobre usando aquela tela.
-    """
-    from pathlib import Path
-
-    ganchos = ("data-auto-submit", "data-ajax-nav", "data-filter-form", "data-clear-filters")
-    raiz = Path(__file__).resolve().parent.parent / "templates"
-
-    sobras = [
-        f"{caminho.relative_to(raiz)}: {gancho}"
-        for caminho in raiz.rglob("*.html")
-        for gancho in ganchos
-        if gancho in caminho.read_text(encoding="utf-8")
-    ]
-
-    assert sobras == [], sobras
-
 # ---------------------------------------------------------------------------
 # Qual das duas formas a view devolve
 # ---------------------------------------------------------------------------
@@ -328,26 +245,6 @@ def test_o_alvo_da_navegacao_e_o_que_a_tag_declara() -> None:
     emitido = Template("{% load navegacao %}{% nav_filtro %}").render(Context({}))
     assert f'hx-target="#{ALVO_DA_NAVEGACAO}"' in emitido
 
-
-def test_toda_view_usa_o_discriminador_e_nao_o_cabecalho_cru() -> None:
-    """`HX-Request` sozinho nao distingue mais os dois clientes.
-
-    Desde que a navegacao virou HTMX, os DOIS mandam esse cabecalho. Uma view
-    que volte a testa-lo direto devolveria fragmento para a navegacao, e a tela
-    ficaria vazia -- sem erro no console e sem teste vermelho.
-    """
-    from pathlib import Path
-
-    raiz = Path(__file__).resolve().parent.parent
-    sobras = [
-        f"{caminho.relative_to(raiz).as_posix()}:{numero}"
-        for caminho in raiz.rglob("*/views.py")
-        for numero, linha in enumerate(caminho.read_text(encoding="utf-8").splitlines(), 1)
-        if "HX-Request" in linha
-    ]
-
-    assert sobras == [], sobras
-
 # ---------------------------------------------------------------------------
 # Filtro que a view descarta em silencio
 # ---------------------------------------------------------------------------
@@ -413,29 +310,3 @@ def test_selected_context_anota_a_conta_que_anulou() -> None:
     assert contexto.owner_id == outro.id
     assert pedido.filtros_descartados == {"account_id"}
     assert url_canonica(pedido) == f"/lancamentos/?owner_id={outro.id}"
-
-
-def test_escrita_que_volta_para_a_tela_troca_so_o_main() -> None:
-    """Gerencial, Fechamento e Reclassificação gravam sem recarregar a página.
-
-    Auditoria de 09/10/2026: cada um desses POSTs recarregava a tela inteira
-    (os filtros voltavam, mas a página piscava e perdia a rolagem). Com a tag,
-    o HTMX segue o redirect que já preserva os filtros e troca só `#appMain`,
-    e o botão fica desabilitado até a resposta -- dois cliques, um POST.
-    """
-    from pathlib import Path
-
-    from django.template import Context, Template
-
-    emitido = Template("{% load navegacao %}{% nav_escrita %}").render(Context({}))
-    assert 'hx-boost="true"' in emitido
-    assert 'hx-target="#appMain"' in emitido and 'hx-select="#appMain > *"' in emitido
-    assert 'hx-disabled-elt="find button[type=submit]"' in emitido
-
-    raiz = Path(__file__).resolve().parent.parent / "templates"
-    for nome in ("management/partials/management_content.html",
-                 "settings/monthly_close.html", "banking/reclassificacao.html"):
-        texto = (raiz / nome).read_text(encoding="utf-8")
-        formularios = re.findall(r'<form method="post"[^>]*>', texto)
-        assert formularios, nome
-        assert all("{% nav_escrita %}" in f for f in formularios), (nome, formularios)

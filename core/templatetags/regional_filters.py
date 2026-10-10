@@ -36,9 +36,3 @@ def udatetime_s(value) -> str:
 def umonth(value) -> str:
     """12/2026 nos dois formatos (mês antes do ano em ambos)."""
     return regional.formatar_mes(value)
-
-
-@register.filter
-def unumber(value) -> str:
-    """Número já formatado no padrão brasileiro, adaptado ao formato do usuário."""
-    return regional.adaptar_numero(str(value))
