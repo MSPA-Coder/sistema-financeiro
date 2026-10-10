@@ -1300,7 +1300,6 @@ canvas { display: block; box-sizing: border-box; }
     gap: 0.75rem;
     flex-wrap: wrap;
 }
-.section-header-acoes { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
 .section-header h4 { margin: 0; color: var(--muted); font-size: 0.9rem; font-weight: 700; }
 
 /* ============================================================

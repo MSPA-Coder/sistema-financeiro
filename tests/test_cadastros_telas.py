@@ -98,7 +98,10 @@ def test_categorias_saem_sob_o_grupo_e_as_sem_grupo_por_ultimo(logado):
 @pytest.mark.django_db
 @pytest.mark.parametrize(
     "rota",
-    ["accounts:owners_view", "banking:institutions_view", "banking:accounts_view", "transactions:categories_view"],
+    [
+        "accounts:owners_view", "banking:institutions_view", "banking:accounts_view",
+        "transactions:categories_view", "transactions:category_groups_view",
+    ],
 )
 def test_incluir_fica_no_cabecalho_e_o_formulario_nasce_oculto(logado, rota):
     html = logado.get(reverse(rota)).content.decode()
@@ -121,6 +124,7 @@ def test_incluir_fica_no_cabecalho_e_o_formulario_nasce_oculto(logado, rota):
         ("banking:institutions_view", "/tables/banks/"),
         ("banking:accounts_view", "/tables/accounts/"),
         ("transactions:categories_view", "/tables/categories/"),
+        ("transactions:category_groups_view", "/tables/category-groups/"),
     ],
 )
 def test_nao_ha_linha_de_links_entre_cadastros_so_o_menu(logado, rota, url):
@@ -132,13 +136,46 @@ def test_nao_ha_linha_de_links_entre_cadastros_so_o_menu(logado, rota, url):
 
 
 @pytest.mark.django_db
-def test_formulario_de_grupos_tambem_nasce_oculto_com_os_botoes_no_card(logado):
-    html = logado.get(reverse("transactions:categories_view")).content.decode()
-    card = html[html.index("Grupos de categoria"):]
+def test_grupos_de_categoria_tem_tela_propria_com_a_contagem_de_categorias(logado):
+    grupo = CashFlowCategoryGroup.objects.create(group_name="Moradia", position=1)
+    CashFlowCategory.objects.create(category_name="Energia", group=grupo)
+    CashFlowCategory.objects.create(category_name="Água", group=grupo)
 
-    assert re.search(r'<div id="cadastro-novo-grupo"[^>]*\shidden>', card)
-    assert 'form="cadastro-form-grupo"' in card
-    assert 'id="cadastro-form-grupo"' in card
-    assert re.search(r'<button[^>]*data-cadastro-salvar="grupo"[^>]*\shidden', card)
-    formulario = card[card.index('id="cadastro-form-grupo"'): card.index("</form>", card.index('id="cadastro-form-grupo"'))]
-    assert "Incluir" not in formulario
+    html = logado.get(reverse("transactions:category_groups_view")).content.decode()
+
+    assert re.search(r"<td>Moradia</td>\s*<td>1</td>\s*<td>Sim</td>\s*<td>2</td>", html)
+    assert "Nenhum grupo cadastrado" not in html
+    # E a tela de Categorias já não carrega o cadastro de grupos.
+    categorias = logado.get(reverse("transactions:categories_view")).content.decode()
+    assert 'action="/tables/category-groups/create/"' not in categorias
+
+
+@pytest.mark.django_db
+def test_filtro_de_tipo_das_categorias_usa_os_mesmos_nomes_do_selo(logado):
+    CashFlowCategory.objects.create(category_name="Mercado", kind="gerencial")
+    CashFlowCategory.objects.create(category_name="Aplicação", kind="movimentacao")
+    CashFlowCategory.objects.create(category_name="Entre contas", kind="transferencia")
+    url = reverse("transactions:categories_view")
+
+    def nomes(tipo):
+        html = logado.get(url, {"filter_type": tipo}).content.decode()
+        return {n for n in ("Mercado", "Aplicação", "Entre contas") if f'category-indent">{n}</td>' in html}
+
+    assert nomes("gerencial") == {"Mercado"}
+    assert nomes("movimentacao") == {"Aplicação"}
+    assert nomes("transferencia") == {"Entre contas"}
+    assert nomes("") == {"Mercado", "Aplicação", "Entre contas"}
+    pagina = logado.get(url).content.decode()
+    for rotulo in (">Gerencial</option>", ">Movimentação</option>", ">Transferência</option>"):
+        assert rotulo in pagina
+    assert ">Normal</option>" not in pagina and ">Interna</option>" not in pagina
+
+
+@pytest.mark.django_db
+def test_grupos_saem_na_ordem_dos_graficos_e_empatando_por_nome(logado):
+    for nome, posicao in (("Beta", 2), ("alfa", 2), ("Zero", 1)):
+        CashFlowCategoryGroup.objects.create(group_name=nome, position=posicao)
+
+    html = logado.get(reverse("transactions:category_groups_view")).content.decode()
+
+    assert _ordem(html, ["Beta", "alfa", "Zero"]) == ["Zero", "alfa", "Beta"]

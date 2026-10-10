@@ -168,6 +168,7 @@ def _build_menu_items() -> list[MenuItem]:
                 MenuItem("Instituições", "/tables/banks/", "\U0001F3DB", "/tables/banks/", required_permission="tables.institutions.manage"),
                 MenuItem("Contas", "/tables/accounts/", "\U0001F4BC", "/tables/accounts/", required_permission="tables.accounts.manage"),
                 MenuItem("Categorias", "/tables/categories/", "\U0001F516", "/tables/categories/", required_permission="tables.categories.manage"),
+                MenuItem("Grupos de categoria", "/tables/category-groups/", "\U0001F9E9", "/tables/category-groups/", required_permission="tables.categories.manage"),
             ),
         ),
         MenuItem(

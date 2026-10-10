@@ -168,7 +168,8 @@ def test_atualizar_saldo_previa_lanca_e_lista_a_assuncao(cenario):
 def test_categorias_mostra_os_grupos_e_cria_um_grupo(cenario):
     client, _, _, cat = cenario
     html = client.get(reverse("transactions:categories_view")).content.decode()
-    assert "Grupos de categoria" in html and "Saúde" in html and "Plano de saúde" in html
+    assert "Saúde" in html and "Plano de saúde" in html
+    assert "Saúde" in client.get(reverse("transactions:category_groups_view")).content.decode()
     client.post(reverse("transactions:create_category_group"), {"group_name": "Moradia", "position": "60", "in_charts": "1"})
     assert CashFlowCategoryGroup.objects.filter(group_name="Moradia", position=60, in_charts=True).exists()
     grupo = CashFlowCategoryGroup.objects.get(group_name="Moradia")

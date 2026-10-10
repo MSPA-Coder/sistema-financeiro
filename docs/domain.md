@@ -571,6 +571,10 @@ movimentações, ajustes de saldo) tem `in_charts=False` e fica fora dos gráfic
 "Cartão de Crédito" continua sendo uma categoria com esse nome exato (a fatura
 projetada a procura pelo nome); ela vive no grupo "Bancos e cartões".
 
+Os grupos têm tela própria em Cadastros > Grupos de categoria; a tela de
+Categorias lista cada categoria sob o seu grupo e filtra pelo tipo
+(Gerencial, Movimentação ou Transferência).
+
 `manage.py grupos_de_categoria semear` cria os grupos aprovados e liga as
 categorias existentes sem grupo, sem nunca trocar um grupo já escolhido.
 
